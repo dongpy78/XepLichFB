@@ -21,9 +21,14 @@ jobs:
           extensions: curl, gd, json, pdo, zip, mbstring, xml, intl
           tools: composer:v2
 
-      # vendor/ không có trong git nên phải cài ở đây rồi upload lên hosting
+      # vendor/ không có trong git nên phải cài ở đây rồi upload lên hosting.
+      # --no-plugins: tắt merge-plugin, nếu không nó tự chạy "composer update" (nâng version gói)
+      #   rồi chạy artisan package:discover và lỗi vì CI không có .env/database.
+      # COMPOSER_MIRROR_PATH_REPOS: copy platform/core vào vendor thay vì tạo symlink (FTP không upload được symlink).
       - name: Install Composer dependencies
-        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+        env:
+          COMPOSER_MIRROR_PATH_REPOS: 1
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts --no-plugins
 
       - name: Deploy to cPanel via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
