@@ -1,10 +1,15 @@
-name: Deploy Laravel to cPanel via FTP
+name: Deploy Laravel to cPanel (zip qua FTP)
 
 on:
   push:
     branches:
       - main
   workflow_dispatch: # Cho phép bấm chạy tay trong tab Actions
+
+# Không cho 2 lần deploy chạy chồng lên nhau
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -24,33 +29,40 @@ jobs:
       # vendor/ không có trong git nên phải cài ở đây rồi upload lên hosting.
       # --no-plugins: tắt merge-plugin, nếu không nó tự chạy "composer update" (nâng version gói)
       #   rồi chạy artisan package:discover và lỗi vì CI không có .env/database.
-      # COMPOSER_MIRROR_PATH_REPOS: copy platform/core vào vendor thay vì tạo symlink (FTP không upload được symlink).
+      # COMPOSER_MIRROR_PATH_REPOS: copy platform/core vào vendor thay vì tạo symlink.
       - name: Install Composer dependencies
         env:
           COMPOSER_MIRROR_PATH_REPOS: 1
         run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts --no-plugins
 
-      - name: Deploy to cPanel via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ secrets.FTP_SERVER_DIR }} # Ví dụ: /public_html/ — phải kết thúc bằng dấu /
-          local-dir: ./
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            .github/**
-            tests/**
-            .env
-            .env.*
-            *.zip
-            *.sql
-            storage/**
-            public/storage/**
-            bootstrap/cache/*.php
-            docker-compose.yml
-            phpunit.xml
-            .phpunit.result.cache
+      # Gom tất cả thành 1 file zip: upload 1 file nhanh hơn rất nhiều so với hàng chục nghìn file lẻ.
+      # .env và storage/ không nằm trong zip nên trên hosting được giữ nguyên.
+      - name: Build release.zip
+        run: |
+          zip -r -q -y release.zip . \
+            -x '.git/*' '.github/*' 'tests/*' 'node_modules/*' \
+               '.env' '.env.*' 'storage/*' 'public/storage/*' 'bootstrap/cache/*.php' \
+               '*.zip' '*.sql' 'docker-compose.yml' 'phpunit.xml' '.phpunit.result.cache'
+          ls -lh release.zip
+
+      # FTPS (FTP có mã hóa). -k vì kết nối bằng IP nên tên trong chứng chỉ SSL không khớp.
+      - name: Upload qua FTP
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }} # Ví dụ: / — phải kết thúc bằng dấu /
+        run: |
+          base="ftp://${FTP_SERVER}${FTP_SERVER_DIR}"
+          opts=(--ssl-reqd -k --ftp-create-dirs --fail --show-error --silent --retry 3 --user "${FTP_USERNAME}:${FTP_PASSWORD}")
+          curl "${opts[@]}" -T public/deploy.php "${base}public/deploy.php"
+          curl "${opts[@]}" -T release.zip "${base}.deploy/release.zip"
+          echo "Upload xong"
+
+      - name: Giải nén trên hosting
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          curl --fail-with-body --show-error --silent --max-time 900 \
+            -X POST -H "X-Deploy-Token: ${DEPLOY_TOKEN}" "${DEPLOY_URL}"
