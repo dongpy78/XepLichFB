@@ -1,28 +1,51 @@
-name: Deploy Laravel to CPanel via FTP
+name: Deploy Laravel to cPanel via FTP
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch: # Cho phép bấm chạy tay trong tab Actions
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2  
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v2  # Set up PHP
-      with:
-        php-version: '8.1'  # Specify the PHP version you're using
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2' # Nên trùng với phiên bản PHP trên hosting (composer.lock cần >= 8.2)
+          extensions: curl, gd, json, pdo, zip, mbstring, xml, intl
+          tools: composer:v2
 
-    - name: Deploy to CPanel via FTP
-      uses: SamKirkland/FTP-Deploy-Action@4.3.3
-      with:
-        server: ${{ secrets.SERVER }}  
-        username: ${{ secrets.USERNAME }} 
-        password: ${{ secrets.PASSWORD }}  
-        local-dir: "./" 
-        server-dir: "/ntu264.vpsttt.vn/doctruyen/"  # Target directory on the server
+      # vendor/ không có trong git nên phải cài ở đây rồi upload lên hosting
+      - name: Install Composer dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+
+      - name: Deploy to cPanel via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR }} # Ví dụ: /public_html/ — phải kết thúc bằng dấu /
+          local-dir: ./
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            .github/**
+            tests/**
+            .env
+            .env.*
+            *.zip
+            *.sql
+            storage/**
+            public/storage/**
+            bootstrap/cache/*.php
+            docker-compose.yml
+            phpunit.xml
+            .phpunit.result.cache
