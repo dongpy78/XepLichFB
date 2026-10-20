@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Категории меню',
+    'menu_category' => 'Категория меню',
+    'create_menu_category' => 'Создать категорию меню',
+    'menu_items' => 'Блюда меню',
+    'menu_item' => 'Блюдо меню',
+    'create_menu_item' => 'Создать блюдо меню',
+    'menu_items_count' => 'Блюда',
+    'category' => 'Категория',
+    'price' => 'Цена',
+    'sale_price' => 'Цена со скидкой',
+    'sale_price_help' => 'Оставьте пустым, если нет скидки',
+    'sale_price_must_be_less_than_price' => 'Цена со скидкой должна быть меньше обычной цены',
+    'is_featured' => 'Рекомендуемое',
+    'is_vegetarian' => 'Вегетарианское',
+    'is_vegan' => 'Веганское',
+    'is_gluten_free' => 'Без глютена',
+    'calories' => 'Калории',
+    'calories_placeholder' => 'например, 250 кал',
+    'ingredients' => 'Ингредиенты',
+    'ingredients_placeholder' => 'Перечислите основные ингредиенты через запятую',
+    'edit_this_menu_item' => 'Редактировать это блюдо меню',
+    'edit_this_menu_category' => 'Редактировать эту категорию меню',
+];

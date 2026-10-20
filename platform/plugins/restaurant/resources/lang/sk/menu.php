@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Kategórie menu',
+    'menu_category' => 'Kategória menu',
+    'create_menu_category' => 'Vytvoriť kategóriu menu',
+    'menu_items' => 'Položky menu',
+    'menu_item' => 'Položka menu',
+    'create_menu_item' => 'Vytvoriť položku menu',
+    'menu_items_count' => 'Položky',
+    'category' => 'Kategória',
+    'price' => 'Cena',
+    'sale_price' => 'Zľavnená cena',
+    'sale_price_help' => 'Ponechajte prázdne, ak nie je zľava',
+    'sale_price_must_be_less_than_price' => 'Zľavnená cena musí byť nižšia ako bežná cena',
+    'is_featured' => 'Odporúčané',
+    'is_vegetarian' => 'Vegetariánske',
+    'is_vegan' => 'Vegánske',
+    'is_gluten_free' => 'Bez lepku',
+    'calories' => 'Kalórie',
+    'calories_placeholder' => 'napr. 250 kal',
+    'ingredients' => 'Ingrediencie',
+    'ingredients_placeholder' => 'Uveďte hlavné ingrediencie oddelené čiarkami',
+    'edit_this_menu_item' => 'Upraviť túto položku menu',
+    'edit_this_menu_category' => 'Upraviť túto kategóriu menu',
+];

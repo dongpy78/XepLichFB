@@ -1,0 +1,11 @@
+{
+    "id": "selectumnoa/restaurant-roster",
+    "name": "Xếp lịch nhà hàng SelectumNoa",
+    "namespace": "Botble\\RestaurantRoster\\",
+    "provider": "Botble\\RestaurantRoster\\Providers\\RestaurantRosterServiceProvider",
+    "author": "SelectumNoa F&B",
+    "url": "",
+    "version": "1.0.0",
+    "description": "Quản lý nhà hàng, vị trí, nhân viên, mẫu ca và bảng xếp ca tuần có kiểm tra xung đột cho bộ phận nhà hàng.",
+    "minimum_core_version": "7.0.0"
+}

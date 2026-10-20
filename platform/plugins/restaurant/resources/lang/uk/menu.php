@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Категорії меню',
+    'menu_category' => 'Категорія меню',
+    'create_menu_category' => 'Створити категорію меню',
+    'menu_items' => 'Пункти меню',
+    'menu_item' => 'Пункт меню',
+    'create_menu_item' => 'Створити пункт меню',
+    'menu_items_count' => 'Пункти',
+    'category' => 'Категорія',
+    'price' => 'Ціна',
+    'sale_price' => 'Акційна ціна',
+    'sale_price_help' => 'Залиште порожнім, якщо немає знижки',
+    'sale_price_must_be_less_than_price' => 'Акційна ціна повинна бути нижчою за звичайну ціну',
+    'is_featured' => 'Рекомендоване',
+    'is_vegetarian' => 'Вегетаріанське',
+    'is_vegan' => 'Веганське',
+    'is_gluten_free' => 'Без глютену',
+    'calories' => 'Калорії',
+    'calories_placeholder' => 'наприклад, 250 ккал',
+    'ingredients' => 'Інгредієнти',
+    'ingredients_placeholder' => 'Перерахуйте основні інгредієнти, розділені комами',
+    'edit_this_menu_item' => 'Редагувати цей пункт меню',
+    'edit_this_menu_category' => 'Редагувати цю категорію меню',
+];

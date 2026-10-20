@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Kategori Menu',
+    'menu_category' => 'Kategori Menu',
+    'create_menu_category' => 'Cipta Kategori Menu',
+    'menu_items' => 'Item Menu',
+    'menu_item' => 'Item Menu',
+    'create_menu_item' => 'Cipta Item Menu',
+    'menu_items_count' => 'Item',
+    'category' => 'Kategori',
+    'price' => 'Harga',
+    'sale_price' => 'Harga Jualan',
+    'sale_price_help' => 'Biarkan kosong jika tiada diskaun',
+    'sale_price_must_be_less_than_price' => 'Harga jualan mesti kurang daripada harga biasa',
+    'is_featured' => 'Pilihan',
+    'is_vegetarian' => 'Vegetarian',
+    'is_vegan' => 'Vegan',
+    'is_gluten_free' => 'Bebas Gluten',
+    'calories' => 'Kalori',
+    'calories_placeholder' => 'cth. 250 kal',
+    'ingredients' => 'Ramuan',
+    'ingredients_placeholder' => 'Senaraikan ramuan utama dipisahkan dengan koma',
+    'edit_this_menu_item' => 'Edit item menu ini',
+    'edit_this_menu_category' => 'Edit kategori menu ini',
+];

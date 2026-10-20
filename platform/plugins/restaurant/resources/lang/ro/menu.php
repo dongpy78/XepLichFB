@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Categorii Meniu',
+    'menu_category' => 'Categorie Meniu',
+    'create_menu_category' => 'Creare Categorie Meniu',
+    'menu_items' => 'Produse Meniu',
+    'menu_item' => 'Produs Meniu',
+    'create_menu_item' => 'Creare Produs Meniu',
+    'menu_items_count' => 'Produse',
+    'category' => 'Categorie',
+    'price' => 'Preț',
+    'sale_price' => 'Preț Redus',
+    'sale_price_help' => 'Lăsați gol dacă nu există reducere',
+    'sale_price_must_be_less_than_price' => 'Prețul redus trebuie să fie mai mic decât prețul normal',
+    'is_featured' => 'Recomandat',
+    'is_vegetarian' => 'Vegetarian',
+    'is_vegan' => 'Vegan',
+    'is_gluten_free' => 'Fără Gluten',
+    'calories' => 'Calorii',
+    'calories_placeholder' => 'de ex. 250 cal',
+    'ingredients' => 'Ingrediente',
+    'ingredients_placeholder' => 'Listați ingredientele principale separate prin virgulă',
+    'edit_this_menu_item' => 'Editează acest produs din meniu',
+    'edit_this_menu_category' => 'Editează această categorie de meniu',
+];

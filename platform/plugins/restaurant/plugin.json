@@ -1,0 +1,10 @@
+{
+    "id": "botble\restaurant",
+    "name": "Restaurant",
+    "namespace": "Botble\\Restaurant\\",
+    "provider": "Botble\\Restaurant\\Providers\\RestaurantServiceProvider",
+    "author": "Botble Technologies",
+    "url": "https://botble.com",
+    "version": "1.0.0",
+    "description": "Restaurant menu management and table booking system"
+}

@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menykategorier',
+    'menu_category' => 'Menykategori',
+    'create_menu_category' => 'Skapa menykategori',
+    'menu_items' => 'Menyposter',
+    'menu_item' => 'Menypost',
+    'create_menu_item' => 'Skapa menypost',
+    'menu_items_count' => 'Poster',
+    'category' => 'Kategori',
+    'price' => 'Pris',
+    'sale_price' => 'Kampanjpris',
+    'sale_price_help' => 'Lämna tomt om det inte finns någon rabatt',
+    'sale_price_must_be_less_than_price' => 'Kampanjpriset måste vara lägre än ordinarie pris',
+    'is_featured' => 'Utvald',
+    'is_vegetarian' => 'Vegetarisk',
+    'is_vegan' => 'Vegansk',
+    'is_gluten_free' => 'Glutenfri',
+    'calories' => 'Kalorier',
+    'calories_placeholder' => 't.ex. 250 kcal',
+    'ingredients' => 'Ingredienser',
+    'ingredients_placeholder' => 'Lista huvudingredienser separerade med kommatecken',
+    'edit_this_menu_item' => 'Redigera denna menypost',
+    'edit_this_menu_category' => 'Redigera denna menykategori',
+];

@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Kategori Menu',
+    'menu_category' => 'Kategori Menu',
+    'create_menu_category' => 'Buat Kategori Menu',
+    'menu_items' => 'Item Menu',
+    'menu_item' => 'Item Menu',
+    'create_menu_item' => 'Buat Item Menu',
+    'menu_items_count' => 'Item',
+    'category' => 'Kategori',
+    'price' => 'Harga',
+    'sale_price' => 'Harga Diskon',
+    'sale_price_help' => 'Kosongkan jika tidak ada diskon',
+    'sale_price_must_be_less_than_price' => 'Harga diskon harus lebih rendah dari harga normal',
+    'is_featured' => 'Unggulan',
+    'is_vegetarian' => 'Vegetarian',
+    'is_vegan' => 'Vegan',
+    'is_gluten_free' => 'Bebas Gluten',
+    'calories' => 'Kalori',
+    'calories_placeholder' => 'mis. 250 kal',
+    'ingredients' => 'Bahan-bahan',
+    'ingredients_placeholder' => 'Daftar bahan utama dipisahkan dengan koma',
+    'edit_this_menu_item' => 'Edit item menu ini',
+    'edit_this_menu_category' => 'Edit kategori menu ini',
+];

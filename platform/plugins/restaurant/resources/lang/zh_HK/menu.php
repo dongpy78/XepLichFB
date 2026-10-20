@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => '菜單分類',
+    'menu_category' => '菜單分類',
+    'create_menu_category' => '建立菜單分類',
+    'menu_items' => '菜單項目',
+    'menu_item' => '菜單項目',
+    'create_menu_item' => '建立菜單項目',
+    'menu_items_count' => '項目',
+    'category' => '分類',
+    'price' => '價格',
+    'sale_price' => '優惠價格',
+    'sale_price_help' => '如無折扣請留空',
+    'sale_price_must_be_less_than_price' => '優惠價格必須低於正常價格',
+    'is_featured' => '特色推介',
+    'is_vegetarian' => '素食',
+    'is_vegan' => '純素',
+    'is_gluten_free' => '無麩質',
+    'calories' => '卡路里',
+    'calories_placeholder' => '例如：250卡',
+    'ingredients' => '配料',
+    'ingredients_placeholder' => '列出主要配料，用逗號分隔',
+    'edit_this_menu_item' => '編輯此菜單項目',
+    'edit_this_menu_category' => '編輯此菜單分類',
+];

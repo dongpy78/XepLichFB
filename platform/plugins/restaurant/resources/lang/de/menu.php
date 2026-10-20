@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menükategorien',
+    'menu_category' => 'Menükategorie',
+    'create_menu_category' => 'Menükategorie erstellen',
+    'menu_items' => 'Menüpunkte',
+    'menu_item' => 'Menüpunkt',
+    'create_menu_item' => 'Menüpunkt erstellen',
+    'menu_items_count' => 'Artikel',
+    'category' => 'Kategorie',
+    'price' => 'Preis',
+    'sale_price' => 'Angebotspreis',
+    'sale_price_help' => 'Leer lassen, wenn kein Rabatt vorhanden ist',
+    'sale_price_must_be_less_than_price' => 'Der Angebotspreis muss niedriger als der reguläre Preis sein',
+    'is_featured' => 'Hervorgehoben',
+    'is_vegetarian' => 'Vegetarisch',
+    'is_vegan' => 'Vegan',
+    'is_gluten_free' => 'Glutenfrei',
+    'calories' => 'Kalorien',
+    'calories_placeholder' => 'z.B. 250 kcal',
+    'ingredients' => 'Zutaten',
+    'ingredients_placeholder' => 'Hauptzutaten durch Kommas getrennt auflisten',
+    'edit_this_menu_item' => 'Diesen Menüpunkt bearbeiten',
+    'edit_this_menu_category' => 'Diese Menükategorie bearbeiten',
+];

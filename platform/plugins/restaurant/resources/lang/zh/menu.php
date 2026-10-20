@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => '菜单分类',
+    'menu_category' => '菜单分类',
+    'create_menu_category' => '创建菜单分类',
+    'menu_items' => '菜单项目',
+    'menu_item' => '菜单项目',
+    'create_menu_item' => '创建菜单项目',
+    'menu_items_count' => '项目',
+    'category' => '分类',
+    'price' => '价格',
+    'sale_price' => '促销价格',
+    'sale_price_help' => '如无折扣请留空',
+    'sale_price_must_be_less_than_price' => '促销价格必须低于正常价格',
+    'is_featured' => '特色推荐',
+    'is_vegetarian' => '素食',
+    'is_vegan' => '纯素',
+    'is_gluten_free' => '无麸质',
+    'calories' => '卡路里',
+    'calories_placeholder' => '例如：250卡',
+    'ingredients' => '配料',
+    'ingredients_placeholder' => '列出主要配料，用逗号分隔',
+    'edit_this_menu_item' => '编辑此菜单项目',
+    'edit_this_menu_category' => '编辑此菜单分类',
+];

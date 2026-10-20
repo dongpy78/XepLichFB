@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menü Kategorileri',
+    'menu_category' => 'Menü Kategorisi',
+    'create_menu_category' => 'Menü Kategorisi Oluştur',
+    'menu_items' => 'Menü Öğeleri',
+    'menu_item' => 'Menü Öğesi',
+    'create_menu_item' => 'Menü Öğesi Oluştur',
+    'menu_items_count' => 'Öğeler',
+    'category' => 'Kategori',
+    'price' => 'Fiyat',
+    'sale_price' => 'İndirimli Fiyat',
+    'sale_price_help' => 'İndirim yoksa boş bırakın',
+    'sale_price_must_be_less_than_price' => 'İndirimli fiyat normal fiyattan düşük olmalıdır',
+    'is_featured' => 'Öne Çıkan',
+    'is_vegetarian' => 'Vejetaryen',
+    'is_vegan' => 'Vegan',
+    'is_gluten_free' => 'Glutensiz',
+    'calories' => 'Kalori',
+    'calories_placeholder' => 'örn. 250 cal',
+    'ingredients' => 'İçindekiler',
+    'ingredients_placeholder' => 'Ana malzemeleri virgülle ayırarak listeleyin',
+    'edit_this_menu_item' => 'Bu menü öğesini düzenle',
+    'edit_this_menu_category' => 'Bu menü kategorisini düzenle',
+];

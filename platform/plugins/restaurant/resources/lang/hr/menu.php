@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Kategorije jelovnika',
+    'menu_category' => 'Kategorija jelovnika',
+    'create_menu_category' => 'Stvori kategoriju jelovnika',
+    'menu_items' => 'Stavke jelovnika',
+    'menu_item' => 'Stavka jelovnika',
+    'create_menu_item' => 'Stvori stavku jelovnika',
+    'menu_items_count' => 'Stavke',
+    'category' => 'Kategorija',
+    'price' => 'Cijena',
+    'sale_price' => 'Akcijska cijena',
+    'sale_price_help' => 'Ostavite prazno ako nema popusta',
+    'sale_price_must_be_less_than_price' => 'Akcijska cijena mora biti niža od redovne cijene',
+    'is_featured' => 'Istaknuto',
+    'is_vegetarian' => 'Vegetarijansko',
+    'is_vegan' => 'Vegansko',
+    'is_gluten_free' => 'Bez glutena',
+    'calories' => 'Kalorije',
+    'calories_placeholder' => 'npr. 250 kcal',
+    'ingredients' => 'Sastojci',
+    'ingredients_placeholder' => 'Navedite glavne sastojke odvojene zarezima',
+    'edit_this_menu_item' => 'Uredi ovu stavku jelovnika',
+    'edit_this_menu_category' => 'Uredi ovu kategoriju jelovnika',
+];

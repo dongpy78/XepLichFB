@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Kategorije menijev',
+    'menu_category' => 'Kategorija menija',
+    'create_menu_category' => 'Ustvari kategorijo menija',
+    'menu_items' => 'Elementi menija',
+    'menu_item' => 'Element menija',
+    'create_menu_item' => 'Ustvari element menija',
+    'menu_items_count' => 'Elementi',
+    'category' => 'Kategorija',
+    'price' => 'Cena',
+    'sale_price' => 'Akcijska cena',
+    'sale_price_help' => 'Pustite prazno, če ni popusta',
+    'sale_price_must_be_less_than_price' => 'Akcijska cena mora biti nižja od redne cene',
+    'is_featured' => 'Priporočeno',
+    'is_vegetarian' => 'Vegetarijansko',
+    'is_vegan' => 'Vegansko',
+    'is_gluten_free' => 'Brez glutena',
+    'calories' => 'Kalorije',
+    'calories_placeholder' => 'npr. 250 kcal',
+    'ingredients' => 'Sestavine',
+    'ingredients_placeholder' => 'Naštejte glavne sestavine, ločene z vejico',
+    'edit_this_menu_item' => 'Uredi ta element menija',
+    'edit_this_menu_category' => 'Uredi to kategorijo menija',
+];

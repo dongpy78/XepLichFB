@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menüü kategooriad',
+    'menu_category' => 'Menüü kategooria',
+    'create_menu_category' => 'Loo menüü kategooria',
+    'menu_items' => 'Menüü elemendid',
+    'menu_item' => 'Menüü element',
+    'create_menu_item' => 'Loo menüü element',
+    'menu_items_count' => 'Elemendid',
+    'category' => 'Kategooria',
+    'price' => 'Hind',
+    'sale_price' => 'Soodushind',
+    'sale_price_help' => 'Jätke tühjaks, kui allahindlust pole',
+    'sale_price_must_be_less_than_price' => 'Soodushind peab olema tavahinnast madalam',
+    'is_featured' => 'Esiletõstetud',
+    'is_vegetarian' => 'Taimetoitlane',
+    'is_vegan' => 'Veganlane',
+    'is_gluten_free' => 'Gluteenivaba',
+    'calories' => 'Kalorid',
+    'calories_placeholder' => 'nt 250 kcal',
+    'ingredients' => 'Koostisosad',
+    'ingredients_placeholder' => 'Loetlege põhilised koostisosad komadega eraldatuna',
+    'edit_this_menu_item' => 'Muuda seda menüü elementi',
+    'edit_this_menu_category' => 'Muuda seda menüü kategooriat',
+];

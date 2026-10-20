@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menukategoriat',
+    'menu_category' => 'Menukategoria',
+    'create_menu_category' => 'Luo menukategoria',
+    'menu_items' => 'Menukohteet',
+    'menu_item' => 'Menukohde',
+    'create_menu_item' => 'Luo menukohde',
+    'menu_items_count' => 'Kohteet',
+    'category' => 'Kategoria',
+    'price' => 'Hinta',
+    'sale_price' => 'Alehinta',
+    'sale_price_help' => 'Jätä tyhjäksi, jos alennusta ei ole',
+    'sale_price_must_be_less_than_price' => 'Alehinnan on oltava tavallista hintaa pienempi',
+    'is_featured' => 'Suositeltu',
+    'is_vegetarian' => 'Kasvisruoka',
+    'is_vegan' => 'Vegaaninen',
+    'is_gluten_free' => 'Gluteeniton',
+    'calories' => 'Kalorit',
+    'calories_placeholder' => 'esim. 250 kcal',
+    'ingredients' => 'Ainesosat',
+    'ingredients_placeholder' => 'Luettele tärkeimmät ainesosat pilkuilla erotettuna',
+    'edit_this_menu_item' => 'Muokkaa tätä menukohdetta',
+    'edit_this_menu_category' => 'Muokkaa tätä menukategoriaa',
+];

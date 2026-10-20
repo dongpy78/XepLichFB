@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'فئات القائمة',
+    'menu_category' => 'فئة القائمة',
+    'create_menu_category' => 'إنشاء فئة قائمة',
+    'menu_items' => 'عناصر القائمة',
+    'menu_item' => 'عنصر القائمة',
+    'create_menu_item' => 'إنشاء عنصر قائمة',
+    'menu_items_count' => 'العناصر',
+    'category' => 'الفئة',
+    'price' => 'السعر',
+    'sale_price' => 'سعر البيع',
+    'sale_price_help' => 'اترك فارغًا إذا لم يكن هناك خصم',
+    'sale_price_must_be_less_than_price' => 'يجب أن يكون سعر البيع أقل من السعر العادي',
+    'is_featured' => 'مميز',
+    'is_vegetarian' => 'نباتي',
+    'is_vegan' => 'نباتي صرف',
+    'is_gluten_free' => 'خالي من الغلوتين',
+    'calories' => 'السعرات الحرارية',
+    'calories_placeholder' => 'مثلاً، 250 سعرة',
+    'ingredients' => 'المكونات',
+    'ingredients_placeholder' => 'قائمة المكونات الرئيسية مفصولة بفواصل',
+    'edit_this_menu_item' => 'تحرير عنصر القائمة هذا',
+    'edit_this_menu_category' => 'تحرير فئة القائمة هذه',
+];

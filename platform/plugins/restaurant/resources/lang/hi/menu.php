@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'मेनू श्रेणियां',
+    'menu_category' => 'मेनू श्रेणी',
+    'create_menu_category' => 'मेनू श्रेणी बनाएं',
+    'menu_items' => 'मेनू आइटम',
+    'menu_item' => 'मेनू आइटम',
+    'create_menu_item' => 'मेनू आइटम बनाएं',
+    'menu_items_count' => 'आइटम',
+    'category' => 'श्रेणी',
+    'price' => 'कीमत',
+    'sale_price' => 'विक्रय मूल्य',
+    'sale_price_help' => 'यदि कोई छूट नहीं है तो खाली छोड़ें',
+    'sale_price_must_be_less_than_price' => 'विक्रय मूल्य सामान्य कीमत से कम होना चाहिए',
+    'is_featured' => 'विशेष रुप से प्रदर्शित',
+    'is_vegetarian' => 'शाकाहारी',
+    'is_vegan' => 'वीगन',
+    'is_gluten_free' => 'ग्लूटेन मुक्त',
+    'calories' => 'कैलोरी',
+    'calories_placeholder' => 'उदा. 250 कैल',
+    'ingredients' => 'सामग्री',
+    'ingredients_placeholder' => 'मुख्य सामग्री को अल्पविराम से अलग करके सूचीबद्ध करें',
+    'edit_this_menu_item' => 'इस मेनू आइटम को संपादित करें',
+    'edit_this_menu_category' => 'इस मेनू श्रेणी को संपादित करें',
+];

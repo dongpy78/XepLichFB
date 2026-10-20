@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menü kategóriák',
+    'menu_category' => 'Menü kategória',
+    'create_menu_category' => 'Menü kategória létrehozása',
+    'menu_items' => 'Menü elemek',
+    'menu_item' => 'Menü elem',
+    'create_menu_item' => 'Menü elem létrehozása',
+    'menu_items_count' => 'Elemek',
+    'category' => 'Kategória',
+    'price' => 'Ár',
+    'sale_price' => 'Akciós ár',
+    'sale_price_help' => 'Hagyja üresen, ha nincs kedvezmény',
+    'sale_price_must_be_less_than_price' => 'Az akciós árnak alacsonyabbnak kell lennie, mint a normál ár',
+    'is_featured' => 'Kiemelt',
+    'is_vegetarian' => 'Vegetáriánus',
+    'is_vegan' => 'Vegán',
+    'is_gluten_free' => 'Gluténmentes',
+    'calories' => 'Kalóriák',
+    'calories_placeholder' => 'pl. 250 kcal',
+    'ingredients' => 'Összetevők',
+    'ingredients_placeholder' => 'Sorolja fel a fő összetevőket vesszővel elválasztva',
+    'edit_this_menu_item' => 'Menü elem szerkesztése',
+    'edit_this_menu_category' => 'Menü kategória szerkesztése',
+];

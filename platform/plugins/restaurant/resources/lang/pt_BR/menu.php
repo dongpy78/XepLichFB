@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Categorias do Cardápio',
+    'menu_category' => 'Categoria do Cardápio',
+    'create_menu_category' => 'Criar Categoria do Cardápio',
+    'menu_items' => 'Itens do Cardápio',
+    'menu_item' => 'Item do Cardápio',
+    'create_menu_item' => 'Criar Item do Cardápio',
+    'menu_items_count' => 'Itens',
+    'category' => 'Categoria',
+    'price' => 'Preço',
+    'sale_price' => 'Preço Promocional',
+    'sale_price_help' => 'Deixe vazio se não houver desconto',
+    'sale_price_must_be_less_than_price' => 'O preço promocional deve ser menor que o preço normal',
+    'is_featured' => 'Destaque',
+    'is_vegetarian' => 'Vegetariano',
+    'is_vegan' => 'Vegano',
+    'is_gluten_free' => 'Sem Glúten',
+    'calories' => 'Calorias',
+    'calories_placeholder' => 'ex. 250 kcal',
+    'ingredients' => 'Ingredientes',
+    'ingredients_placeholder' => 'Liste os principais ingredientes separados por vírgulas',
+    'edit_this_menu_item' => 'Editar este item do cardápio',
+    'edit_this_menu_category' => 'Editar esta categoria do cardápio',
+];

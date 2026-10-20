@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'মেনু বিভাগ',
+    'menu_category' => 'মেনু বিভাগ',
+    'create_menu_category' => 'মেনু বিভাগ তৈরি করুন',
+    'menu_items' => 'মেনু আইটেম',
+    'menu_item' => 'মেনু আইটেম',
+    'create_menu_item' => 'মেনু আইটেম তৈরি করুন',
+    'menu_items_count' => 'আইটেম',
+    'category' => 'বিভাগ',
+    'price' => 'মূল্য',
+    'sale_price' => 'বিক্রয় মূল্য',
+    'sale_price_help' => 'কোন ছাড় না থাকলে খালি রাখুন',
+    'sale_price_must_be_less_than_price' => 'বিক্রয় মূল্য নিয়মিত মূল্যের চেয়ে কম হতে হবে',
+    'is_featured' => 'বৈশিষ্ট্যযুক্ত',
+    'is_vegetarian' => 'নিরামিষ',
+    'is_vegan' => 'ভেগান',
+    'is_gluten_free' => 'গ্লুটেন মুক্ত',
+    'calories' => 'ক্যালোরি',
+    'calories_placeholder' => 'যেমন ২৫০ ক্যাল',
+    'ingredients' => 'উপাদান',
+    'ingredients_placeholder' => 'কমা দ্বারা পৃথক করে প্রধান উপাদানগুলি তালিকাভুক্ত করুন',
+    'edit_this_menu_item' => 'এই মেনু আইটেম সম্পাদনা করুন',
+    'edit_this_menu_category' => 'এই মেনু বিভাগ সম্পাদনা করুন',
+];

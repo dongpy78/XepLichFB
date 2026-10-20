@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'მენიუს კატეგორიები',
+    'menu_category' => 'მენიუს კატეგორია',
+    'create_menu_category' => 'მენიუს კატეგორიის შექმნა',
+    'menu_items' => 'მენიუს ელემენტები',
+    'menu_item' => 'მენიუს ელემენტი',
+    'create_menu_item' => 'მენიუს ელემენტის შექმნა',
+    'menu_items_count' => 'ელემენტები',
+    'category' => 'კატეგორია',
+    'price' => 'ფასი',
+    'sale_price' => 'გასაყიდი ფასი',
+    'sale_price_help' => 'დატოვეთ ცარიელი, თუ ფასდაკლება არ არის',
+    'sale_price_must_be_less_than_price' => 'გასაყიდი ფასი უნდა იყოს ნაკლები ჩვეულებრივ ფასზე',
+    'is_featured' => 'გამორჩეული',
+    'is_vegetarian' => 'ვეგეტარიანული',
+    'is_vegan' => 'ვეგანური',
+    'is_gluten_free' => 'უგლუტენო',
+    'calories' => 'კალორიები',
+    'calories_placeholder' => 'მაგ., 250 კალ',
+    'ingredients' => 'ინგრედიენტები',
+    'ingredients_placeholder' => 'ჩამოწერეთ მთავარი ინგრედიენტები მძიმით გამოყოფილი',
+    'edit_this_menu_item' => 'მენიუს ელემენტის რედაქტირება',
+    'edit_this_menu_category' => 'მენიუს კატეგორიის რედაქტირება',
+];

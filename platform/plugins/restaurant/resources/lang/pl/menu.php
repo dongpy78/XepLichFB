@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Kategorie menu',
+    'menu_category' => 'Kategoria menu',
+    'create_menu_category' => 'Utwórz kategorię menu',
+    'menu_items' => 'Pozycje menu',
+    'menu_item' => 'Pozycja menu',
+    'create_menu_item' => 'Utwórz pozycję menu',
+    'menu_items_count' => 'Pozycje',
+    'category' => 'Kategoria',
+    'price' => 'Cena',
+    'sale_price' => 'Cena promocyjna',
+    'sale_price_help' => 'Pozostaw puste, jeśli nie ma zniżki',
+    'sale_price_must_be_less_than_price' => 'Cena promocyjna musi być niższa niż cena regularna',
+    'is_featured' => 'Wyróżnione',
+    'is_vegetarian' => 'Wegetariańskie',
+    'is_vegan' => 'Wegańskie',
+    'is_gluten_free' => 'Bezglutenowe',
+    'calories' => 'Kalorie',
+    'calories_placeholder' => 'np. 250 kcal',
+    'ingredients' => 'Składniki',
+    'ingredients_placeholder' => 'Wymień główne składniki oddzielone przecinkami',
+    'edit_this_menu_item' => 'Edytuj tę pozycję menu',
+    'edit_this_menu_category' => 'Edytuj tę kategorię menu',
+];

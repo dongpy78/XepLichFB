@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Mga Kategorya ng Menu',
+    'menu_category' => 'Kategorya ng Menu',
+    'create_menu_category' => 'Lumikha ng Kategorya ng Menu',
+    'menu_items' => 'Mga Item ng Menu',
+    'menu_item' => 'Item ng Menu',
+    'create_menu_item' => 'Lumikha ng Item ng Menu',
+    'menu_items_count' => 'Mga Item',
+    'category' => 'Kategorya',
+    'price' => 'Presyo',
+    'sale_price' => 'Presyo ng Sale',
+    'sale_price_help' => 'Iwanang walang laman kung walang diskwento',
+    'sale_price_must_be_less_than_price' => 'Ang presyo ng sale ay dapat mas mababa kaysa sa regular na presyo',
+    'is_featured' => 'Naka-feature',
+    'is_vegetarian' => 'Vegetarian',
+    'is_vegan' => 'Vegan',
+    'is_gluten_free' => 'Walang Gluten',
+    'calories' => 'Mga Kalorya',
+    'calories_placeholder' => 'hal., 250 cal',
+    'ingredients' => 'Mga Sangkap',
+    'ingredients_placeholder' => 'Ilista ang mga pangunahing sangkap na pinaghihiwalay ng mga kuwit',
+    'edit_this_menu_item' => 'I-edit ang item ng menu na ito',
+    'edit_this_menu_category' => 'I-edit ang kategorya ng menu na ito',
+];

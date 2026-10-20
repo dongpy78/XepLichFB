@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'หมวดหมู่เมนู',
+    'menu_category' => 'หมวดหมู่เมนู',
+    'create_menu_category' => 'สร้างหมวดหมู่เมนู',
+    'menu_items' => 'รายการเมนู',
+    'menu_item' => 'รายการเมนู',
+    'create_menu_item' => 'สร้างรายการเมนู',
+    'menu_items_count' => 'รายการ',
+    'category' => 'หมวดหมู่',
+    'price' => 'ราคา',
+    'sale_price' => 'ราคาลดพิเศษ',
+    'sale_price_help' => 'เว้นว่างไว้หากไม่มีส่วนลด',
+    'sale_price_must_be_less_than_price' => 'ราคาลดพิเศษต้องน้อยกว่าราคาปกติ',
+    'is_featured' => 'เมนูแนะนำ',
+    'is_vegetarian' => 'อาหารมังสวิรัติ',
+    'is_vegan' => 'อาหารเจ',
+    'is_gluten_free' => 'ปราศจากกลูเตน',
+    'calories' => 'แคลอรี่',
+    'calories_placeholder' => 'เช่น 250 แคลอรี่',
+    'ingredients' => 'ส่วนผสม',
+    'ingredients_placeholder' => 'ระบุส่วนผสมหลักโดยคั่นด้วยเครื่องหมายจุลภาค',
+    'edit_this_menu_item' => 'แก้ไขรายการเมนูนี้',
+    'edit_this_menu_category' => 'แก้ไขหมวดหมู่เมนูนี้',
+];

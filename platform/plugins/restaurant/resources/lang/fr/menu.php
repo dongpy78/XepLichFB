@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Catégories du menu',
+    'menu_category' => 'Catégorie du menu',
+    'create_menu_category' => 'Créer une catégorie de menu',
+    'menu_items' => 'Éléments du menu',
+    'menu_item' => 'Élément du menu',
+    'create_menu_item' => 'Créer un élément de menu',
+    'menu_items_count' => 'Éléments',
+    'category' => 'Catégorie',
+    'price' => 'Prix',
+    'sale_price' => 'Prix de vente',
+    'sale_price_help' => 'Laissez vide s\'il n\'y a pas de réduction',
+    'sale_price_must_be_less_than_price' => 'Le prix de vente doit être inférieur au prix normal',
+    'is_featured' => 'En vedette',
+    'is_vegetarian' => 'Végétarien',
+    'is_vegan' => 'Végétalien',
+    'is_gluten_free' => 'Sans gluten',
+    'calories' => 'Calories',
+    'calories_placeholder' => 'ex. 250 cal',
+    'ingredients' => 'Ingrédients',
+    'ingredients_placeholder' => 'Listez les ingrédients principaux séparés par des virgules',
+    'edit_this_menu_item' => 'Modifier cet élément du menu',
+    'edit_this_menu_category' => 'Modifier cette catégorie de menu',
+];

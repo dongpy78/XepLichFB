@@ -1,0 +1,697 @@
+/* Bảng xếp ca – theo hệ thiết kế Noa Roster Operations (navy + champagne gold). */
+:root {
+    --roster-navy: #0a2540;
+    --roster-gold: #e0a96d;
+    --roster-line: var(--bs-border-color, #e2e8f0);
+    --roster-cell-bg: var(--bs-body-bg, #fff);
+    --roster-muted-bg: var(--bs-tertiary-bg, #f8fafc);
+}
+
+/* Toolbar */
+.roster-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.roster-toolbar__group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+}
+
+.roster-week-nav { width: auto; flex-wrap: nowrap; }
+.roster-week-label { font-weight: 600; white-space: nowrap; }
+.roster-outlet-select { width: auto; min-width: 220px; }
+
+/* Chips */
+.roster-chip {
+    display: inline-block;
+    min-width: 2.25rem;
+    padding: .15rem .4rem;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.3;
+}
+
+.roster-chip--sky, .roster-slot--sky         { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.roster-chip--sand, .roster-slot--sand       { background: #fdf3e7; border-color: #f5d3ab; color: #92400e; }
+.roster-chip--amber, .roster-slot--amber     { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.roster-chip--navy, .roster-slot--navy       { background: #0a2540; border-color: #0a2540; color: #fff; }
+.roster-chip--violet, .roster-slot--violet   { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; }
+.roster-chip--emerald, .roster-slot--emerald { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+.roster-chip--slate, .roster-slot--slate     { background: #f1f5f9; border-color: #cbd5e1; color: #334155; }
+.roster-chip--off                            { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+.roster-chip--leave                          { background: #fde9cf; border-color: #f5bc7e; color: #7c4a12; }
+
+.roster-slot--amber { box-shadow: inset 3px 0 0 #f59e0b; }
+
+/* Dots */
+.roster-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+}
+
+.roster-dot--draft { background: #f59e0b; }
+.roster-dot--published { background: #059669; }
+
+/* Legend */
+.roster-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.25rem;
+    align-items: center;
+    font-size: 13px;
+}
+
+.roster-legend__item { display: inline-flex; gap: .4rem; align-items: center; }
+
+/* Table */
+/* Bảng hiện hết chiều cao, cuộn theo trang; tiêu đề ngày dính mép trên màn hình. */
+.roster-scroll { max-height: none; }
+
+@media (min-width: 1200px) {
+    .roster-scroll.table-responsive { overflow: visible; }
+}
+
+.roster-table {
+    width: 100%;
+    min-width: 1100px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+.roster-table th,
+.roster-table td {
+    border-bottom: 1px solid var(--roster-line);
+    border-right: 1px solid var(--roster-line);
+    padding: 6px;
+    vertical-align: top;
+}
+
+.roster-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--roster-navy);
+    color: #fff;
+    text-align: center;
+    border-bottom: 2px solid var(--roster-gold);
+    border-right-color: rgba(255, 255, 255, .08);
+    padding: 10px 6px;
+}
+
+.roster-table thead th.is-today { background: #14365c; box-shadow: inset 0 -3px 0 var(--roster-gold); }
+.roster-table thead th.is-weekend .roster-th-day { color: var(--roster-gold); }
+
+.roster-th-day { font-size: 15px; font-weight: 600; }
+.roster-th-date { font-family: var(--bs-font-monospace, monospace); font-size: 12px; opacity: .8; }
+.roster-th-sub { font-family: var(--bs-font-monospace, monospace); font-size: 10px; letter-spacing: .04em; opacity: .65; }
+.roster-th-caption { font-family: var(--bs-font-monospace, monospace); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--roster-gold); }
+
+.roster-table .roster-table__staff {
+    width: 260px;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--roster-cell-bg);
+    text-align: left;
+}
+
+.roster-table thead .roster-table__staff { z-index: 3; background: var(--roster-navy); }
+
+.roster-table tbody td.is-today { background: rgba(224, 169, 109, .06); }
+.roster-table tfoot td {
+    background: var(--roster-muted-bg);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.roster-table tfoot .roster-table__staff { background: var(--roster-muted-bg); }
+
+/* Staff column */
+.roster-staff { display: flex; gap: .6rem; align-items: flex-start; }
+
+.roster-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    background: #fdf3e7;
+    color: #92400e;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.roster-staff__info { min-width: 0; }
+.roster-staff__name { font-weight: 600; font-size: 13px; line-height: 1.3; }
+.roster-staff__meta { font-size: 12px; color: #b45309; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roster-staff__hours { font-size: 11px; display: flex; gap: .4rem; flex-wrap: wrap; margin-top: 2px; }
+
+.roster-badge {
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--roster-muted-bg);
+    border: 1px solid var(--roster-line);
+    vertical-align: middle;
+}
+
+.roster-hours { padding: 0 4px; border-radius: 3px; background: var(--roster-muted-bg); }
+.roster-hours--warning { background: #fef3c7; color: #92400e; }
+.roster-hours--danger { background: #fee2e2; color: #b91c1c; }
+
+/* Cells */
+.roster-cell { height: 78px; }
+
+.roster-slot {
+    height: 100%;
+    min-height: 64px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    padding: 5px 6px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow: hidden;
+}
+
+.roster-slot__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.roster-slot__split { font-size: 10px; opacity: .85; }
+.roster-slot__name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roster-slot__foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; }
+
+.roster-slot--empty {
+    border: 1px dashed transparent;
+    align-items: center;
+    justify-content: center;
+    color: transparent;
+}
+
+.roster-slot--off {
+    background: var(--roster-muted-bg);
+    border-color: var(--roster-line);
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+}
+
+.roster-slot--off strong { font-size: 14px; letter-spacing: .04em; }
+.roster-slot--off span { font-size: 11px; }
+
+.roster-slot--leave { background: #fde9cf; border-color: #f5bc7e; color: #7c4a12; }
+
+.roster-warn { color: #d97706; display: inline-flex; }
+.roster-slot--navy .roster-warn { color: #fbbf24; }
+.roster-cell.has-warning .roster-slot { outline: 2px solid #f59e0b; outline-offset: -2px; }
+
+.roster-table--editable .roster-cell { cursor: pointer; }
+.roster-table--editable .roster-cell:hover .roster-slot--empty { border-color: #cbd5e1; color: #94a3b8; }
+.roster-table--editable .roster-cell:hover .roster-slot:not(.roster-slot--empty) { filter: brightness(.97); outline: 2px solid var(--roster-navy); outline-offset: -2px; }
+
+/* Picker (modal) */
+.roster-picker { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.roster-picker--inline { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+.roster-picker__item {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    width: 100%;
+    padding: .5rem .6rem;
+    border: 1px solid var(--roster-line);
+    border-radius: 6px;
+    background: var(--roster-cell-bg);
+    color: inherit;
+    text-align: left;
+    font-size: 13px;
+}
+
+.roster-picker__item:hover { border-color: var(--roster-navy); background: rgba(224, 169, 109, .12); }
+.roster-picker__item.is-current { border-color: var(--roster-navy); box-shadow: inset 0 0 0 1px var(--roster-navy); }
+.roster-picker__name { font-weight: 600; }
+.roster-picker__time { margin-left: auto; font-size: 12px; color: var(--bs-secondary-color, #64748b); }
+
+#roster-grid.is-loading { opacity: .5; pointer-events: none; transition: opacity .15s; }
+
+/* Dark mode */
+[data-bs-theme="dark"] .roster-chip--sky, [data-bs-theme="dark"] .roster-slot--sky { background: rgba(59, 130, 246, .16); border-color: rgba(59, 130, 246, .4); color: #93c5fd; }
+[data-bs-theme="dark"] .roster-chip--sand, [data-bs-theme="dark"] .roster-slot--sand { background: rgba(224, 169, 109, .16); border-color: rgba(224, 169, 109, .4); color: #f5bc7e; }
+[data-bs-theme="dark"] .roster-chip--amber, [data-bs-theme="dark"] .roster-slot--amber { background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .4); color: #fcd34d; }
+[data-bs-theme="dark"] .roster-chip--violet, [data-bs-theme="dark"] .roster-slot--violet { background: rgba(139, 92, 246, .16); border-color: rgba(139, 92, 246, .4); color: #c4b5fd; }
+[data-bs-theme="dark"] .roster-chip--emerald, [data-bs-theme="dark"] .roster-slot--emerald { background: rgba(5, 150, 105, .16); border-color: rgba(5, 150, 105, .4); color: #6ee7b7; }
+[data-bs-theme="dark"] .roster-chip--slate, [data-bs-theme="dark"] .roster-slot--slate,
+[data-bs-theme="dark"] .roster-chip--off { background: rgba(148, 163, 184, .12); border-color: rgba(148, 163, 184, .3); color: #cbd5e1; }
+[data-bs-theme="dark"] .roster-chip--leave, [data-bs-theme="dark"] .roster-slot--leave { background: rgba(245, 188, 126, .14); border-color: rgba(245, 188, 126, .35); color: #f5bc7e; }
+[data-bs-theme="dark"] .roster-chip--navy, [data-bs-theme="dark"] .roster-slot--navy { background: #1e3a5f; border-color: #2c5282; }
+[data-bs-theme="dark"] .roster-avatar { background: rgba(224, 169, 109, .16); color: #f5bc7e; }
+[data-bs-theme="dark"] .roster-staff__meta { color: #f5bc7e; }
+[data-bs-theme="dark"] .roster-hours--warning { background: rgba(245, 158, 11, .18); color: #fcd34d; }
+[data-bs-theme="dark"] .roster-hours--danger { background: rgba(239, 68, 68, .18); color: #fca5a5; }
+
+/* Ký hiệu phụ (L, G, V, RS, RS1, BQ, K) và tăng ca */
+.roster-slot__tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 1px; }
+
+.roster-tag {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 15px;
+    white-space: nowrap;
+    background: rgba(15, 23, 42, .08);
+    color: inherit;
+}
+
+.roster-tag--l   { background: #e0f2fe; color: #0369a1; }
+.roster-tag--g,
+.roster-tag--v   { background: #fee2e2; color: #b91c1c; }
+.roster-tag--rs,
+.roster-tag--rs1 { background: #ede9fe; color: #6d28d9; }
+.roster-tag--bq  { background: #fef3c7; color: #92400e; }
+.roster-tag--k   { background: #e2e8f0; color: #334155; }
+
+.roster-slot--navy .roster-tag { background: rgba(255, 255, 255, .16); color: #fff; }
+
+.roster-ot {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.roster-slot--navy .roster-ot { background: #fbbf24; color: #0a2540; }
+
+.roster-tag-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.roster-tag-toggle {
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+    cursor: pointer;
+}
+
+.roster-tag-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+
+.roster-tag-toggle span {
+    padding: .25rem .55rem;
+    border: 1px solid var(--roster-line);
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+.roster-tag-toggle input:checked + span { background: var(--roster-navy); border-color: var(--roster-navy); color: #fff; }
+.roster-tag-toggle input:focus-visible + span { outline: 2px solid var(--roster-gold); }
+
+.roster-ot-input { max-width: 260px; }
+
+[data-bs-theme="dark"] .roster-tag--l { background: rgba(14, 165, 233, .18); color: #7dd3fc; }
+[data-bs-theme="dark"] .roster-tag--g, [data-bs-theme="dark"] .roster-tag--v, [data-bs-theme="dark"] .roster-ot { background: rgba(239, 68, 68, .2); color: #fca5a5; }
+[data-bs-theme="dark"] .roster-tag--rs, [data-bs-theme="dark"] .roster-tag--rs1 { background: rgba(139, 92, 246, .2); color: #c4b5fd; }
+[data-bs-theme="dark"] .roster-tag--bq { background: rgba(245, 158, 11, .2); color: #fcd34d; }
+[data-bs-theme="dark"] .roster-tag--k { background: rgba(148, 163, 184, .18); color: #cbd5e1; }
+
+
+/* ===== Bảng xếp ca gọn – giao diện sáng, trung tính ===== */
+.roster-table--compact {
+    --r-accent: #2563eb;
+    --r-text: #0f172a;
+    --r-muted: #64748b;
+    --r-faint: #94a3b8;
+    --r-line: #e5e9f0;
+    --r-head-bg: #f8fafc;
+    --r-section-bg: #f1f5f9;
+    --r-row-hover: #f8fafc;
+    --r-weekend: #fbfcfd;
+    --r-today: rgba(37, 99, 235, .045);
+
+    --c-sky-bg: #e0f2fe;     --c-sky-fg: #0369a1;
+    --c-sand-bg: #ffedd5;    --c-sand-fg: #c2410c;
+    --c-amber-bg: #fef3c7;   --c-amber-fg: #b45309;
+    --c-navy-bg: #334155;    --c-navy-fg: #ffffff;
+    --c-violet-bg: #ede9fe;  --c-violet-fg: #6d28d9;
+    --c-emerald-bg: #dcfce7; --c-emerald-fg: #15803d;
+    --c-slate-bg: #f1f5f9;   --c-slate-fg: #475569;
+    --c-leave-bg: #fce7f3;   --c-leave-fg: #be185d;
+    --c-off-bg: #fee2e2;     --c-off-fg: #dc2626;
+
+    min-width: 900px;
+    border-spacing: 0;
+}
+
+/* Lưới */
+.roster-table--compact th,
+.roster-table--compact td {
+    padding: 3px 4px;
+    vertical-align: middle;
+    border-right: 0;
+    border-bottom: 1px solid var(--r-line);
+}
+
+/* Tiêu đề cột */
+.roster-table--compact thead th,
+.roster-table--compact thead .roster-table__staff {
+    padding: 10px 4px 9px;
+    background: var(--r-head-bg);
+    color: var(--r-text);
+    border-bottom: 1px solid var(--r-line);
+    box-shadow: none;
+}
+
+.roster-table--compact .roster-th-caption {
+    color: var(--r-muted);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+}
+
+.roster-table--compact .roster-th-day { font-size: 13px; font-weight: 600; color: var(--r-text); }
+.roster-table--compact .roster-th-date { font-size: 12px; font-weight: 400; color: var(--r-muted); opacity: 1; }
+.roster-table--compact .roster-th-sub {
+    margin-top: 2px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0;
+    color: var(--r-faint);
+    opacity: 1;
+}
+
+.roster-table--compact thead th.is-weekend .roster-th-day { color: #e11d48; }
+
+.roster-table--compact thead th.is-today { background: #eff6ff; box-shadow: inset 0 -2px 0 var(--r-accent); }
+.roster-table--compact thead th.is-today .roster-th-day,
+.roster-table--compact thead th.is-today .roster-th-date { color: var(--r-accent); }
+
+/* Cột nhân viên */
+.roster-table--compact .roster-table__staff {
+    width: 240px;
+    padding: 6px 12px;
+    border-right: 1px solid var(--r-line) !important;
+}
+
+.roster-table--compact .roster-staff__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--r-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.roster-staff__birthday { margin-left: 2px; font-weight: 400; font-size: 12px; color: var(--r-faint); }
+/* Sinh nhật trong tháng, chưa qua: nổi bật */
+.roster-staff__birthday.is-upcoming { padding: 0 5px; border-radius: 999px; background: #fee2e2; color: #dc2626; font-weight: 700; }
+[data-bs-theme="dark"] .roster-staff__birthday.is-upcoming { background: rgba(248, 113, 113, .18); color: #fca5a5; }
+.roster-table--compact .roster-staff__meta { font-size: 11px; line-height: 1.3; color: var(--r-muted); }
+
+.roster-row-flag { display: inline-flex; vertical-align: -2px; }
+.roster-row-flag--warning { color: #f59e0b; }
+.roster-row-flag--danger { color: #ef4444; }
+
+/* Hàng */
+.roster-table--compact tbody td.is-weekend { background-color: var(--r-weekend); }
+.roster-table--compact tbody td.is-today { background-color: var(--r-today); }
+.roster-table--compact tbody tr:not(.roster-section):hover td { background-color: var(--r-row-hover); }
+
+/* Dòng tiêu đề outlet */
+.roster-table--compact .roster-section td,
+.roster-table--compact .roster-section .roster-table__staff {
+    padding: 8px 12px !important;
+    background: var(--r-section-bg);
+    border-bottom: 1px solid var(--r-line);
+    border-right: 0 !important;
+    box-shadow: none;
+}
+
+.roster-table--compact .roster-section .roster-table__staff { box-shadow: inset 3px 0 0 var(--r-accent); }
+
+.roster-section__name {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--r-text);
+}
+
+.roster-section__count {
+    margin-left: .5rem;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #fff;
+    font-size: 11px;
+    color: var(--r-muted);
+}
+
+/* Ô ca */
+.roster-table--compact .roster-cell { height: auto; }
+
+.roster-mini {
+    position: relative;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 0;
+    font-family: inherit;
+    font-size: 12.5px;
+    white-space: nowrap;
+    transition: transform .08s ease, box-shadow .12s ease;
+}
+
+.roster-mini__code { font-weight: 700; }
+.roster-mini__tags { font-size: 12px; font-weight: 700; }
+.roster-mini__ot {
+    margin-left: 3px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 16px;
+}
+
+.roster-mini--sky     { background: var(--c-sky-bg);     color: var(--c-sky-fg); }
+.roster-mini--sand    { background: var(--c-sand-bg);    color: var(--c-sand-fg); }
+.roster-mini--amber   { background: var(--c-amber-bg);   color: var(--c-amber-fg); }
+.roster-mini--navy    { background: var(--c-navy-bg);    color: var(--c-navy-fg); }
+.roster-mini--violet  { background: var(--c-violet-bg);  color: var(--c-violet-fg); }
+.roster-mini--emerald { background: var(--c-emerald-bg); color: var(--c-emerald-fg); }
+.roster-mini--slate   { background: var(--c-slate-bg);   color: var(--c-slate-fg); }
+.roster-mini--leave   { background: var(--c-leave-bg);   color: var(--c-leave-fg); }
+
+.roster-mini--navy .roster-mini__tags { opacity: 1; }
+.roster-mini--navy .roster-mini__ot { background: rgba(255, 255, 255, .2); color: #fff; }
+
+.roster-mini--off { background: var(--c-off-bg); color: var(--c-off-fg); }
+.roster-mini--off .roster-mini__code { font-weight: 700; font-size: 12px; letter-spacing: .04em; }
+
+.roster-mini--empty { color: transparent; border: 1px dashed transparent; }
+
+/* Nháp: chấm nhỏ */
+.roster-mini.is-draft::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: .45;
+}
+
+.roster-mini--off.is-draft::after { display: none; }
+
+/* Cảnh báo xung đột */
+.roster-table--compact .roster-cell.has-warning .roster-mini { box-shadow: 0 0 0 2px #fbbf24; }
+
+.roster-table--compact .roster-cell.has-warning .roster-mini::before {
+    content: "!";
+    position: absolute;
+    top: -6px;
+    left: -5px;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: #f59e0b;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 14px;
+    text-align: center;
+    z-index: 1;
+}
+
+/* Tương tác */
+.roster-table--editable.roster-table--compact .roster-cell:hover .roster-mini--empty { border-color: #cbd5e1; color: var(--r-faint); background: #fff; }
+.roster-table--editable.roster-table--compact .roster-cell:hover .roster-mini:not(.roster-mini--empty) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -4px rgba(15, 23, 42, .25), 0 0 0 2px var(--r-accent);
+}
+
+/* Chú giải & hộp chọn ca dùng cùng bảng màu */
+.roster-chip { border-width: 0; border-radius: 5px; padding: .2rem .45rem; }
+.roster-chip--sky     { background: #e0f2fe; color: #0369a1; }
+.roster-chip--sand    { background: #ffedd5; color: #c2410c; }
+.roster-chip--amber   { background: #fef3c7; color: #b45309; }
+.roster-chip--navy    { background: #334155; color: #fff; }
+.roster-chip--violet  { background: #ede9fe; color: #6d28d9; }
+.roster-chip--emerald { background: #dcfce7; color: #15803d; }
+.roster-chip--slate   { background: #f1f5f9; color: #475569; }
+.roster-chip--off     { background: #fee2e2; color: #dc2626; }
+.roster-chip--leave   { background: #fce7f3; color: #be185d; }
+
+/* Chế độ tối */
+[data-bs-theme="dark"] .roster-table--compact {
+    --r-accent: #60a5fa;
+    --r-text: #e2e8f0;
+    --r-muted: #94a3b8;
+    --r-faint: #64748b;
+    --r-line: rgba(148, 163, 184, .16);
+    --r-head-bg: rgba(148, 163, 184, .06);
+    --r-section-bg: rgba(148, 163, 184, .08);
+    --r-row-hover: rgba(148, 163, 184, .05);
+    --r-weekend: rgba(148, 163, 184, .025);
+    --r-today: rgba(96, 165, 250, .06);
+
+    --c-sky-bg: rgba(56, 189, 248, .16);    --c-sky-fg: #7dd3fc;
+    --c-sand-bg: rgba(251, 146, 60, .16);   --c-sand-fg: #fdba74;
+    --c-amber-bg: rgba(251, 191, 36, .14);  --c-amber-fg: #fcd34d;
+    --c-navy-bg: #475569;                   --c-navy-fg: #f8fafc;
+    --c-violet-bg: rgba(167, 139, 250, .16); --c-violet-fg: #c4b5fd;
+    --c-emerald-bg: rgba(74, 222, 128, .14); --c-emerald-fg: #86efac;
+    --c-slate-bg: rgba(148, 163, 184, .14); --c-slate-fg: #cbd5e1;
+    --c-leave-bg: rgba(244, 114, 182, .14); --c-leave-fg: #f9a8d4;
+    --c-off-bg: rgba(248, 113, 113, .16); --c-off-fg: #fca5a5;
+}
+
+[data-bs-theme="dark"] .roster-table--compact thead th.is-today { background: rgba(96, 165, 250, .1); }
+[data-bs-theme="dark"] .roster-section__count { background: rgba(148, 163, 184, .12); }
+[data-bs-theme="dark"] .roster-mini__ot { background: rgba(248, 113, 113, .2); color: #fca5a5; }
+[data-bs-theme="dark"] .roster-table--editable.roster-table--compact .roster-cell:hover .roster-mini--empty { background: transparent; }
+
+/* Ô đã khóa: thuật toán giữ nguyên */
+.roster-mini.is-locked { box-shadow: inset 0 0 0 1.5px currentColor; }
+.roster-mini.is-locked::after {
+    content: "";
+    width: 9px;
+    height: 9px;
+    top: 2px;
+    right: 2px;
+    border-radius: 0;
+    opacity: .7;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17 10V7a5 5 0 0 0-10 0v3H5v12h14V10h-2zM9 7a3 3 0 0 1 6 0v3H9V7z'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17 10V7a5 5 0 0 0-10 0v3H5v12h14V10h-2zM9 7a3 3 0 0 1 6 0v3H9V7z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.roster-mini--off.is-locked::after { display: block; }
+
+/* Nhãn ca cứng cạnh tên nhân viên */
+.roster-fixed-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    vertical-align: 1px;
+}
+[data-bs-theme="dark"] .roster-fixed-badge { background: rgba(251, 191, 36, .16); color: #fcd34d; }
+
+/* Trạng thái duyệt tăng ca */
+.roster-mini__ot--pending { background: #ffedd5; color: #c2410c; }
+.roster-mini__ot--approved { background: #dcfce7; color: #15803d; }
+.roster-mini__ot--rejected { background: #f1f5f9; color: #94a3b8; text-decoration: line-through; }
+.roster-ot-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+
+/* Dòng thống kê cuối mỗi outlet: số người theo ca (nam/nữ, quản lý, Hostess), OFF */
+.roster-table--compact .roster-stat-row td {
+    padding: 4px 6px !important;
+    background: var(--r-head-bg);
+    border-bottom: 1px solid var(--r-line);
+    font-size: 11px;
+    line-height: 1.3;
+    text-align: center;
+    color: var(--r-muted);
+}
+.roster-table--compact .roster-stat-row--first td { border-top: 2px solid var(--r-line); }
+.roster-table--compact .roster-stat-row--off td { border-bottom: 2px solid var(--r-line); }
+.roster-table--compact .roster-stat-row .roster-table__staff { text-align: left; }
+.roster-table--compact tbody tr.roster-stat-row:hover td { background: var(--r-head-bg); }
+.roster-stat-row__label { font-weight: 700; color: var(--r-text); margin-right: .35rem; }
+.roster-stat-row__hint { color: var(--r-faint); }
+.roster-stat__total { display: inline-block; font-size: 13px; font-weight: 700; color: var(--r-text); }
+.roster-stat__split { margin-left: 3px; }
+.roster-stat__roles,
+.roster-stat__lobby { display: block; }
+.roster-stat__lobby { color: var(--r-accent); font-weight: 600; }
+.roster-stat__none { color: var(--r-faint); }
+.roster-table--compact .roster-stat-row td.is-problem { background: var(--c-off-bg); color: var(--c-off-fg); }
+.roster-table--compact .roster-stat-row td.is-problem .roster-stat__total { color: var(--c-off-fg); }
+
+[data-bs-theme="dark"] .roster-table--compact .roster-stat-row td,
+[data-bs-theme="dark"] .roster-table--compact tbody tr.roster-stat-row:hover td { background: rgba(148, 163, 184, .06); }
+
+/* Xóa lịch theo hàng / cột để xếp lại */
+.roster-clear-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--r-faint, #94a3b8);
+    cursor: pointer;
+}
+.roster-clear-btn svg { width: 14px; height: 14px; }
+.roster-clear-btn:hover { border-color: #fca5a5; background: #fef2f2; color: #dc2626; }
+.roster-clear-btn--row { padding: 0 3px; margin-left: 2px; visibility: hidden; vertical-align: -2px; }
+.roster-table--compact tbody tr:hover .roster-clear-btn--row { visibility: visible; }
+.roster-table--compact .roster-section td.roster-section__day { text-align: center; padding: 6px 4px !important; }
+.roster-section__day .roster-clear-btn { opacity: .55; }
+.roster-section__day .roster-clear-btn:hover { opacity: 1; }
+.roster-section__stats { margin-top: 4px; }
+.roster-section__stats .roster-section__count:first-child { margin-left: 0; }
+[data-bs-theme="dark"] .roster-clear-btn:hover { background: rgba(248, 113, 113, .14); border-color: rgba(248, 113, 113, .4); color: #fca5a5; }
+.roster-section__count { white-space: nowrap; display: inline-block; margin-bottom: 2px; }

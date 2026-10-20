@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Meniu kategorijos',
+    'menu_category' => 'Meniu kategorija',
+    'create_menu_category' => 'Sukurti meniu kategoriją',
+    'menu_items' => 'Meniu elementai',
+    'menu_item' => 'Meniu elementas',
+    'create_menu_item' => 'Sukurti meniu elementą',
+    'menu_items_count' => 'Elementai',
+    'category' => 'Kategorija',
+    'price' => 'Kaina',
+    'sale_price' => 'Akcijinė kaina',
+    'sale_price_help' => 'Palikite tuščią, jei nėra nuolaidos',
+    'sale_price_must_be_less_than_price' => 'Akcijinė kaina turi būti mažesnė už įprastą kainą',
+    'is_featured' => 'Rekomenduojama',
+    'is_vegetarian' => 'Vegetariškas',
+    'is_vegan' => 'Veganiška',
+    'is_gluten_free' => 'Be glitimo',
+    'calories' => 'Kalorijos',
+    'calories_placeholder' => 'pvz., 250 kal',
+    'ingredients' => 'Ingredientai',
+    'ingredients_placeholder' => 'Išvardykite pagrindinius ingredientus, atskirtus kableliais',
+    'edit_this_menu_item' => 'Redaguoti šį meniu elementą',
+    'edit_this_menu_category' => 'Redaguoti šią meniu kategoriją',
+];

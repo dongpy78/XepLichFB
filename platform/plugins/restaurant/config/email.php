@@ -1,0 +1,67 @@
+<?php
+
+return [
+    'name' => 'plugins/restaurant::restaurant.settings.email.templates.title',
+    'description' => 'plugins/restaurant::restaurant.settings.email.templates.description',
+    'templates' => [
+        'admin_new_reservation' => [
+            'title' => 'plugins/restaurant::email.new-reservation.title',
+            'description' => 'plugins/restaurant::email.new-reservation.description',
+            'subject' => 'plugins/restaurant::email.new-reservation.subject',
+            'can_off' => true,
+            'variables' => [
+                'reservation_name' => 'Customer name',
+                'reservation_email' => 'Customer email address',
+                'reservation_phone' => 'Customer phone number',
+                'reservation_date' => 'Reservation date',
+                'reservation_time' => 'Reservation time',
+                'number_of_guests' => 'Number of guests',
+                'special_requests' => 'Special requests or notes',
+                'admin_url' => 'Admin panel URL',
+            ],
+        ],
+        'reservation_confirmation' => [
+            'title' => 'plugins/restaurant::email.reservation-confirmation.title',
+            'description' => 'plugins/restaurant::email.reservation-confirmation.description',
+            'subject' => 'plugins/restaurant::email.reservation-confirmation.subject',
+            'can_off' => true,
+            'variables' => [
+                'reservation_name' => 'Customer name',
+                'reservation_email' => 'Customer email address',
+                'reservation_phone' => 'Customer phone number',
+                'reservation_date' => 'Reservation date',
+                'reservation_time' => 'Reservation time',
+                'number_of_guests' => 'Number of guests',
+                'special_requests' => 'Special requests or notes',
+                'restaurant_phone' => 'Restaurant phone number',
+                'restaurant_email' => 'Restaurant email address',
+                'site_url' => 'Website URL',
+            ],
+        ],
+        'reservation_status_update' => [
+            'title' => 'plugins/restaurant::email.reservation-status-update.title',
+            'description' => 'plugins/restaurant::email.reservation-status-update.description',
+            'subject' => 'plugins/restaurant::email.reservation-status-update.subject',
+            'can_off' => true,
+            'variables' => [
+                'reservation_name' => 'Customer name',
+                'reservation_email' => 'Customer email address',
+                'reservation_date' => 'Reservation date',
+                'reservation_time' => 'Reservation time',
+                'number_of_guests' => 'Number of guests',
+                'reservation_status' => 'Current reservation status',
+                'admin_notes' => 'Admin notes or comments',
+                'restaurant_phone' => 'Restaurant phone number',
+                'restaurant_email' => 'Restaurant email address',
+                'site_url' => 'Website URL',
+            ],
+        ],
+    ],
+    'variables' => [
+        'restaurant_name' => 'Restaurant name',
+        'restaurant_address' => 'Restaurant address',
+        'restaurant_phone' => 'Restaurant phone number',
+        'restaurant_email' => 'Restaurant email address',
+        'admin_url' => 'Admin panel URL',
+    ],
+];

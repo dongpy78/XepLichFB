@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Κατηγορίες Μενού',
+    'menu_category' => 'Κατηγορία Μενού',
+    'create_menu_category' => 'Δημιουργία Κατηγορίας Μενού',
+    'menu_items' => 'Στοιχεία Μενού',
+    'menu_item' => 'Στοιχείο Μενού',
+    'create_menu_item' => 'Δημιουργία Στοιχείου Μενού',
+    'menu_items_count' => 'Στοιχεία',
+    'category' => 'Κατηγορία',
+    'price' => 'Τιμή',
+    'sale_price' => 'Τιμή Προσφοράς',
+    'sale_price_help' => 'Αφήστε κενό αν δεν υπάρχει έκπτωση',
+    'sale_price_must_be_less_than_price' => 'Η τιμή προσφοράς πρέπει να είναι χαμηλότερη από την κανονική τιμή',
+    'is_featured' => 'Προτεινόμενο',
+    'is_vegetarian' => 'Χορτοφαγικό',
+    'is_vegan' => 'Βίγκαν',
+    'is_gluten_free' => 'Χωρίς Γλουτένη',
+    'calories' => 'Θερμίδες',
+    'calories_placeholder' => 'π.χ. 250 θερμ.',
+    'ingredients' => 'Συστατικά',
+    'ingredients_placeholder' => 'Αναφέρετε τα κύρια συστατικά διαχωρισμένα με κόμματα',
+    'edit_this_menu_item' => 'Επεξεργασία αυτού του στοιχείου μενού',
+    'edit_this_menu_category' => 'Επεξεργασία αυτής της κατηγορίας μενού',
+];

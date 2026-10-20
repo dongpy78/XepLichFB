@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Danh mục thực đơn',
+    'menu_category' => 'Danh mục thực đơn',
+    'create_menu_category' => 'Tạo danh mục thực đơn',
+    'menu_items' => 'Món ăn',
+    'menu_item' => 'Món ăn',
+    'create_menu_item' => 'Tạo món ăn',
+    'menu_items_count' => 'Món',
+    'category' => 'Danh mục',
+    'price' => 'Giá',
+    'sale_price' => 'Giá khuyến mãi',
+    'sale_price_help' => 'Để trống nếu không có giảm giá',
+    'sale_price_must_be_less_than_price' => 'Giá khuyến mãi phải nhỏ hơn giá gốc',
+    'is_featured' => 'Nổi bật',
+    'is_vegetarian' => 'Món chay',
+    'is_vegan' => 'Thuần chay',
+    'is_gluten_free' => 'Không gluten',
+    'calories' => 'Calo',
+    'calories_placeholder' => 'Ví dụ: 250 cal',
+    'ingredients' => 'Nguyên liệu',
+    'ingredients_placeholder' => 'Liệt kê nguyên liệu chính, phân cách bằng dấu phẩy',
+    'edit_this_menu_item' => 'Chỉnh sửa món ăn này',
+    'edit_this_menu_category' => 'Chỉnh sửa danh mục thực đơn này',
+];

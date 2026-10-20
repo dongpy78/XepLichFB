@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'メニューカテゴリー',
+    'menu_category' => 'メニューカテゴリー',
+    'create_menu_category' => 'メニューカテゴリーを作成',
+    'menu_items' => 'メニュー項目',
+    'menu_item' => 'メニュー項目',
+    'create_menu_item' => 'メニュー項目を作成',
+    'menu_items_count' => '項目',
+    'category' => 'カテゴリー',
+    'price' => '価格',
+    'sale_price' => 'セール価格',
+    'sale_price_help' => '割引がない場合は空のままにしてください',
+    'sale_price_must_be_less_than_price' => 'セール価格は通常価格より低くする必要があります',
+    'is_featured' => 'おすすめ',
+    'is_vegetarian' => 'ベジタリアン',
+    'is_vegan' => 'ビーガン',
+    'is_gluten_free' => 'グルテンフリー',
+    'calories' => 'カロリー',
+    'calories_placeholder' => '例: 250 kcal',
+    'ingredients' => '材料',
+    'ingredients_placeholder' => '主要な材料をカンマで区切って列挙してください',
+    'edit_this_menu_item' => 'このメニュー項目を編集',
+    'edit_this_menu_category' => 'このメニューカテゴリーを編集',
+];

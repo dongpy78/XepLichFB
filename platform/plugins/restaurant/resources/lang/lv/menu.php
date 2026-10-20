@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Ēdienkartes kategorijas',
+    'menu_category' => 'Ēdienkartes kategorija',
+    'create_menu_category' => 'Izveidot ēdienkartes kategoriju',
+    'menu_items' => 'Ēdienkartes vienumi',
+    'menu_item' => 'Ēdienkartes vienums',
+    'create_menu_item' => 'Izveidot ēdienkartes vienumu',
+    'menu_items_count' => 'Vienumi',
+    'category' => 'Kategorija',
+    'price' => 'Cena',
+    'sale_price' => 'Akcijas cena',
+    'sale_price_help' => 'Atstājiet tukšu, ja nav atlaides',
+    'sale_price_must_be_less_than_price' => 'Akcijas cenai jābūt mazākai par parastās cenas',
+    'is_featured' => 'Ieteicams',
+    'is_vegetarian' => 'Veģetārs',
+    'is_vegan' => 'Vegāns',
+    'is_gluten_free' => 'Bez glutēna',
+    'calories' => 'Kalorijas',
+    'calories_placeholder' => 'piemēram, 250 kcal',
+    'ingredients' => 'Sastāvdaļas',
+    'ingredients_placeholder' => 'Uzskaitiet galvenās sastāvdaļas, atdalot ar komatiem',
+    'edit_this_menu_item' => 'Rediģēt šo ēdienkartes vienumu',
+    'edit_this_menu_category' => 'Rediģēt šo ēdienkartes kategoriju',
+];

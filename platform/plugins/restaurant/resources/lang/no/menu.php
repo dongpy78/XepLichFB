@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menykategorier',
+    'menu_category' => 'Menykategori',
+    'create_menu_category' => 'Opprett Menykategori',
+    'menu_items' => 'Menyelementer',
+    'menu_item' => 'Menyelement',
+    'create_menu_item' => 'Opprett Menyelement',
+    'menu_items_count' => 'Elementer',
+    'category' => 'Kategori',
+    'price' => 'Pris',
+    'sale_price' => 'Salgspris',
+    'sale_price_help' => 'La stå tom hvis det ikke er noen rabatt',
+    'sale_price_must_be_less_than_price' => 'Salgspris må være lavere enn ordinær pris',
+    'is_featured' => 'Fremhevet',
+    'is_vegetarian' => 'Vegetarisk',
+    'is_vegan' => 'Vegansk',
+    'is_gluten_free' => 'Glutenfri',
+    'calories' => 'Kalorier',
+    'calories_placeholder' => 'f.eks. 250 cal',
+    'ingredients' => 'Ingredienser',
+    'ingredients_placeholder' => 'List opp hovedingredienser adskilt med komma',
+    'edit_this_menu_item' => 'Rediger dette menyelementet',
+    'edit_this_menu_category' => 'Rediger denne menykategorien',
+];

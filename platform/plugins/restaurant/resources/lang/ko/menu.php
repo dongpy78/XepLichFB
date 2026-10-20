@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => '메뉴 카테고리',
+    'menu_category' => '메뉴 카테고리',
+    'create_menu_category' => '메뉴 카테고리 만들기',
+    'menu_items' => '메뉴 항목',
+    'menu_item' => '메뉴 항목',
+    'create_menu_item' => '메뉴 항목 만들기',
+    'menu_items_count' => '항목',
+    'category' => '카테고리',
+    'price' => '가격',
+    'sale_price' => '할인 가격',
+    'sale_price_help' => '할인이 없으면 비워두세요',
+    'sale_price_must_be_less_than_price' => '할인 가격은 정상 가격보다 낮아야 합니다',
+    'is_featured' => '추천',
+    'is_vegetarian' => '채식주의',
+    'is_vegan' => '비건',
+    'is_gluten_free' => '글루텐 프리',
+    'calories' => '칼로리',
+    'calories_placeholder' => '예: 250 cal',
+    'ingredients' => '재료',
+    'ingredients_placeholder' => '주요 재료를 쉼표로 구분하여 나열하세요',
+    'edit_this_menu_item' => '이 메뉴 항목 편집',
+    'edit_this_menu_category' => '이 메뉴 카테고리 편집',
+];

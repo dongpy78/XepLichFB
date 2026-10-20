@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Menucategorieën',
+    'menu_category' => 'Menucategorie',
+    'create_menu_category' => 'Menucategorie Aanmaken',
+    'menu_items' => 'Menu-items',
+    'menu_item' => 'Menu-item',
+    'create_menu_item' => 'Menu-item Aanmaken',
+    'menu_items_count' => 'Items',
+    'category' => 'Categorie',
+    'price' => 'Prijs',
+    'sale_price' => 'Actieprijs',
+    'sale_price_help' => 'Laat leeg als er geen korting is',
+    'sale_price_must_be_less_than_price' => 'Actieprijs moet lager zijn dan de normale prijs',
+    'is_featured' => 'Aanbevolen',
+    'is_vegetarian' => 'Vegetarisch',
+    'is_vegan' => 'Veganistisch',
+    'is_gluten_free' => 'Glutenvrij',
+    'calories' => 'Calorieën',
+    'calories_placeholder' => 'bijv. 250 cal',
+    'ingredients' => 'Ingrediënten',
+    'ingredients_placeholder' => 'Lijst de belangrijkste ingrediënten gescheiden door komma\'s',
+    'edit_this_menu_item' => 'Dit menu-item bewerken',
+    'edit_this_menu_category' => 'Deze menucategorie bewerken',
+];

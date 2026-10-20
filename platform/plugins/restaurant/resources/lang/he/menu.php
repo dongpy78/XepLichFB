@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'קטגוריות תפריט',
+    'menu_category' => 'קטגוריית תפריט',
+    'create_menu_category' => 'צור קטגוריית תפריט',
+    'menu_items' => 'פריטי תפריט',
+    'menu_item' => 'פריט תפריט',
+    'create_menu_item' => 'צור פריט תפריט',
+    'menu_items_count' => 'פריטים',
+    'category' => 'קטגוריה',
+    'price' => 'מחיר',
+    'sale_price' => 'מחיר מבצע',
+    'sale_price_help' => 'השאר ריק אם אין הנחה',
+    'sale_price_must_be_less_than_price' => 'מחיר המבצע חייב להיות נמוך ממחיר הרגיל',
+    'is_featured' => 'מומלץ',
+    'is_vegetarian' => 'צמחוני',
+    'is_vegan' => 'טבעוני',
+    'is_gluten_free' => 'ללא גלוטן',
+    'calories' => 'קלוריות',
+    'calories_placeholder' => 'לדוגמה: 250 קלוריות',
+    'ingredients' => 'מרכיבים',
+    'ingredients_placeholder' => 'רשום מרכיבים עיקריים מופרדים בפסיקים',
+    'edit_this_menu_item' => 'ערוך את פריט התפריט הזה',
+    'edit_this_menu_category' => 'ערוך את קטגוריית התפריט הזו',
+];

@@ -1,0 +1,26 @@
+<?php
+
+return [
+    'menu_categories' => 'Категории менюта',
+    'menu_category' => 'Категория менюта',
+    'create_menu_category' => 'Създаване на категория менюта',
+    'menu_items' => 'Позиции от менюто',
+    'menu_item' => 'Позиция от менюто',
+    'create_menu_item' => 'Създаване на позиция от менюто',
+    'menu_items_count' => 'Позиции',
+    'category' => 'Категория',
+    'price' => 'Цена',
+    'sale_price' => 'Промоционална цена',
+    'sale_price_help' => 'Оставете празно, ако няма отстъпка',
+    'sale_price_must_be_less_than_price' => 'Промоционалната цена трябва да е по-ниска от обичайната цена',
+    'is_featured' => 'Препоръчано',
+    'is_vegetarian' => 'Вегетарианско',
+    'is_vegan' => 'Веганско',
+    'is_gluten_free' => 'Без глутен',
+    'calories' => 'Калории',
+    'calories_placeholder' => 'напр. 250 кал',
+    'ingredients' => 'Съставки',
+    'ingredients_placeholder' => 'Изброете основните съставки, разделени със запетая',
+    'edit_this_menu_item' => 'Редактиране на тази позиция от менюто',
+    'edit_this_menu_category' => 'Редактиране на тази категория менюта',
+];

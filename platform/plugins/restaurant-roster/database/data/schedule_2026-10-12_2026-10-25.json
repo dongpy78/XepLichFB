@@ -1,0 +1,1112 @@
+{
+    "source": "Lịch quản lý xếp tay 12\/10–25\/10\/2026 (chép từ ảnh, 15\/10\/2026)",
+    "start": "2026-10-12",
+    "guests": [
+        1233,
+        927,
+        1010,
+        985,
+        944,
+        1099,
+        849,
+        1106,
+        844,
+        911,
+        871,
+        954,
+        1034,
+        804
+    ],
+    "events": {
+        "2026-10-14": "Đợt 1",
+        "2026-10-15": "Đợt 1",
+        "2026-10-16": "Đợt 1",
+        "2026-10-18": "Khám SK",
+        "2026-10-19": "Khám SK",
+        "2026-10-21": "Đợt 2",
+        "2026-10-22": "Đợt 2",
+        "2026-10-23": "Đợt 2"
+    },
+    "employees": [
+        {
+            "name": "Huỳnh Đức Phiên",
+            "outlet": "VILLA",
+            "cells": [
+                "OH",
+                "OH",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "OH",
+                "OH",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Hồ Anh Kiệt",
+            "outlet": "VILLA",
+            "cells": [
+                "A2(BQ)",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "M9",
+                "OFF",
+                "M6",
+                "M6",
+                "A2(BQ)",
+                "OFF",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Nguyễn Quỳnh Đức",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Lê Thị Cẩm Giang",
+            "outlet": "VILLA",
+            "cells": [
+                "M6",
+                "M6",
+                "OFF",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6"
+            ]
+        },
+        {
+            "name": "Võ Tôn Hiền",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "OFF",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Nguyễn Thị Thu Hà",
+            "outlet": "VILLA",
+            "cells": [
+                "A2(BQ)",
+                "A2",
+                "OFF",
+                "A2",
+                "A2",
+                "M6",
+                "OFF",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6"
+            ]
+        },
+        {
+            "name": "Đỗ Nguyệt Minh",
+            "outlet": "VILLA",
+            "cells": [
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2(BQ)",
+                "M6",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Nguyễn Thị Mỹ Thuận",
+            "outlet": "VILLA",
+            "cells": [
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "A2(V)",
+                "A2(V)",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Phạm Thị Mỹ Dung",
+            "outlet": "VILLA",
+            "cells": [
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Lê Đặng Phi Yến",
+            "outlet": "VILLA",
+            "cells": [
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2",
+                "M6",
+                "M6"
+            ]
+        },
+        {
+            "name": "Nguyễn Thị Bích Hồng",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6",
+                "OFF",
+                "M6"
+            ]
+        },
+        {
+            "name": "Phan Thị Thu Hương",
+            "outlet": "VILLA",
+            "cells": [
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "OFF",
+                "M6",
+                "A2(V)"
+            ]
+        },
+        {
+            "name": "Lữ Nữ Thanh Trâm",
+            "outlet": "VILLA",
+            "cells": [
+                "OFF",
+                "OFF",
+                "A2",
+                "M9(L)",
+                "A2(L)",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "A2(L)",
+                "A2(L)(G)",
+                "A2(L)(BQ)",
+                "M6",
+                "M6"
+            ]
+        },
+        {
+            "name": "Cao Thị Kim Doanh",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "A2",
+                "A2",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "M6+4",
+                "M6",
+                "A2"
+            ]
+        },
+        {
+            "name": "Đinh Thị Thùy Linh",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2(L)",
+                "A2",
+                "A2(L)",
+                "M6",
+                "A2(K)",
+                "A2(BQ)",
+                "OFF",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Bùi Thị Mỹ Trang",
+            "outlet": "VILLA",
+            "cells": [
+                "M6",
+                "M9(L)",
+                "A2(L)",
+                "OFF",
+                "A2",
+                "A2(L)",
+                "A2",
+                "OFF",
+                "A2(L)",
+                "M6",
+                "M9(L)",
+                "A2(L)(BQ)",
+                "M6(L)",
+                "M6"
+            ]
+        },
+        {
+            "name": "Phạm Thanh Tiên",
+            "outlet": "VILLA",
+            "cells": [
+                "M6",
+                "OFF",
+                "M9(L)",
+                "A2",
+                "A2(L)",
+                "A2",
+                "M6",
+                "A2(L)",
+                "M9(L)",
+                "A2(L)",
+                "OFF",
+                "A2",
+                "OFF",
+                "A2"
+            ]
+        },
+        {
+            "name": "Nguyễn Ngọc Yến Nhi",
+            "outlet": "VILLA",
+            "cells": [
+                "OH(L)",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2(L)",
+                "A2(L)",
+                "OFF",
+                "OH(L)",
+                "M6",
+                "OH(L)",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Mai Trần Bảo Xuân",
+            "outlet": "VILLA",
+            "cells": [
+                "A2(L)",
+                "A2(L)",
+                "A2",
+                "A2",
+                "M6",
+                "M6(L)",
+                "OFF",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2(L)"
+            ]
+        },
+        {
+            "name": "Hồ Hồ Nhật Hạ",
+            "outlet": "VILLA",
+            "cells": [
+                "A2(K)",
+                "A2(L)",
+                "A2(G)",
+                "M6",
+                "OH(L)",
+                "M6",
+                "OFF",
+                "OH(L)",
+                "OFF",
+                "M6(L)",
+                "A2(L)",
+                "M6+3",
+                "A2",
+                "A2(K)"
+            ]
+        },
+        {
+            "name": "Trần Trung Kiên",
+            "outlet": "VILLA",
+            "cells": [
+                "N",
+                "OFF",
+                "M6(G)",
+                "M6(L)",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "N",
+                "N",
+                "N"
+            ]
+        },
+        {
+            "name": "Đặng Xuân Thìn",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "M6",
+                "M6",
+                "OFF",
+                "A2",
+                "A2",
+                "OFF",
+                "M6",
+                "M6+3",
+                "M6",
+                "A2"
+            ]
+        },
+        {
+            "name": "Huỳnh Trọng Tuấn",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "M6+3",
+                "M6",
+                "A2"
+            ]
+        },
+        {
+            "name": "Bùi Văn Đồng",
+            "outlet": "VILLA",
+            "cells": [
+                "A2",
+                "M6",
+                "M6(G)",
+                "N",
+                "N",
+                "OFF",
+                "A2",
+                "M6",
+                "N",
+                "N",
+                "OFF",
+                "A2",
+                "A2",
+                "M6"
+            ]
+        },
+        {
+            "name": "Trần Hữu Phi",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "OH",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "A2"
+            ]
+        },
+        {
+            "name": "Võ Thị Tuyết Hạnh",
+            "outlet": "GUSTO",
+            "cells": [
+                "OFF",
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "M6",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "M6",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Đặng Việt Trí",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6",
+                "OFF",
+                "OFF",
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "A2",
+                "A2(BQ)",
+                "OFF",
+                "M6"
+            ]
+        },
+        {
+            "name": "Hồ Hữu Thắng",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "A2",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Ngô Vi Việt",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "OFF",
+                "A2",
+                "A2",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Nguyễn Hoàng Anh",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "M6",
+                "M6(V)",
+                "M6",
+                "M6"
+            ]
+        },
+        {
+            "name": "Nguyễn Thanh Long",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2(BQ)",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "M6",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2"
+            ]
+        },
+        {
+            "name": "Nguyễn Y Bình",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "A2",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2"
+            ]
+        },
+        {
+            "name": "Nguyễn Thị Thu Hà",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "OFF",
+                "OFF",
+                "M6",
+                "A2(V)",
+                "A2(V)",
+                "A2(V)",
+                "M6",
+                "OFF",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Võ Thiên Ngân",
+            "outlet": "GUSTO",
+            "cells": [
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Cù Thị Thùy Linh",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "M6"
+            ]
+        },
+        {
+            "name": "Hồ Thị Xuân Thùy",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6(L)",
+                "M6",
+                "M6(L)",
+                "M6",
+                "M6(L)",
+                "OFF",
+                "M6",
+                "M6(L)",
+                "M6(L)",
+                "OFF",
+                "M6",
+                "M6(L)",
+                "M6(L)",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Lê Thị Kim Hân",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6(L)",
+                "OFF",
+                "A2",
+                "A2(K)",
+                "A2",
+                "M9(L)",
+                "M6(K)",
+                "M6",
+                "A2(K)",
+                "A2",
+                "M6(L)",
+                "M6(K)+4",
+                "A2",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Trần Thị Tuyết Nga",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6(L)",
+                "M6(K)",
+                "OFF",
+                "OFF",
+                "M6(L)",
+                "M6",
+                "M6",
+                "M6",
+                "M6(L)",
+                "M6",
+                "M6(L)",
+                "M6+3",
+                "OFF",
+                "M9(L)"
+            ]
+        },
+        {
+            "name": "Nguyễn Thị Mỹ Phương",
+            "outlet": "GUSTO",
+            "cells": [
+                "OFF",
+                "M6",
+                "M6(K)",
+                "M6",
+                "M6(K)",
+                "M6(K)",
+                "M6",
+                "M6",
+                "M6(K)",
+                "OFF",
+                "M6(K)",
+                "M6(K)+3",
+                "M6(K)",
+                "M6"
+            ]
+        },
+        {
+            "name": "Trương Thị Hoài Nhi",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2(L)",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "M9(L)",
+                "A2",
+                "A2",
+                "OFF",
+                "A2",
+                "A2",
+                "A2(BQ)",
+                "A2",
+                "A2(L)"
+            ]
+        },
+        {
+            "name": "Đoàn Thị Kim Trang",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2",
+                "M6(L)",
+                "OFF",
+                "A2",
+                "A2(K)",
+                "A2",
+                "A2",
+                "A2",
+                "M6(L)",
+                "OFF",
+                "A2(K)(BQ)",
+                "A2(K)",
+                "A2"
+            ]
+        },
+        {
+            "name": "Hoàng Thị Phương Trinh",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "OFF",
+                "A2",
+                "A2(K)",
+                "M6",
+                "A2",
+                "A2",
+                "A2(BQ)",
+                "OFF",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Nguyễn Thị Thanh Trang",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2(K)",
+                "A2(K)",
+                "M6(L)",
+                "M6",
+                "M6(L)",
+                "OFF",
+                "M6(L)",
+                "M6",
+                "OFF",
+                "M6",
+                "M6(L)+4",
+                "M9(L)",
+                "M6(L)"
+            ]
+        },
+        {
+            "name": "Nguyễn Võ Hạ Hoài",
+            "outlet": "GUSTO",
+            "cells": [
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2(K)",
+                "A2(K)",
+                "A2",
+                "M6(K)",
+                "M6(V)",
+                "M6(K)",
+                "OFF",
+                "OFF",
+                "A2",
+                "M6(K)"
+            ]
+        },
+        {
+            "name": "Trương Minh Thành",
+            "outlet": "GUSTO",
+            "cells": [
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "OFF",
+                "N",
+                "N",
+                "N",
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "N"
+            ]
+        },
+        {
+            "name": "Lê Công Ngọc",
+            "outlet": "GUSTO",
+            "cells": [
+                "OFF",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "M6",
+                "OFF",
+                "A2",
+                "A2",
+                "A2(BQ)",
+                "A2",
+                "M6"
+            ]
+        },
+        {
+            "name": "Huỳnh Gia Hoàng",
+            "outlet": "GUSTO",
+            "cells": [
+                "M6",
+                "OFF",
+                "OFF",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "M6",
+                "M6",
+                "A2",
+                "A2",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Huỳnh Đức Cường",
+            "outlet": "GUSTO",
+            "cells": [
+                "N",
+                "N",
+                "N",
+                "N",
+                "N",
+                "OFF",
+                "M6",
+                "M6",
+                "M6",
+                "N",
+                "N",
+                "N",
+                "N",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Lâm Duy Phương",
+            "outlet": "NIGHT",
+            "cells": [
+                "OFF",
+                "OFF",
+                "OFF",
+                "M6(RS)",
+                "N",
+                "N",
+                "N",
+                "N",
+                "N",
+                "OFF",
+                "OFF",
+                "OFF",
+                "N",
+                "N"
+            ]
+        },
+        {
+            "name": "Hoàng Quốc Trung",
+            "outlet": "NIGHT",
+            "cells": [
+                "M6(RS)",
+                "M6(RS)",
+                "M6(RS)",
+                "OFF",
+                "M6(RS)",
+                "OFF",
+                "M6(RS)",
+                "M6(RS)",
+                "M6(RS)",
+                "M6(RS)",
+                "M6(RS)",
+                "M6(RS)+3",
+                "M6(RS)",
+                "M6(RS)"
+            ]
+        },
+        {
+            "name": "Đinh Xuân Lưu",
+            "outlet": "NIGHT",
+            "cells": [
+                "A2(RS)",
+                "A2(RS)",
+                "A2(RS)",
+                "A2(RS)",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2(RS)",
+                "A2(RS)",
+                "A2(RS)",
+                "A2(RS)",
+                "A2(RS)",
+                "OFF",
+                "A2(RS)"
+            ]
+        },
+        {
+            "name": "Nguyễn Thái Đại",
+            "outlet": "NIGHT",
+            "cells": [
+                "N",
+                "N",
+                "N",
+                "N",
+                "OFF",
+                "N",
+                "OFF",
+                "N",
+                "N",
+                "N",
+                "N",
+                "N",
+                "OFF",
+                "OFF"
+            ]
+        },
+        {
+            "name": "Lê Trần Anh Quốc",
+            "outlet": "NIGHT",
+            "cells": [
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2",
+                "A2(RS)",
+                "A2",
+                "A2",
+                "M6",
+                "OFF",
+                "A2(BQ)",
+                "A2",
+                "M6"
+            ]
+        },
+        {
+            "name": "Châu Quang Tiến",
+            "outlet": "NIGHT",
+            "cells": [
+                "M6",
+                "M6",
+                "OFF",
+                "OFF",
+                "A2(RS)",
+                "M6(RS)",
+                "OFF",
+                "A2",
+                "M6",
+                "OFF",
+                "OFF",
+                "OFF",
+                "A2(RS)",
+                "A2"
+            ]
+        }
+    ]
+}
