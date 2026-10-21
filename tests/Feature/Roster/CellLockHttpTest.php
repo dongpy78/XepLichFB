@@ -1,0 +1,154 @@
+<?php
+
+namespace Tests\Feature\Roster;
+
+use Botble\ACL\Models\User;
+use Botble\RestaurantRoster\Models\Employee;
+use Botble\RestaurantRoster\Models\Outlet;
+use Botble\RestaurantRoster\Models\Shift;
+use Botble\RestaurantRoster\Models\ShiftTemplate;
+use Botble\RestaurantRoster\Providers\RestaurantRosterServiceProvider;
+use Botble\RestaurantRoster\Services\OffRequestService;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+
+require_once __DIR__ . '/OffWorkflowTest.php';
+
+/**
+ * Khóa ô được kiểm tra ở backend (không chỉ ở giao diện): xếp tay không đè ô đã khóa, gỡ OFF cần quyền – DỮ LIỆU GIẢ LẬP.
+ */
+class CellLockHttpTest extends TestCase
+{
+    private Employee $employee;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app->register(RestaurantRosterServiceProvider::class);
+        app('router')->getRoutes()->refreshNameLookups();
+        // Môi trường test chưa "cài đặt" Botble: bỏ chuyển hướng sang trình cài đặt.
+        $this->withoutMiddleware(\Botble\Installer\Http\Middleware\RedirectIfNotInstalledMiddleware::class);
+        config(['plugins.restaurant-roster.general' => require dirname(__DIR__, 3) . '/platform/plugins/restaurant-roster/config/general.php']);
+
+        if (! Schema::hasTable('users')) {
+            $this->artisan('migrate', ['--path' => 'database/migrations', '--force' => true]);
+            $this->artisan('migrate', ['--path' => 'platform/core/acl/database/migrations', '--force' => true]);
+        }
+
+        if (! Schema::hasTable('roster_shifts')) {
+            $this->artisan('migrate', ['--path' => 'platform/plugins/restaurant-roster/database/migrations', '--force' => true]);
+        }
+
+        $outlet = Outlet::query()->create(['name' => 'Gusto', 'code' => 'GUSTO', 'status' => 'published']);
+        ShiftTemplate::query()->create(['code' => 'M6', 'name' => 'Sáng', 'start_time' => '06:00:00', 'end_time' => '14:00:00', 'status' => 'published']);
+        $this->employee = Employee::query()->create(['code' => 'SYN1', 'name' => 'Synthetic 1', 'outlet_id' => $outlet->getKey(),
+            'weekly_hours' => 48, 'days_off_per_week' => 2, 'auto_schedule' => true, 'status' => 'published']);
+
+        app(OffRequestService::class)->record([$this->employee->getKey()], ['date_from' => '2030-01-08', 'date_to' => '2030-01-08', 'type' => 'off_request'], 1);
+    }
+
+    private function user(array $permissions, bool $super = false): User
+    {
+        $user = new User();
+        $user->forceFill([
+            'email' => uniqid('syn') . '@example.test', 'username' => uniqid('syn'), 'password' => bcrypt('secret'),
+            'first_name' => 'Synthetic', 'last_name' => 'Manager', 'super_user' => $super,
+            'permissions' => array_fill_keys($permissions, true),
+        ])->save();
+
+        return $user;
+    }
+
+    private function cell(): ?Shift
+    {
+        return Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-08')->first();
+    }
+
+    public function test_manual_assign_cannot_overwrite_locked_off(): void
+    {
+        $response = $this->actingAs($this->user([], true))->postJson(route('roster.assign'), [
+            'employee_id' => $this->employee->getKey(), 'date' => '2030-01-08', 'action' => 'notation', 'notation' => 'M6',
+        ]);
+
+        $response->assertJson(['error' => true]);
+        $this->assertSame(Shift::KIND_OFF, $this->cell()->kind);
+        $this->assertTrue($this->cell()->is_locked);
+    }
+
+    public function test_off_form_records_locked_off_and_blocks_duplicates(): void
+    {
+        $manager = $this->user([], true);
+        $this->actingAs($manager)->get(route('roster.availability.create'))->assertOk();
+
+        $payload = ['employee_ids' => [$this->employee->getKey()], 'date_from' => '2030-01-10', 'date_to' => '2030-01-11',
+            'type' => 'off_request', 'reason' => 'Nhắn Zalo', 'received_at' => '2030-01-02'];
+        $this->actingAs($manager)->postJson(route('roster.availability.create.store'), $payload)->assertJson(['error' => false]);
+
+        $cell = Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-11')->first();
+        $this->assertTrue($cell->isRecordedOff());
+
+        // Nhập lại trùng ngày: bị chặn, không tạo đơn thứ hai.
+        $this->actingAs($manager)->postJson(route('roster.availability.create.store'), [...$payload, 'date_from' => '2030-01-11', 'date_to' => '2030-01-12'])
+            ->assertJson(['error' => true]);
+        $this->assertSame(2, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count());
+    }
+
+    /** Kỳ lịch: tổng hợp OFF có cảnh báo; chưa xác nhận nhập xong OFF thì không chạy xếp tự động, xác nhận rồi thì chạy được. */
+    public function test_period_summary_and_off_confirmation_gate(): void
+    {
+        $outlet = Outlet::query()->firstOrFail();
+        $m6 = ShiftTemplate::query()->firstOrFail();
+        \Botble\RestaurantRoster\Models\EmployeeSkill::query()->create(['employee_id' => $this->employee->getKey(), 'outlet_id' => $outlet->getKey(), 'level' => 'primary']);
+        \Botble\RestaurantRoster\Models\StaffingRequirement::query()->create(['outlet_id' => $outlet->getKey(), 'shift_template_id' => $m6->getKey(),
+            'min_staff' => 1, 'target_staff' => 1, 'is_confirmed' => true]);
+        config(['plugins.restaurant-roster.general.scheduling.time_limit_seconds' => 2]);
+        $manager = $this->user([], true);
+
+        $this->actingAs($manager)->post(route('roster.periods.store'), ['name' => 'Tuần thử', 'start_date' => '2030-01-07', 'end_date' => '2030-01-13']);
+        $period = \Botble\RestaurantRoster\Models\Period::query()->firstOrFail();
+
+        // Người đủ năng lực duy nhất đã OFF ngày 08/01 → cảnh báo không còn người đủ năng lực.
+        $this->actingAs($manager)->get(route('roster.periods.show', $period->id))->assertOk()->assertSee('chỉ còn 0 người đủ năng lực', false);
+
+        $run = fn () => $this->actingAs($manager)->postJson(route('roster.auto.run'), ['from' => '2030-01-07', 'to' => '2030-01-13', 'type' => 'generate']);
+        $run()->assertJson(['error' => true]);
+        $this->assertSame(0, \Botble\RestaurantRoster\Models\Run::query()->count(), 'Chưa xác nhận OFF thì không chạy thuật toán');
+
+        $this->actingAs($manager)->post(route('roster.periods.confirm-off', $period->id));
+        $this->assertNotNull($period->refresh()->off_confirmed_at);
+
+        $run()->assertJson(['error' => false]);
+        $this->assertSame(1, \Botble\RestaurantRoster\Models\Run::query()->count());
+    }
+
+    /** Các trang quản lý mở được (không lỗi khi render). */
+    public function test_manager_pages_render(): void
+    {
+        $manager = $this->user([], true);
+        $request = \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->firstOrFail();
+
+        foreach ([route('roster.periods.index'), route('roster.availability.index'), route('roster.auto.index'),
+            route('roster.index', ['week' => '2030-01-07']), route('roster.availability.edit', $request->id)] as $url) {
+            $this->actingAs($manager)->get($url)->assertOk();
+        }
+
+        $this->actingAs($manager)->getJson(route('roster.grid', ['week' => '2030-01-07']))->assertJson(['error' => false]);
+
+        // Bảng Botble tải dữ liệu bằng POST tới chính trang danh sách: route danh sách OFF phải nhận POST như các bảng khác.
+        $this->actingAs($manager)->post(route('roster.availability.index'))->assertOk();
+    }
+
+    public function test_removing_recorded_off_requires_permission(): void
+    {
+        $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.lock'), [
+            'employee_id' => $this->employee->getKey(), 'date' => '2030-01-08', 'locked' => 0,
+        ])->assertJson(['error' => true]);
+        $this->assertNotNull($this->cell(), 'Không có quyền thì OFF vẫn còn');
+
+        $this->actingAs($this->user([], true))->postJson(route('roster.off-remove'), [
+            'employee_id' => $this->employee->getKey(), 'date' => '2030-01-08',
+        ])->assertJson(['error' => false]);
+        $this->assertNull($this->cell(), 'Quản lý có quyền gỡ được OFF');
+    }
+}

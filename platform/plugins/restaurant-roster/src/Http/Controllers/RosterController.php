@@ -13,6 +13,7 @@ use Botble\RestaurantRoster\Models\Position;
 use Botble\RestaurantRoster\Models\Run;
 use Botble\RestaurantRoster\Models\Shift;
 use Botble\RestaurantRoster\Models\ShiftTemplate;
+use Botble\RestaurantRoster\Services\OffRequestService;
 use Botble\RestaurantRoster\Services\OutletRotationService;
 use Botble\RestaurantRoster\Services\RosterAssigner;
 use Botble\RestaurantRoster\Services\RosterConflictChecker;
@@ -92,6 +93,13 @@ class RosterController extends BaseController
         $date = Carbon::parse($data['date']);
         $existing = Shift::query()->with('template')->where('employee_id', $employee->getKey())->whereDate('date', $date)->first();
 
+        // Ô đã khóa (OFF đã cho, ca đã xác nhận, tiệc BQ...) không sửa trực tiếp được – kiểm tra ở backend, không chỉ ở giao diện.
+        if ($existing?->is_locked) {
+            return $this->httpResponse()->setError()->setMessage($existing->isRecordedOff()
+                ? "Ô {$existing->notation} là OFF quản lý đã cho và đang khóa. Bấm \"Gỡ OFF\" trước nếu cần cho {$employee->name} đi làm ngày này."
+                : "Ô {$existing->notation} đang khóa. Mở khóa ô trước khi sửa.");
+        }
+
         if ($data['action'] === 'clear') {
             if ($existing) {
                 $this->logChange($request, $employee->getKey(), $date, $existing, null, 'delete');
@@ -128,14 +136,14 @@ class RosterController extends BaseController
 
         // Ca chạy tiệc (BQ) do quản lý chọn người có kinh nghiệm: tự khóa để thuật toán xếp những người còn lại xung quanh.
         if (in_array('BQ', $shift->tags ?: [], true) && ! $shift->is_locked) {
-            $shift->update(['is_locked' => true]);
+            $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_BQ, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
             $message .= ' Ô tiệc (BQ) đã tự khóa – xếp tự động sẽ giữ nguyên.';
         }
 
         // Xếp tay khác ca cứng: giữ quyết định của quản lý bằng cách khóa ô, để "Tối ưu lại" không đổi về ca cứng.
         if ($employee->fixed_shift_template_id && $shift->kind === Shift::KIND_SHIFT
             && (int) $shift->shift_template_id !== (int) $employee->fixed_shift_template_id && ! $shift->is_locked) {
-            $shift->update(['is_locked' => true]);
+            $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
             $message .= ' Ô đã tự khóa vì khác ca cứng ' . ($employee->fixedShift?->code ?? '') . ' – xếp tự động sẽ giữ nguyên.';
         }
 
@@ -167,6 +175,11 @@ class RosterController extends BaseController
             foreach ($previous as $shift) {
                 $date = $shift->date->copy()->addWeek();
 
+                // OFF quản lý đã cho là theo đơn của từng tuần: không chép sang tuần sau.
+                if ($shift->isRecordedOff()) {
+                    continue;
+                }
+
                 if ($taken->has($shift->employee_id . '|' . $date->toDateString())) {
                     continue;
                 }
@@ -180,6 +193,12 @@ class RosterController extends BaseController
 
                 $copy->status = Shift::STATUS_DRAFT;
                 $copy->is_locked = false;
+                $copy->lock_reason = null;
+                $copy->locked_by = null;
+                $copy->locked_at = null;
+                $copy->availability_request_id = null;
+                $copy->needs_review = false;
+                $copy->review_note = null;
                 $copy->source = 'copy';
                 $copy->run_id = null;
                 $copy->created_by = $request->user()?->getKey();
@@ -257,7 +276,8 @@ class RosterController extends BaseController
         $shifts = $query->with('template:id,code')->get();
         $isKept = fn (Shift $shift) => $shift->is_locked || $shift->kind === Shift::KIND_LEAVE;
         $kept = $shifts->filter($isKept);
-        $targets = $request->boolean('include_locked') ? $shifts : $shifts->reject($isKept);
+        // OFF quản lý đã cho chỉ gỡ được bằng "Gỡ OFF" (có kiểm tra quyền, cập nhật đơn), không xóa hàng loạt.
+        $targets = $request->boolean('include_locked') ? $shifts->reject(fn (Shift $shift) => $shift->isRecordedOff()) : $shifts->reject($isKept);
 
         if ($request->boolean('preview')) {
             return $this->httpResponse()->setData([
@@ -447,19 +467,86 @@ class RosterController extends BaseController
 
         $employee = Employee::query()->findOrFail($data['employee_id']);
         $date = Carbon::parse($data['date']);
-        $shift = Shift::query()->where('employee_id', $employee->getKey())->whereDate('date', $date)->first();
+        $shift = Shift::query()->with('template')->where('employee_id', $employee->getKey())->whereDate('date', $date)->first();
         $locked = (bool) $data['locked'];
+
+        // Mở khóa OFF quản lý đã cho = gỡ OFF (chỉ người có quyền ghi / gỡ OFF).
+        if (! $locked && $shift?->isRecordedOff()) {
+            return $this->removeOff($request, $shift, $employee);
+        }
 
         if (! $shift && $locked) {
             $shift = $this->assigner->assign($employee, $date, ['kind' => Shift::KIND_OFF, 'source' => 'manual'], $request->user()?->getKey());
         }
 
         if ($shift) {
-            $shift->update(['is_locked' => $locked]);
-            $this->logChange($request, $employee->getKey(), $date, null, $shift->load('template'), $locked ? 'lock' : 'unlock');
+            $before = $this->snapshot($shift);
+            $shift->update($locked
+                // Khóa ca làm = quản lý xác nhận ca; khóa ô OFF / trống = giữ OFF đó.
+                ? ['is_locked' => true, 'lock_reason' => $shift->kind === Shift::KIND_SHIFT ? Shift::LOCK_CONFIRMED : Shift::LOCK_MANUAL,
+                    'locked_by' => $request->user()?->getKey(), 'locked_at' => now(), 'needs_review' => false, 'review_note' => null]
+                : ['is_locked' => false, 'lock_reason' => null, 'locked_by' => null, 'locked_at' => null]);
+            $this->logChange($request, $employee->getKey(), $date, $before, $shift->load('template'), $locked ? 'lock' : 'unlock');
         }
 
         return $this->gridResponse($request, $locked ? 'Đã khóa ô – thuật toán sẽ giữ nguyên.' : 'Đã mở khóa ô.');
+    }
+
+    /**
+     * Gỡ OFF quản lý đã cho (thiếu người – cho nhân viên đi làm ngày đó). Cần quyền roster.approve.
+     */
+    public function offRemove(Request $request)
+    {
+        $data = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:roster_employees,id'],
+            'date' => ['required', 'date_format:Y-m-d'],
+        ]);
+
+        $employee = Employee::query()->findOrFail($data['employee_id']);
+        $shift = Shift::query()->with('template')->where('employee_id', $employee->getKey())->whereDate('date', $data['date'])->first();
+
+        if (! $shift?->isRecordedOff()) {
+            return $this->httpResponse()->setError()->setMessage('Ô này không phải OFF quản lý đã cho.');
+        }
+
+        return $this->removeOff($request, $shift, $employee);
+    }
+
+    protected function removeOff(Request $request, Shift $shift, Employee $employee)
+    {
+        if (! $request->user()?->hasPermission('roster.approve')) {
+            return $this->httpResponse()->setError()->setMessage('Chỉ người có quyền ghi / gỡ OFF mới gỡ được OFF đã cho.');
+        }
+
+        app(OffRequestService::class)->removeCell($shift, $request->user()?->getKey(), 'Gỡ OFF để xếp ca (thiếu người)');
+
+        return $this->gridResponse($request, "Đã gỡ OFF ngày {$shift->date->format('d/m')} của {$employee->name}. Ô đã trống – xếp ca cho nhân viên đi làm.");
+    }
+
+    /**
+     * Ô "cần xem xét" (OFF mới trùng ca đã khóa): quản lý chọn giữ ca hoặc cho OFF. Cần quyền roster.approve.
+     */
+    public function review(Request $request)
+    {
+        $data = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:roster_employees,id'],
+            'date' => ['required', 'date_format:Y-m-d'],
+            'decision' => ['required', Rule::in(['keep', 'off'])],
+        ]);
+
+        $shift = Shift::query()->where('employee_id', $data['employee_id'])->whereDate('date', $data['date'])->first();
+
+        if (! $shift) {
+            return $this->httpResponse()->setError()->setMessage('Không tìm thấy ô lịch.');
+        }
+
+        try {
+            app(OffRequestService::class)->resolveReview($shift, $data['decision'] === 'off', $request->user()?->getKey());
+        } catch (RuntimeException $exception) {
+            return $this->httpResponse()->setError()->setMessage($exception->getMessage());
+        }
+
+        return $this->gridResponse($request, $data['decision'] === 'off' ? 'Đã cho OFF và khóa ô.' : 'Đã giữ ca, không cho OFF ngày này.');
     }
 
     /**
@@ -501,6 +588,7 @@ class RosterController extends BaseController
             'notation' => $shift->notation,
             'status' => $shift->status,
             'is_locked' => (bool) $shift->is_locked,
+            'lock_reason' => $shift->lock_reason,
         ];
     }
 
@@ -552,10 +640,12 @@ class RosterController extends BaseController
             ->whereBetween('date', [$weekStart->copy()->startOfMonth()->toDateString(), $weekEnd->copy()->endOfMonth()->toDateString()])
             ->where('overtime_hours', '>', 0)
             ->where(fn ($q) => $q->whereNull('overtime_status')->orWhere('overtime_status', '!=', 'rejected'))
-            ->selectRaw('employee_id, DATE_FORMAT(date, "%Y-%m") as ym, SUM(overtime_hours) as total')
-            ->groupBy('employee_id', 'ym')
-            ->get()
-            ->groupBy('employee_id');
+            ->get(['employee_id', 'date', 'overtime_hours'])
+            // Gộp theo tháng bằng PHP (không phụ thuộc hàm ngày của từng loại database).
+            ->groupBy('employee_id')
+            ->map(fn ($rows) => $rows->groupBy(fn (Shift $s) => $s->date->format('Y-m'))
+                ->map(fn ($month, $ym) => (object) ['ym' => $ym, 'total' => $month->sum('overtime_hours')])
+                ->values());
         $summary = ['shifts' => 0, 'drafts' => 0, 'conflicts' => 0, 'overtime' => 0];
 
         foreach ($employees as $employee) {

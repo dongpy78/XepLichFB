@@ -24,16 +24,31 @@ final class ShiftSpec
         public readonly ?string $allowedGender = null,
         public readonly ?int $allowedPositionId = null,
     ) {
+        // Tính sẵn: các giá trị này được đọc hàng trăm nghìn lần trong một lần xếp lịch.
+        $this->startMinute = $segments[0][0];
+        $this->endMinute = max(array_column($segments, 1));
+        $hour = intdiv($this->startMinute, 60);
+        $this->categoryName = match (true) {
+            $hour >= 20 || $hour < 4 => 'night',
+            $hour < 12 => 'morning',
+            default => 'afternoon',
+        };
     }
+
+    private int $startMinute;
+
+    private int $endMinute;
+
+    private string $categoryName;
 
     public function start(): int
     {
-        return $this->segments[0][0];
+        return $this->startMinute;
     }
 
     public function end(): int
     {
-        return max(array_column($this->segments, 1));
+        return $this->endMinute;
     }
 
     /**
@@ -41,12 +56,6 @@ final class ShiftSpec
      */
     public function category(): string
     {
-        $hour = intdiv($this->start(), 60);
-
-        return match (true) {
-            $hour >= 20 || $hour < 4 => 'night',
-            $hour < 12 => 'morning',
-            default => 'afternoon',
-        };
+        return $this->categoryName;
     }
 }

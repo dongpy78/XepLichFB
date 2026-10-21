@@ -21,8 +21,12 @@ class AvailabilityRequestRequest extends Request
             'type' => ['required', Rule::in(array_keys(config('plugins.restaurant-roster.general.availability_types', [])))],
             'group_label' => ['nullable', 'string', 'max:120'],
             'reason' => ['nullable', 'string', 'max:255'],
-            'status' => ['required', Rule::in(['pending', 'approved', 'rejected', 'cancelled'])],
+            // Quản lý nhập = đã cho OFF; khi sửa chỉ chọn giữ OFF hoặc hủy (gỡ khỏi lịch).
+            'status' => ['nullable', Rule::in(['approved', 'cancelled'])],
+            'received_at' => ['nullable', 'date_format:Y-m-d'],
             'review_note' => ['nullable', 'string', 'max:255'],
+            // Cho OFF đè lên ca làm đã khóa (đã xác nhận / BQ). Không chọn: giữ ca và đánh dấu "cần xem xét".
+            'override_locked' => ['nullable', 'boolean'],
         ];
     }
 
@@ -30,7 +34,7 @@ class AvailabilityRequestRequest extends Request
     {
         return [
             'employee_ids' => 'Nhân viên', 'employee_id' => 'Nhân viên', 'date_from' => 'Từ ngày', 'date_to' => 'Đến ngày',
-            'type' => 'Loại', 'group_label' => 'Tên đợt / sự kiện', 'status' => 'Trạng thái',
+            'type' => 'Loại', 'group_label' => 'Tên đợt / sự kiện', 'status' => 'Trạng thái', 'received_at' => 'Ngày tiếp nhận',
         ];
     }
 }

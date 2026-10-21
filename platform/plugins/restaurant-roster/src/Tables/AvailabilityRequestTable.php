@@ -22,13 +22,13 @@ class AvailabilityRequestTable extends TableAbstract
 
         $this
             ->model(AvailabilityRequest::class)
-            ->addHeaderAction(CreateHeaderAction::make()->route('roster.availability.create')->permission('roster.index'))
+            ->addHeaderAction(CreateHeaderAction::make()->route('roster.availability.create')->permission('roster.approve'))
             ->addActions([
-                Action::make('approve')->label('Duyệt')->icon('ti ti-check')->color('success')
+                Action::make('approve')->label('Cho OFF (ghi lại vào lịch)')->icon('ti ti-check')->color('success')
                     ->route('roster.availability.approve')->action('POST')->permission('roster.approve'),
-                Action::make('reject')->label('Từ chối')->icon('ti ti-x')->color('warning')
+                Action::make('reject')->label('Không cho OFF (gỡ khỏi lịch)')->icon('ti ti-x')->color('warning')
                     ->route('roster.availability.reject')->action('POST')->permission('roster.approve'),
-                EditAction::make()->route('roster.availability.edit')->permission('roster.index'),
+                EditAction::make()->route('roster.availability.edit')->permission('roster.approve'),
                 DeleteAction::make()->route('roster.availability.destroy')->permission('roster.approve'),
             ])
             ->addColumns([
@@ -50,7 +50,11 @@ class AvailabilityRequestTable extends TableAbstract
                 FormattedColumn::make('status')->title('Trạng thái')->width(120)
                     ->getValueUsing(fn (FormattedColumn $c) => sprintf('<span class="badge %s">%s</span>',
                         $badges[$c->getItem()->status] ?? '', e(AvailabilityRequestForm::STATUSES[$c->getItem()->status] ?? $c->getItem()->status))),
-                FormattedColumn::make('reviewed_at')->title('Duyệt lúc')->width(140)
+                FormattedColumn::make('received_at')->title('Nhận Zalo')->width(100)
+                    ->getValueUsing(fn (FormattedColumn $c) => $c->getItem()->received_at?->format('d/m') ?? '—'),
+                FormattedColumn::make('cells_count')->title('Ô OFF trên lịch')->width(110)->orderable(false)
+                    ->getValueUsing(fn (FormattedColumn $c) => (string) $c->getItem()->cells_count),
+                FormattedColumn::make('reviewed_at')->title('Ghi lúc')->width(120)
                     ->getValueUsing(fn (FormattedColumn $c) => $c->getItem()->reviewed_at?->format('d/m H:i') ?? '—'),
             ])
             ->addBulkActions([
@@ -59,6 +63,7 @@ class AvailabilityRequestTable extends TableAbstract
             ->queryUsing(function ($query): void {
                 $query
                     ->with('employee:id,code,name')
+                    ->withCount('cells')
                     ->orderByRaw("status = 'pending' DESC")
                     ->orderByDesc('date_from');
             });

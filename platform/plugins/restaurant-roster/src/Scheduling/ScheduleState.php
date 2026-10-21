@@ -77,6 +77,9 @@ final class ScheduleState
 
     private int $targetShort = 0;
 
+    /** Tổng bình phương số người dôi ra trên định biên mục tiêu (cập nhật tăng dần trong adjustCount). */
+    private int $overTarget = 0;
+
     private int $fixedHardViolations = 0;
 
     /** @var array<int, array<string, mixed>> */
@@ -99,8 +102,14 @@ final class ScheduleState
     /** @var array<int, bool> Outlet có ca đêm (NIGHT): nhân viên outlet này là lực lượng ca đêm chính */
     public array $nightOutlets = [];
 
-    /** @var array<string, int> "employeeId|dayIndex" => outletId cho các ô xếp ngoài outlet chính */
+    /** @var array<int, array<int, int>> [dayIndex][employeeId] => outletId cho các ô xếp ngoài outlet chính */
     private array $crossCells = [];
+
+    /** @var array<int, array<int, array<int, string>>> [employeeId][outletId][shiftId] => mức năng lực ('' = không đủ điều kiện), lưu đệm */
+    private array $skillLevels = [];
+
+    /** @var array<int, array<string, true>> [dayIndex]["o|s"] ô đang thiếu tối thiểu (tổng, nam hoặc vị trí) – cập nhật tăng dần */
+    private array $minShortSlots = [];
 
     /** @var array<int, array<int, array{0: int, 1: int, 2: int, 3: int, 4: string, 5: ?array}>> [dayIndex][k] => [phút bắt đầu, phút kết thúc, tối thiểu, mục tiêu, nhãn, ca được tính (null = mọi ca)] */
     public array $coverage = [];
@@ -129,6 +138,17 @@ final class ScheduleState
 
             if ($i !== null && $this->inScope[$i]) {
                 $this->requirements[$i]["{$requirement->outletId}|{$requirement->shiftId}"] = $requirement;
+
+                $slot = "{$requirement->outletId}|{$requirement->shiftId}";
+                $belowMin = $requirement->min > 0 || $requirement->minMale > 0 || array_filter($requirement->positionMins);
+
+                if ($belowMin) {
+                    $this->minShortSlots[$i][$slot] = true;
+                }
+
+                if ($belowMin || $requirement->target > 0 || $requirement->targetMale > 0) {
+                    $this->shortSlots["{$i}|{$slot}"] = [$i, $requirement, (bool) $belowMin];
+                }
                 $this->minShort += $requirement->min + $requirement->minMale + array_sum($requirement->positionMins);
                 $this->targetShort += $requirement->target + $requirement->targetMale + array_sum($requirement->positionMins);
             }
@@ -192,6 +212,7 @@ final class ScheduleState
         }
 
         $this->fixedHardViolations = count($this->validate(fixedOnly: true));
+        $this->dirty = array_fill_keys(array_keys($problem->employees), true);
     }
 
     // ------------------------------------------------------------------ Truy vấn
@@ -455,9 +476,10 @@ final class ScheduleState
         $this->plan[$employeeId][$i] = self::slotKey($outletId, $shiftId, $support);
         $this->adjustCount($i, $outletId, $shiftId, $employeeId, 1, $support);
         unset($this->metrics[$employeeId]);
+        $this->dirty[$employeeId] = true;
 
         if ($outletId !== $this->problem->employees[$employeeId]->homeOutletId) {
-            $this->crossCells["{$employeeId}|{$i}"] = $outletId;
+            $this->crossCells[$i][$employeeId] = $outletId;
         }
     }
 
@@ -468,9 +490,10 @@ final class ScheduleState
         }
 
         [$o, $s, $f] = self::parseSlot($this->plan[$employeeId][$i]);
-        unset($this->plan[$employeeId][$i], $this->crossCells["{$employeeId}|{$i}"]);
+        unset($this->plan[$employeeId][$i], $this->crossCells[$i][$employeeId]);
         $this->adjustCount($i, $o, $s, $employeeId, -1, $f);
         unset($this->metrics[$employeeId]);
+        $this->dirty[$employeeId] = true;
     }
 
     // ------------------------------------------------------------------ Ràng buộc cứng
@@ -709,74 +732,159 @@ final class ScheduleState
     // ------------------------------------------------------------------ Mục tiêu
 
     /**
-     * @return int[] Vector mục tiêu, so sánh theo thứ tự (xem compare()).
+     * Vector mục tiêu theo thứ tự objectiveLabels() – dùng để báo cáo và so sánh; bộ giải tối ưu cost().
+     *
+     * @return int[]
      */
     public function objective(): array
     {
-        $heavy = 0;
-        $preference = 0;
-        $ratios = [];
-        $heavySquares = 0;
-        $nightSquares = 0;
-        $nightRotation = 0;
-        $offComfort = 0;
-        $shiftMix = 0;
-        $overNorm = 0;
-        $lobbySquares = 0;
-        $offSplit = 0;
-        $busyOff = 0;
-        $underNorm = 0;
-        $childBorrow = 0;
+        $values = $this->objectiveValues();
 
-        foreach ($this->problem->employees as $employeeId => $employee) {
-            $m = $this->metricsFor($employeeId);
+        return array_map(fn ($label) => $values[$label], self::objectiveLabels($this->problem->rules));
+    }
+
+    /**
+     * Điểm phạt tổng của lịch (càng nhỏ càng tốt): tổng có trọng số của các mục tiêu, chia 3 nhóm
+     * Bắt buộc (trọng số rất lớn, không bao giờ đổi lấy nhóm dưới) / Quan trọng / Nên có – xem Rules::weights().
+     */
+    public function cost(): float
+    {
+        $this->weights ??= $this->problem->rules->weights();
+        $cost = 0.0;
+
+        foreach ($this->objectiveValues() as $label => $value) {
+            $cost += $value * $this->weights[$label];
+        }
+
+        return $cost;
+    }
+
+    /**
+     * Điểm phạt theo trọng số thật và theo một bộ trọng số khác (pha dựng khung của bộ giải), tính mục tiêu một lần.
+     *
+     * @param array<string, float> $weights
+     * @return array{0: float, 1: float} [điểm thật, điểm theo $weights]
+     */
+    public function costs(array $weights): array
+    {
+        $this->weights ??= $this->problem->rules->weights();
+        $real = 0.0;
+        $other = 0.0;
+
+        foreach ($this->objectiveValues() as $label => $value) {
+            $real += $value * $this->weights[$label];
+            $other += $value * ($weights[$label] ?? $this->weights[$label]);
+        }
+
+        return [$real, $other];
+    }
+
+    /** @var array<string, float>|null */
+    private ?array $weights = null;
+
+    /** @var array<int, true> Người có ô thay đổi từ lần cộng dồn gần nhất */
+    private array $dirty = [];
+
+    /** @var array<int, array<string, float|int>> [employeeId] => phần đóng góp vào tổng mục tiêu (lần cộng dồn gần nhất) */
+    private array $terms = [];
+
+    /** @var array<string, float|int> Tổng các phần đóng góp của mọi người */
+    private array $totals = [];
+
+    /**
+     * Phần đóng góp của một người vào các mục tiêu.
+     *
+     * @return array<string, float|int>
+     */
+    private function employeeTerms(int $employeeId, array $m): array
+    {
+        $terms = [
             // OFF lẻ và OFF dồn quá 3 ngày cùng một mức: OFF phải thành cụm 2–3 ngày.
-            $offSplit += $m['off_split'] + $m['off_overlong'];
-            $busyOff += $m['busy_off'];
-            $offComfort += $m['off_blocks'] + $m['off_overlong'] + $m['off_single'];
-            $shiftMix += $m['shift_mix'];
-            $overNorm += $m['over_norm'];
-            $underNorm += $m['under_norm'];
-            $childBorrow += $m['child_borrow'];
+            'off_split' => $m['off_split'] + $m['off_overlong'],
+            'busy_off' => $m['busy_off'],
+            'off_comfort' => $m['off_blocks'] + $m['off_overlong'] + $m['off_single'],
+            'shift_mix' => $m['shift_mix'],
+            'over_norm' => $m['over_norm'],
+            'under_norm' => $m['under_norm'],
+            'child_borrow' => $m['child_borrow'],
             // Cờ (L) không cần thiết bị phạt nhẹ để thuật toán chỉ giao hỗ trợ Lobby khi khung giờ cần người.
-            $preference += $m['support_flags'];
+            'preference' => $m['support_flags'] + $m['non_home'] * 3 + $m['non_primary'] * 2 + $m['soft_conflicts'] * 6 + $m['changes'] * 4,
+            'heavy' => $m['heavy'],
+            'heavy_sq' => $m['heavy'] ** 2,
+            'lobby_sq' => 0,
+            'night_rotation' => 0,
+            'night_sq' => 0,
+            'ratio' => 0.0,
+            'ratio_sq' => 0.0,
+            'ratio_n' => 0,
+        ];
 
-            // Chia đều lượt Lobby giữa các nhân viên (tính cả các tuần trước): không để một người đi Lobby suốt.
-            // Trong kỳ chia đều là chính; lịch sử (lượt TB/tuần các tuần trước) để luân phiên giữa các tuần.
-            if ($m['lobby'] > 0) {
-                $history = $this->problem->lobbyHistory[$employeeId] ?? 0;
-                $lobbySquares += 4 * $m['lobby'] ** 2 + ($m['lobby'] + $history) ** 2 - $history ** 2;
-            }
-            $heavy += $m['heavy'];
-            $heavySquares += $m['heavy'] ** 2;
-            $preference += $m['non_home'] * 3 + $m['non_primary'] * 2 + $m['soft_conflicts'] * 6 + $m['changes'] * 4;
-
-            if ($this->expectedDays[$employeeId] > 0) {
-                $ratios[] = $m['worked'] / $this->expectedDays[$employeeId];
-            }
-
-            if (isset($this->nightRotation[$employeeId])) {
-                // Luân phiên ca đêm theo tuần: tuần này một nhóm làm đêm, tuần sau tới người khác
-                // (ít người có tuần đêm trong kỳ, người đã làm đêm các tuần trước được nghỉ đêm), không trộn đêm với ca ngày trong tuần.
-                $history = $this->problem->nightHistory[$employeeId] ?? 0;
-                $nightRotation += ($m['night_weeks'] + $history) ** 2 - $history ** 2 + $m['night_mixed'];
-            } elseif (isset($this->nightPool[$employeeId])) {
-                $nightSquares += $m['night'] ** 2;
-                $nightRotation += $m['night_staff_day'];
-            }
+        // Chia đều lượt Lobby giữa các nhân viên (tính cả các tuần trước): không để một người đi Lobby suốt.
+        // Trong kỳ chia đều là chính; lịch sử (lượt TB/tuần các tuần trước) để luân phiên giữa các tuần.
+        if ($m['lobby'] > 0) {
+            $history = $this->problem->lobbyHistory[$employeeId] ?? 0;
+            $terms['lobby_sq'] = 4 * $m['lobby'] ** 2 + ($m['lobby'] + $history) ** 2 - $history ** 2;
         }
 
-        $variance = 0.0;
-
-        if ($ratios) {
-            $mean = array_sum($ratios) / count($ratios);
-
-            foreach ($ratios as $ratio) {
-                $variance += ($ratio - $mean) ** 2;
-            }
+        if ($this->expectedDays[$employeeId] > 0) {
+            $ratio = $m['worked'] / $this->expectedDays[$employeeId];
+            $terms['ratio'] = $ratio;
+            $terms['ratio_sq'] = $ratio ** 2;
+            $terms['ratio_n'] = 1;
         }
 
-        // Trọng số chỉ dùng bên trong cùng một mức; các mức khác nhau không bao giờ đánh đổi nhau.
+        if (isset($this->nightRotation[$employeeId])) {
+            // Luân phiên ca đêm theo tuần: tuần này một nhóm làm đêm, tuần sau tới người khác
+            // (ít người có tuần đêm trong kỳ, người đã làm đêm các tuần trước được nghỉ đêm), không trộn đêm với ca ngày trong tuần.
+            $history = $this->problem->nightHistory[$employeeId] ?? 0;
+            $terms['night_rotation'] = ($m['night_weeks'] + $history) ** 2 - $history ** 2 + $m['night_mixed'];
+        } elseif (isset($this->nightPool[$employeeId])) {
+            $terms['night_sq'] = $m['night'] ** 2;
+            $terms['night_rotation'] = $m['night_staff_day'];
+        }
+
+        return $terms;
+    }
+
+    /**
+     * Giá trị từng mục tiêu (chưa nhân trọng số).
+     *
+     * Phần theo từng người được cộng dồn tăng dần: chỉ người có ô thay đổi (dirty) mới được tính lại
+     * và cập nhật vào tổng – các bước thử chỉ chạm 1–3 người trong cả bộ phận.
+     *
+     * @return array<string, int>
+     */
+    public function objectiveValues(): array
+    {
+        foreach ($this->dirty as $employeeId => $_) {
+            $terms = $this->employeeTerms($employeeId, $this->metrics[$employeeId] ?? $this->metricsFor($employeeId));
+            $old = $this->terms[$employeeId] ?? null;
+
+            foreach ($terms as $k => $value) {
+                $this->totals[$k] = ($this->totals[$k] ?? 0) + $value - ($old[$k] ?? 0);
+            }
+
+            $this->terms[$employeeId] = $terms;
+        }
+
+        $this->dirty = [];
+        $t = $this->totals;
+        $n = $t['ratio_n'] ?? 0;
+        $variance = $n > 0 ? max(0.0, ($t['ratio_sq'] ?? 0) - ($t['ratio'] ?? 0) ** 2 / $n) : 0.0;
+        $heavy = $t['heavy'] ?? 0;
+        $heavySquares = $t['heavy_sq'] ?? 0;
+        $nightSquares = $t['night_sq'] ?? 0;
+        $lobbySquares = $t['lobby_sq'] ?? 0;
+        $offSplit = $t['off_split'] ?? 0;
+        $overNorm = $t['over_norm'] ?? 0;
+        $busyOff = $t['busy_off'] ?? 0;
+        $nightRotation = (int) round($t['night_rotation'] ?? 0);
+        $underNorm = $t['under_norm'] ?? 0;
+        $childBorrow = $t['child_borrow'] ?? 0;
+        $shiftMix = $t['shift_mix'] ?? 0;
+        $offComfort = $t['off_comfort'] ?? 0;
+        $preference = $t['preference'] ?? 0;
+
         // Chia đều người đi Lobby giữa các outlet: tổng bình phương số người mỗi outlet đưa sang mỗi khung Lobby.
         $supportSquares = 0;
 
@@ -808,39 +916,36 @@ final class ScheduleState
             }
         }
 
-        // Người dôi ra trên định biên mục tiêu (để đủ ngày làm) được chia đều giữa các ca.
-        $overTarget = 0;
+        // Người dôi ra trên định biên mục tiêu (để đủ ngày làm) được chia đều giữa các ca: $this->overTarget.
+        $fairness = (int) round($this->overTarget * 50 + $variance * 10000 + $heavySquares * 20 + $nightSquares * 20 + $lobbySquares * 10 + $supportSquares * 60);
 
-        foreach ($this->requirements as $i => $requirements) {
-            foreach ($requirements as $requirement) {
-                if (($over = $this->count($i, $requirement->outletId, $requirement->shiftId) - $requirement->target) > 0) {
-                    $overTarget += $over ** 2;
-                }
-            }
-        }
-
-        $fairness = (int) round($overTarget * 50 + $variance * 10000 + $heavySquares * 20 + $nightSquares * 20 + $lobbySquares * 10 + $supportSquares * 60);
-
-        $values = [
+        return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
             'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
-
-        return array_map(fn ($label) => $values[$label], self::objectiveLabels($this->problem->rules));
     }
 
     /**
-     * Thứ tự các mức mục tiêu. Tối ưu lại lịch đang dùng (stabilityFirst): cùng thứ tự với xếp mới, chỉ đưa "ít thay đổi" lên ngay
-     * sau các quy tắc bắt buộc (đủ tối thiểu, OFF liền nhau, ngày làm đúng định mức) – một người nghỉ đột xuất không làm xáo trộn cả tuần.
+     * Thứ tự các mục tiêu từ quan trọng nhất (theo trọng số đang áp dụng) – dùng cho báo cáo.
      *
      * @return string[]
      */
     public static function objectiveLabels(Rules $rules): array
     {
-        return $rules->stabilityFirst
-            ? ['hard', 'source_shortage', 'min_shortage', 'under_norm', 'off_split', 'over_norm', 'child_borrow', 'preference', 'busy_day_off', 'night_rotation', 'shift_mix', 'heavy_transitions', 'lobby_mix', 'target_shortage', 'fairness', 'off_comfort']
-            : ['hard', 'source_shortage', 'min_shortage', 'under_norm', 'off_split', 'over_norm', 'child_borrow', 'busy_day_off', 'night_rotation', 'shift_mix', 'heavy_transitions', 'lobby_mix', 'target_shortage', 'fairness', 'off_comfort', 'preference'];
+        static $cache = null;
+        $cache ??= new \WeakMap();
+
+        if (isset($cache[$rules])) {
+            return $cache[$rules];
+        }
+
+        $weights = $rules->weights();
+        $labels = array_keys($weights);
+        $position = array_flip($labels);
+        usort($labels, fn ($a, $b) => [$weights[$b], $position[$a]] <=> [$weights[$a], $position[$b]]);
+
+        return $cache[$rules] = $labels;
     }
 
     /**
@@ -851,30 +956,62 @@ final class ScheduleState
      */
     public function sourceShortages(): array
     {
+        // Chỉ ô đang thiếu tối thiểu mới có thể là nơi nguồn bị thiếu (danh sách cập nhật tăng dần trong adjustCount).
+        if (! $this->minShortSlots) {
+            return [];
+        }
+
         $result = [];
 
-        foreach ($this->crossCells as $cell => $outletId) {
-            [$employeeId, $i] = array_map('intval', explode('|', $cell));
-            $employee = $this->problem->employees[$employeeId];
+        foreach ($this->minShortSlots as $i => $slots) {
+            foreach ($this->crossCells[$i] ?? [] as $employeeId => $outletId) {
+                $employee = $this->problem->employees[$employeeId];
 
-            foreach ($this->requirements[$i] ?? [] as $requirement) {
-                if ($requirement->outletId !== $employee->homeOutletId
-                    || $employee->skillLevel($requirement->outletId, $requirement->shiftId) !== EmployeeSpec::PRIMARY) {
-                    continue;
-                }
+                foreach ($this->homePrimaryShifts($employeeId) as $shiftId) {
+                    if (! isset($slots["{$employee->homeOutletId}|{$shiftId}"])) {
+                        continue;
+                    }
 
-                $count = $this->count($i, $requirement->outletId, $requirement->shiftId);
-                $male = $this->maleCount($i, $requirement->outletId, $requirement->shiftId);
+                    $requirement = $this->requirements[$i]["{$employee->homeOutletId}|{$shiftId}"];
+                    $count = $this->count($i, $requirement->outletId, $requirement->shiftId);
+                    $male = $this->maleCount($i, $requirement->outletId, $requirement->shiftId);
 
-                if ($count < $requirement->min || ($employee->isMale() && $male < $requirement->minMale) || $this->positionShort($employeeId, $i, $requirement, 0)) {
-                    $result[] = ['employee_id' => $employeeId, 'date' => $this->dates[$i], 'outlet_id' => $outletId, 'home_outlet_id' => $employee->homeOutletId, 'home_shift_id' => $requirement->shiftId];
+                    if ($count < $requirement->min || ($employee->isMale() && $male < $requirement->minMale) || $this->positionShort($employeeId, $i, $requirement, 0)) {
+                        $result[] = ['employee_id' => $employeeId, 'date' => $this->dates[$i], 'outlet_id' => $outletId, 'home_outlet_id' => $employee->homeOutletId, 'home_shift_id' => $requirement->shiftId];
 
-                    break;
+                        break;
+                    }
                 }
             }
         }
 
         return $result;
+    }
+
+    /** @var array<int, int[]> */
+    private array $homePrimaryShifts = [];
+
+    /**
+     * Các ca nhân viên chuyên trách (primary) tại outlet chính.
+     *
+     * @return int[]
+     */
+    private function homePrimaryShifts(int $employeeId): array
+    {
+        if (isset($this->homePrimaryShifts[$employeeId])) {
+            return $this->homePrimaryShifts[$employeeId];
+        }
+
+        $employee = $this->problem->employees[$employeeId];
+        $shifts = [];
+
+        foreach ($this->problem->shifts as $shiftId => $shift) {
+            if ($employee->homeOutletId !== null && $employee->skillLevel($employee->homeOutletId, $shiftId) === EmployeeSpec::PRIMARY) {
+                $shifts[] = $shiftId;
+            }
+        }
+
+        return $this->homePrimaryShifts[$employeeId] = $shifts;
     }
 
     /**
@@ -892,15 +1029,6 @@ final class ScheduleState
         }
 
         return $this->inScope[$i] && ! isset($this->plan[$employeeId][$i]);
-    }
-
-    /**
-     * Ngày k là OFF và cùng tuần (thứ Hai → Chủ nhật) với ngày i: OFF chỉ ghép cặp trong tuần,
-     * không ghép OFF thứ Hai với Chủ nhật tuần trước (tránh tuần OFF thứ Hai + Chủ nhật).
-     */
-    private function isOffDayInWeek(int $employeeId, int $k, int $i): bool
-    {
-        return isset($this->dates[$k]) && $this->weekOf[$k] === $this->weekOf[$i] && $this->isOffDay($employeeId, $k);
     }
 
     private function isExcusedOff(int $employeeId, int $i): bool
@@ -931,6 +1059,9 @@ final class ScheduleState
     }
 
     /**
+     * Chỉ số của một nhân viên trên toàn kỳ (được lưu đệm, xóa khi ô của người đó thay đổi).
+     * Ca từng ngày được đọc một lần vào mảng rồi mọi chỉ số tính trên mảng đó – đây là phần chạy nhiều nhất của bộ giải.
+     *
      * @return array{worked: int, hours: float, heavy: int, night: int, morning: int, afternoon: int, non_home: int, non_primary: int, soft_conflicts: int, changes: int, outlets: array<int, int>}
      */
     public function metricsFor(int $employeeId): array
@@ -940,19 +1071,42 @@ final class ScheduleState
         }
 
         $employee = $this->problem->employees[$employeeId];
+        $shifts = $this->problem->shifts;
         $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'outlets' => []];
 
-        foreach ($this->scopeIndexes() as $i) {
+        // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
+        $work = [];
+        $fixedRow = $this->fixed[$employeeId] ?? [];
+        $planRow = $this->plan[$employeeId] ?? [];
+        $last = count($this->dates) - 1;
+
+        for ($i = 0; $i <= $last; $i++) {
+            if (isset($fixedRow[$i])) {
+                $fixed = $fixedRow[$i];
+                $work[$i] = $fixed->isWorking() ? [$fixed->outletId, $fixed->shiftId, $fixed->overtimeHours, $fixed->support] : null;
+            } elseif (isset($planRow[$i])) {
+                [$o, $s, $f] = self::parseSlot($planRow[$i]);
+                $work[$i] = [$o, $s, 0.0, $f];
+            } else {
+                $work[$i] = null;
+            }
+        }
+
+        $scope = $this->scopeIndexes();
+        $baselineRow = $this->problem->baseline[$employeeId] ?? [];
+        $softRow = $this->problem->softUnavailable[$employeeId] ?? [];
+        $byWeek = [];
+        $home = $employee->homeOutletId;
+        $parents = $this->problem->outletParents;
+        $station = $this->problem->stationOutletId;
+        $levels = &$this->skillLevels[$employeeId];
+
+        foreach ($scope as $i) {
             $date = $this->dates[$i];
-            $current = $this->shiftAt($employeeId, $i);
+            $current = $work[$i];
 
-            if (! $this->isFixed($employeeId, $i)) {
-                $baseline = $this->problem->baseline[$employeeId][$date] ?? null;
-                $planned = $this->plan[$employeeId][$i] ?? null;
-
-                if ($baseline !== $planned && ! ($baseline === null && $planned === null)) {
-                    $m['changes']++;
-                }
+            if (! isset($fixedRow[$i]) && ($baselineRow[$date] ?? null) !== ($planRow[$i] ?? null)) {
+                $m['changes']++;
             }
 
             if (! $current) {
@@ -960,59 +1114,63 @@ final class ScheduleState
             }
 
             [$o, $s, $ot, $f] = $current;
-            $shift = $this->problem->shifts[$s];
+            $shift = $shifts[$s];
+            $category = $shift->category();
             $m['worked']++;
 
-            if ($this->supportInterval($o, $s, $f)) {
+            // Có mặt ở Lobby: ca làm trọn ở trạm, hoặc ca có khung (L) và đang bật (L) (như supportInterval()).
+            if (($o !== null && $o === $station) || ($f && $shift->lobbyWindow)) {
                 $m['lobby']++;
             }
 
-            if ($f && ! $this->isFixed($employeeId, $i)) {
+            if ($f && ! isset($fixedRow[$i])) {
                 $m['support_flags']++;
             }
 
             $m['hours'] += $shift->hours + $ot;
-            $m[$shift->category()]++;
+            $m[$category]++;
             $m['outlets'][$o] = ($m['outlets'][$o] ?? 0) + 1;
 
-            if ($o !== null && isset($this->problem->outletParents[$o]) && ! $this->problem->isHomeOutlet($employee, $o)) {
-                $m['child_borrow']++;
-            }
-
-            if ($o !== null && ! $this->problem->isHomeOutlet($employee, $o)) {
+            if ($o !== null && $o !== $home && ($parents[$o] ?? null) !== $home) {
                 $m['non_home']++;
+
+                if (isset($parents[$o])) {
+                    $m['child_borrow']++;
+                }
             }
 
-            if ($o !== null && $employee->skillLevel($o, $s) !== EmployeeSpec::PRIMARY) {
+            if ($o !== null && ($levels[$o][$s] ??= $employee->skillLevel($o, $s) ?? '') !== EmployeeSpec::PRIMARY) {
                 $m['non_primary']++;
             }
 
-            if (isset($this->problem->softUnavailable[$employeeId][$date])) {
+            if (isset($softRow[$date])) {
                 $m['soft_conflicts']++;
             }
 
-            if ($this->isHeavyPair($employeeId, $i, $i + 1)) {
+            if ($i < $last && $work[$i + 1] && $this->heavyBetween($current, $work[$i + 1])) {
                 $m['heavy']++;
             }
+
+            $byWeek[$this->weekOf[$i]][$category] = ($byWeek[$this->weekOf[$i]][$category] ?? 0) + 1;
         }
 
         // Cặp (ngày trước phạm vi, ngày đầu phạm vi).
-        $first = $this->scopeIndexes()[0] ?? null;
+        $first = $scope[0] ?? null;
 
-        if ($first !== null && $first > 0 && $this->isHeavyPair($employeeId, $first - 1, $first)) {
+        if ($first !== null && $first > 0 && $work[$first - 1] && $work[$first] && $this->heavyBetween($work[$first - 1], $work[$first])) {
             $m['heavy']++;
         }
 
         // Cụm OFF: mỗi chuỗi ngày không làm bắt đầu trong phạm vi là một cụm; ít cụm hơn = OFF liền nhau hơn.
         // Cụm dài quá 3 ngày bị phạt thêm từng ngày vượt (muốn nghỉ liền 2–3 ngày, không dồn quá dài).
-        foreach ($this->scopeIndexes() as $i) {
-            if ($this->shiftAt($employeeId, $i) || ($i > 0 && ! $this->shiftAt($employeeId, $i - 1) && isset($this->dates[$i - 1]))) {
+        foreach ($scope as $i) {
+            if ($work[$i] || ($i > 0 && ! $work[$i - 1])) {
                 continue;
             }
 
             $length = 0;
 
-            for ($k = $i; isset($this->dates[$k]) && ! $this->shiftAt($employeeId, $k); $k++) {
+            for ($k = $i; $k <= $last && ! $work[$k]; $k++) {
                 $length++;
             }
 
@@ -1020,39 +1178,36 @@ final class ScheduleState
             $m['off_overlong'] += max(0, $length - 3);
 
             // OFF lẻ 1 ngày kẹp giữa hai ngày làm: phạt thêm (ưu tiên 2+2 hơn 3+1).
-            if ($length === 1 && isset($this->dates[$i + 1]) && $this->shiftAt($employeeId, $i + 1)) {
+            if ($length === 1 && $i < $last && $work[$i + 1]) {
                 $m['off_single']++;
             }
         }
 
         // Tuần có ca đêm, và số ca ngày lẫn trong tuần có ca đêm.
-        $byWeekNight = [];
+        $staffDay = isset($this->nightPool[$employeeId], $this->nightOutlets[$employee->homeOutletId]) && ! $employee->fixed;
 
-        foreach ($this->scopeIndexes() as $i) {
-            if ($current = $this->shiftAt($employeeId, $i)) {
-                $kind = $this->problem->shifts[$current[1]]->category() === 'night' ? 'n' : 'd';
-                $byWeekNight[$this->weekOf[$i]][$kind] = ($byWeekNight[$this->weekOf[$i]][$kind] ?? 0) + 1;
+        foreach ($byWeek as $counts) {
+            $night = $counts['night'] ?? 0;
+            $day = ($counts['morning'] ?? 0) + ($counts['afternoon'] ?? 0);
+
+            if ($staffDay) {
+                $m['night_staff_day'] += $day;
             }
-        }
 
-        if (isset($this->nightPool[$employeeId], $this->nightOutlets[$employee->homeOutletId]) && ! $employee->fixed) {
-            foreach ($byWeekNight as $counts) {
-                $m['night_staff_day'] += $counts['d'] ?? 0;
-            }
-        }
-
-        foreach ($byWeekNight as $counts) {
-            if (($counts['n'] ?? 0) > 0) {
+            if ($night > 0) {
                 $m['night_weeks']++;
-                $m['night_mixed'] += min($counts['n'], $counts['d'] ?? 0);
+                $m['night_mixed'] += min($night, $day);
             }
         }
 
         // OFF 2 ngày liền nhau (trong cùng tuần – không có tuần OFF thứ Hai + Chủ nhật) & hạn chế OFF ngày đông khách.
         // Chỉ xét ngày OFF do thuật toán chọn:
         // ngày nhân viên tự xin OFF / nghỉ phép đã duyệt và ô quản lý đã khóa được miễn (sinh nhật thì không – OFF còn lại nên ghép cạnh).
-        foreach ($this->scopeIndexes() as $i) {
-            if (! $this->isOffDay($employeeId, $i) || $this->isExcusedOff($employeeId, $i)) {
+        $isOff = fn (int $k, int $i) => $k >= 0 && $k <= $last && $this->weekOf[$k] === $this->weekOf[$i]
+            && ($work[$k] === null && (isset($fixedRow[$k]) || $this->inScope[$k]));
+
+        foreach ($scope as $i) {
+            if ($work[$i] || $this->isExcusedOff($employeeId, $i)) {
                 continue;
             }
 
@@ -1060,23 +1215,14 @@ final class ScheduleState
                 $m['busy_off']++;
             }
 
-            if ($employee->daysOffPerWeek >= 2 && ! $this->isOffDayInWeek($employeeId, $i - 1, $i) && ! $this->isOffDayInWeek($employeeId, $i + 1, $i)) {
+            if ($employee->daysOffPerWeek >= 2 && ! $isOff($i - 1, $i) && ! $isOff($i + 1, $i)) {
                 $m['off_split']++;
             }
         }
 
-
         // Xen kẽ ca: người không có ca cứng, mỗi tuần làm >= 2 ca ngày thì phải có cả ca sáng lẫn ca chiều,
-        // (phạt nặng), và số ca sáng / chiều không lệch quá 2 (phạt nhẹ). Ca đêm không tính.
+        // (phạt nặng), và số ca sáng / chiều không lệch quá ngưỡng (phạt nhẹ). Ca đêm không tính.
         if (! $employee->fixed) {
-            $byWeek = [];
-
-            foreach ($this->scopeIndexes() as $i) {
-                if (($current = $this->shiftAt($employeeId, $i)) && in_array($category = $this->problem->shifts[$current[1]]->category(), ['morning', 'afternoon'], true)) {
-                    $byWeek[$this->weekOf[$i]][$category] = ($byWeek[$this->weekOf[$i]][$category] ?? 0) + 1;
-                }
-            }
-
             foreach ($byWeek as $counts) {
                 $morning = $counts['morning'] ?? 0;
                 $afternoon = $counts['afternoon'] ?? 0;
@@ -1089,36 +1235,66 @@ final class ScheduleState
             }
         }
 
-        // Ngày làm vượt định mức tuần (chỉ có thể xảy ra ở chế độ OFF theo cặp 2 tuần).
-        $weeks = [];
-
-        foreach ($this->scopeIndexes() as $i) {
-            $weeks[$this->weekOf[$i]] = $i;
-        }
-
-        foreach ($weeks as $i) {
-            $m['over_norm'] += max(0, $this->workedInWeek($employeeId, $i) - $employee->maxWorkDaysPerWeek());
-        }
-
-        // Thiếu ngày làm so với định mức (tuần trọn trong kỳ): không để ai mất ngày làm khi vẫn còn chỗ
-        // (vd người ca cứng M6 bị nhường chỗ cho người khác xen kẽ ca). Cộng cả kỳ để hợp chế độ OFF theo cặp 2 tuần.
+        // Ngày làm từng tuần (kể cả ô cố định ngoài phạm vi).
+        $maxWork = $employee->maxWorkDaysPerWeek();
+        $hardRow = $this->problem->hardUnavailable[$employeeId] ?? [];
         $expected = 0;
         $worked = 0;
 
         foreach ($this->weekDays as $days) {
-            if (count(array_filter($days, fn ($k) => $this->inScope[$k])) < 7) {
-                continue;
+            $inWeek = 0;
+            $scopeDays = 0;
+            $available = 0;
+
+            foreach ($days as $k) {
+                if ($work[$k]) {
+                    $inWeek++;
+                }
+
+                if ($this->inScope[$k]) {
+                    $scopeDays++;
+                }
+
+                if (! isset($hardRow[$this->dates[$k]]) && ! (isset($fixedRow[$k]) && ! $fixedRow[$k]->isWorking())) {
+                    $available++;
+                }
             }
 
-            $available = count(array_filter($days, fn ($k) => ! isset($this->problem->hardUnavailable[$employeeId][$this->dates[$k]])
-                && ! (isset($this->fixed[$employeeId][$k]) && ! $this->fixed[$employeeId][$k]->isWorking())));
-            $expected += min($employee->maxWorkDaysPerWeek(), $available);
-            $worked += $this->workedInWeek($employeeId, $days[0]);
+            // Ngày làm vượt định mức tuần (chỉ có thể xảy ra ở chế độ OFF theo cặp 2 tuần).
+            if ($scopeDays > 0) {
+                $m['over_norm'] += max(0, $inWeek - $maxWork);
+            }
+
+            // Thiếu ngày làm so với định mức (tuần trọn trong kỳ): không để ai mất ngày làm khi vẫn còn chỗ
+            // (vd người ca cứng M6 bị nhường chỗ cho người khác xen kẽ ca). Cộng cả kỳ để hợp chế độ OFF theo cặp 2 tuần.
+            if ($scopeDays === 7) {
+                $expected += min($maxWork, $available);
+                $worked += $inWeek;
+            }
         }
 
         $m['under_norm'] = max(0, $expected - $worked);
 
         return $this->metrics[$employeeId] = $m;
+    }
+
+    /**
+     * Hai ca liền nhau (ngày i và i + 1) có là chuyển ca nặng không: theo quy tắc chuyển ca, hoặc nghỉ dưới mức mềm.
+     *
+     * @param array{0: ?int, 1: int, 2: float, 3: bool} $a
+     * @param array{0: ?int, 1: int, 2: float, 3: bool} $b
+     */
+    private function heavyBetween(array $a, array $b): bool
+    {
+        $rule = $this->problem->rules->transitions["{$a[1]}:{$b[1]}"] ?? null;
+
+        if ($rule !== null && $rule !== 'forbidden') {
+            return $rule === 'heavy';
+        }
+
+        $rest = 1440 + $this->problem->shifts[$b[1]]->start() - $this->problem->shifts[$a[1]]->end() - (int) round($a[2] * 60);
+
+        return $rest < $this->problem->rules->softMinRestHours * 60;
     }
 
     public function restMinutes(int $employeeId, int $i): ?int
@@ -1240,6 +1416,7 @@ final class ScheduleState
         }
 
         $short = fn (int $need, int $have) => max(0, $need - $have);
+        $this->overTarget += max(0, $this->count[$key] - $requirement->target) ** 2 - max(0, $before - $requirement->target) ** 2;
 
         $this->minShort += $short($requirement->min, $this->count[$key]) - $short($requirement->min, $before)
             + $short($requirement->minMale, $this->maleCount[$key]) - $short($requirement->minMale, $beforeMale);
@@ -1254,6 +1431,63 @@ final class ScheduleState
                 $this->targetShort += $diff;
             }
         }
+
+        $short = $this->count[$key] < $requirement->min || $this->maleCount[$key] < $requirement->minMale;
+
+        foreach ($requirement->positionMins as $group => $need) {
+            if ($short) {
+                break;
+            }
+
+            $short = $need > 0 && ($this->positionCount[$key][(string) $group] ?? 0) < $need;
+        }
+
+        $slot = "{$outletId}|{$shiftId}";
+
+        if ($short) {
+            $this->minShortSlots[$i][$slot] = true;
+        } elseif (isset($this->minShortSlots[$i])) {
+            unset($this->minShortSlots[$i][$slot]);
+
+            if (! $this->minShortSlots[$i]) {
+                unset($this->minShortSlots[$i]);
+            }
+        }
+
+        if ($short || $this->count[$key] < $requirement->target || $this->maleCount[$key] < $requirement->targetMale) {
+            $this->shortSlots["{$i}|{$slot}"] = [$i, $requirement, $short];
+        } else {
+            unset($this->shortSlots["{$i}|{$slot}"]);
+        }
+    }
+
+    /** @var array<string, array{0: int, 1: Requirement, 2: bool}> "i|o|s" => [ngày, định biên, thiếu tối thiểu?] ô đang thiếu so với mục tiêu */
+    private array $shortSlots = [];
+
+    /**
+     * Các ô định biên đang thiếu người so với mục tiêu (kèm cờ thiếu tối thiểu).
+     *
+     * @return array<string, array{0: int, 1: Requirement, 2: bool}>
+     */
+    public function shortSlots(): array
+    {
+        return $this->shortSlots;
+    }
+
+    /**
+     * Lưu đệm chỉ số từng người trước một bước thử; nếu bước bị hoàn tác (lịch trở lại y hệt) thì trả lại đệm cũ
+     * thay vì tính lại – phần lớn bước thử bị từ chối.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function metricsSnapshot(): array
+    {
+        return [$this->metrics, $this->terms, $this->totals, $this->dirty];
+    }
+
+    public function restoreMetrics(array $snapshot): void
+    {
+        [$this->metrics, $this->terms, $this->totals, $this->dirty] = $snapshot;
     }
 
     private function buildTimeline(): void

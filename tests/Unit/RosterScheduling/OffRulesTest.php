@@ -99,7 +99,15 @@ class OffRulesTest extends TestCase
         $pattern = $this->offPattern($result)[1];
         $this->assertSame(['O', 'O'], [$pattern[1], $pattern[3]], "Giữ đúng 2 ngày xin OFF lẻ: {$pattern}");
         $this->assertLessThanOrEqual(3, substr_count($pattern, 'O'), "Không dồn thêm OFF: {$pattern}");
-        $this->assertSame(0, $result->softConstraintScores['objective']['off_split']);
+
+        // 2 ngày tự xin không bị tính là OFF lẻ của người xin.
+        $requester = array_values(array_filter($result->employeeWorkload, fn ($w) => $w['employee_id'] === 1))[0];
+        $this->assertSame(0, $requester['off_split']);
+
+        // 8 người × 5 ngày = 40 < 42 chỗ mục tiêu: thiếu đúng 2, không hơn. Quyết định của quản lý 21/10/2026: đủ người xếp trên
+        // OFF liền nhau, nên ở đây có thể còn 1 người OFF lẻ (gom hết OFF sẽ thiếu 3 chỗ).
+        $this->assertSame(2, $result->softConstraintScores['objective']['target_shortage']);
+        $this->assertLessThanOrEqual(2, $result->softConstraintScores['objective']['off_split']);
     }
 
     /** Thứ Bảy đông khách: chỉ người thật sự không xếp được mới OFF thứ Bảy. */

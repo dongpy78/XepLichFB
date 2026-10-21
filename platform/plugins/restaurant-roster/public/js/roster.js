@@ -200,7 +200,17 @@ $(() => {
         $('#roster-cell-ot').toggleClass('d-none', overtime <= 0)
         $('#roster-cell-ot-hours').text(`+${overtime}h`)
         $('#roster-cell-ot-status').text(otLabels[$cell.data('ot-status')] || 'chờ duyệt')
-        $('#roster-cell-lock span').text(currentCell.locked ? 'Mở khóa ô' : 'Khóa ô')
+        const recordedOff = Number($cell.data('recorded-off')) === 1
+        const review = $cell.data('review') || ''
+        const isShift = Boolean($cell.data('template'))
+
+        // OFF quản lý đã cho: gỡ bằng "Gỡ OFF" (không mở khóa thường); ca làm: khóa = xác nhận ca.
+        $('#roster-cell-recorded-off').toggleClass('d-none', !recordedOff)
+        $('#roster-cell-review').toggleClass('d-none', !review)
+        $('#roster-cell-review-text').text(review)
+        $('#roster-cell-lock').toggleClass('d-none', recordedOff)
+        $('#roster-cell-lock span').text(currentCell.locked ? 'Mở khóa ô' : (isShift ? 'Xác nhận & khóa ca' : 'Khóa ô'))
+        $modal.find('[data-assign]').prop('disabled', currentCell.locked)
 
         const tags = $cell.data('tags') || []
 
@@ -275,6 +285,34 @@ $(() => {
             employee_id: currentCell.employee_id,
             date: currentCell.date,
             locked: currentCell.locked ? 0 : 1,
+        }).done((response) => {
+            if (!response.error) {
+                $modal.modal('hide')
+            }
+        })
+    })
+
+    $modal.on('click', '[data-off-remove]', (event) => {
+        if (!currentCell || !window.confirm($(event.currentTarget).data('confirm'))) {
+            return
+        }
+
+        request('POST', urls.offRemoveUrl, { employee_id: currentCell.employee_id, date: currentCell.date }).done((response) => {
+            if (!response.error) {
+                $modal.modal('hide')
+            }
+        })
+    })
+
+    $modal.on('click', '[data-review]', (event) => {
+        if (!currentCell) {
+            return
+        }
+
+        request('POST', urls.reviewUrl, {
+            employee_id: currentCell.employee_id,
+            date: currentCell.date,
+            decision: $(event.currentTarget).data('review'),
         }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')

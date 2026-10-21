@@ -109,9 +109,18 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'id' => 'cms-plugins-restaurant-roster-availability',
                     'priority' => 2,
                     'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Đơn OFF & ngày bận',
+                    'name' => 'OFF của nhân viên',
                     'icon' => 'ti ti-calendar-off',
                     'route' => 'roster.availability.index',
+                    'permissions' => ['roster.index'],
+                ])
+                ->registerItem([
+                    'id' => 'cms-plugins-restaurant-roster-periods',
+                    'priority' => 0,
+                    'parent_id' => 'cms-plugins-restaurant-roster',
+                    'name' => 'Kỳ lịch & OFF',
+                    'icon' => 'ti ti-calendar-check',
+                    'route' => 'roster.periods.index',
                     'permissions' => ['roster.index'],
                 ])
                 ->registerItem([

@@ -134,6 +134,7 @@ trait SyntheticRoster
                 minOffPerWeek: $options['min_off_per_week'] ?? 1,
                 supportGender: $options['support_gender'] ?? 'female',
                 seed: $options['seed'] ?? 7,
+                weightOverrides: $options['weights'] ?? [],
             ),
             hardUnavailable: $options['hard'] ?? [],
             softUnavailable: $options['soft'] ?? [],

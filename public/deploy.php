@@ -102,4 +102,22 @@ try {
     echo 'Cảnh báo: không chạy được optimize:clear - ' . $e->getMessage() . "\n";
 }
 
+// Cập nhật cấu trúc database theo code mới (migration của app và các plugin).
+try {
+    $kernel->call('migrate', ['--force' => true]);
+    echo $kernel->output();
+} catch (Throwable $e) {
+    http_response_code(500);
+    echo 'ERROR: chạy migration thất bại - ' . $e->getMessage() . "\n";
+    exit;
+}
+
+// Chép lại JS/CSS của plugin vào public/vendor/core (thư mục này không có trong git).
+try {
+    $kernel->call('cms:publish:assets');
+    echo "Đã cập nhật JS/CSS\n";
+} catch (Throwable $e) {
+    echo 'Cảnh báo: không publish được asset - ' . $e->getMessage() . "\n";
+}
+
 echo "DEPLOY OK\n";

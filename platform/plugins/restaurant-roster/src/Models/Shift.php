@@ -15,6 +15,18 @@ class Shift extends BaseModel
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
 
+    // Lý do khóa ô: thuật toán không bao giờ đổi ô đã khóa; chỉ người có quyền mới mở khóa / gỡ OFF.
+    public const LOCK_OFF_REQUEST = 'off_request';
+    public const LOCK_CONFIRMED = 'confirmed';
+    public const LOCK_BQ = 'bq';
+    public const LOCK_MANUAL = 'manual';
+
+    // Trạng thái ô (suy ra, xem cellState()).
+    public const STATE_OFF_LOCKED = 'off_locked';
+    public const STATE_CONFIRMED = 'confirmed';
+    public const STATE_REVIEW = 'review';
+    public const STATE_DRAFT = 'draft';
+
     protected $table = 'roster_shifts';
 
     protected $fillable = [
@@ -38,6 +50,12 @@ class Shift extends BaseModel
         'note',
         'status',
         'is_locked',
+        'lock_reason',
+        'locked_by',
+        'locked_at',
+        'availability_request_id',
+        'needs_review',
+        'review_note',
         'source',
         'run_id',
         'created_by',
@@ -54,6 +72,8 @@ class Shift extends BaseModel
         'hours' => 'float',
         'break_minutes' => 'int',
         'is_locked' => 'bool',
+        'needs_review' => 'bool',
+        'locked_at' => 'datetime',
         'overtime_approved_at' => 'datetime',
     ];
 
@@ -70,6 +90,32 @@ class Shift extends BaseModel
     public function outlet(): BelongsTo
     {
         return $this->belongsTo(Outlet::class, 'outlet_id')->withDefault();
+    }
+
+    public function availabilityRequest(): BelongsTo
+    {
+        return $this->belongsTo(AvailabilityRequest::class, 'availability_request_id');
+    }
+
+    /**
+     * Trạng thái nghiệp vụ của ô: OFF đã ghi & khóa / ca đã xác nhận & khóa / cần xem xét / dự thảo.
+     */
+    public function cellState(): string
+    {
+        return match (true) {
+            $this->needs_review => self::STATE_REVIEW,
+            $this->is_locked && $this->kind !== self::KIND_SHIFT => self::STATE_OFF_LOCKED,
+            $this->is_locked => self::STATE_CONFIRMED,
+            default => self::STATE_DRAFT,
+        };
+    }
+
+    /**
+     * Ô OFF / nghỉ do quản lý ghi từ đơn OFF (gỡ bằng "Gỡ OFF", cần quyền roster.approve).
+     */
+    public function isRecordedOff(): bool
+    {
+        return $this->lock_reason === self::LOCK_OFF_REQUEST && $this->kind !== self::KIND_SHIFT;
     }
 
     public function isWorking(): bool

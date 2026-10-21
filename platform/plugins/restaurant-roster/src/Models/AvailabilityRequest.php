@@ -4,6 +4,7 @@ namespace Botble\RestaurantRoster\Models;
 
 use Botble\Base\Models\BaseModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AvailabilityRequest extends BaseModel
 {
@@ -16,6 +17,7 @@ class AvailabilityRequest extends BaseModel
         'type',
         'group_label',
         'reason',
+        'received_at',
         'status',
         'reviewed_by',
         'reviewed_at',
@@ -27,7 +29,13 @@ class AvailabilityRequest extends BaseModel
         'date_from' => 'date',
         'date_to' => 'date',
         'reviewed_at' => 'datetime',
+        'received_at' => 'date',
     ];
+
+    public function cells(): HasMany
+    {
+        return $this->hasMany(Shift::class, 'availability_request_id');
+    }
 
     public function employee(): BelongsTo
     {

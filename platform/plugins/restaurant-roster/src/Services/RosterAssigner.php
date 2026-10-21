@@ -61,10 +61,17 @@ class RosterAssigner
      */
     public function assign(Employee $employee, CarbonInterface $date, array $spec, ?int $userId = null, string $status = Shift::STATUS_DRAFT): Shift
     {
-        return Shift::query()->updateOrCreate(
-            ['employee_id' => $employee->getKey(), 'date' => $date->toDateString()],
-            $this->values($employee, $date, $spec, $userId, $status)
-        );
+        $values = $this->values($employee, $date, $spec, $userId, $status);
+        // Tìm theo ngày (không phụ thuộc cách database lưu cột date) rồi cập nhật hoặc tạo mới.
+        $shift = Shift::query()->where('employee_id', $employee->getKey())->whereDate('date', $date->toDateString())->first();
+
+        if ($shift) {
+            $shift->update($values);
+
+            return $shift;
+        }
+
+        return Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => $date->toDateString(), ...$values]);
     }
 
     /**

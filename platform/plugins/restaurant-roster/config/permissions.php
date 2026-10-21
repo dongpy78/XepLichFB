@@ -16,7 +16,7 @@ return [
         'parent_flag' => 'roster.index',
     ],
     [
-        'name' => 'Duyệt đơn OFF / ngày bận',
+        'name' => 'Ghi / gỡ OFF của nhân viên, mở khóa ô, duyệt tăng ca',
         'flag' => 'roster.approve',
         'parent_flag' => 'roster.index',
     ],

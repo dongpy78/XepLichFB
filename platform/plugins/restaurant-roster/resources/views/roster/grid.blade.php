@@ -155,7 +155,18 @@
                                             $tooltip[] = $shift->note;
                                         }
 
-                                        $tooltip[] = ($shift->status === 'published' ? 'Đã công bố' : 'Nháp') . ($shift->is_locked ? ' · Đã khóa' : '') . ($shift->source === 'engine' ? ' · Do thuật toán xếp' : '');
+                                        $lockLabels = [
+                                            \Botble\RestaurantRoster\Models\Shift::LOCK_OFF_REQUEST => 'OFF quản lý đã cho – đã khóa',
+                                            \Botble\RestaurantRoster\Models\Shift::LOCK_CONFIRMED => 'Ca đã xác nhận – đã khóa',
+                                            \Botble\RestaurantRoster\Models\Shift::LOCK_BQ => 'Tiệc BQ – đã khóa',
+                                        ];
+                                        $tooltip[] = ($shift->status === 'published' ? 'Đã công bố' : 'Nháp')
+                                            . ($shift->is_locked ? ' · ' . ($lockLabels[$shift->lock_reason] ?? 'Đã khóa') : '')
+                                            . ($shift->source === 'engine' ? ' · Do thuật toán xếp' : '');
+
+                                        if ($shift->needs_review) {
+                                            $tooltip[] = '⚠ Cần xem xét: ' . $shift->review_note;
+                                        }
                                     }
 
                                     $variant = match (true) {
@@ -178,10 +189,13 @@
                                     data-overtime="{{ $shift?->overtime_hours ?: '' }}"
                                     data-ot-status="{{ $shift?->overtime_status }}"
                                     data-locked="{{ $shift?->is_locked ? 1 : 0 }}"
+                                    data-state="{{ $shift?->cellState() }}"
+                                    data-recorded-off="{{ $shift?->isRecordedOff() ? 1 : 0 }}"
+                                    data-review="{{ $shift?->needs_review ? $shift->review_note : '' }}"
                                     data-warnings="{{ json_encode($warnings, JSON_UNESCAPED_UNICODE) }}"
                                     @if ($shift || $warnings) title="{{ implode("\n", [...$tooltip, ...$warnings]) }}" @endif
                                 >
-                                    <div class="roster-mini roster-mini--{{ $variant }} {{ $shift?->status === 'draft' ? 'is-draft' : '' }} {{ $shift?->is_locked ? 'is-locked' : '' }}">
+                                    <div class="roster-mini roster-mini--{{ $variant }} {{ $shift?->status === 'draft' ? 'is-draft' : '' }} {{ $shift?->is_locked ? 'is-locked' : '' }} {{ $shift?->isRecordedOff() ? 'is-recorded-off' : '' }} {{ $shift?->needs_review ? 'needs-review' : '' }}">
                                         @if ($shift && $shift->kind === 'shift')
                                             <span class="roster-mini__code">{{ $shift->template?->code ?? 'Ca' }}</span>
                                             @if ($shift->tags)

@@ -34,11 +34,28 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 Route::post('clear-undo', 'RosterController@undoClear')->name('clear-undo');
             });
 
+            // Gỡ OFF đã cho / xử lý ô "cần xem xét": quyền ghi / gỡ OFF.
+            Route::post('off-remove', ['as' => 'off-remove', 'uses' => 'RosterController@offRemove', 'permission' => 'roster.approve']);
+            Route::post('review', ['as' => 'review', 'uses' => 'RosterController@review', 'permission' => 'roster.approve']);
+
             Route::post('overtime', [
                 'as' => 'overtime',
                 'uses' => 'RosterController@overtime',
                 'permission' => 'roster.approve',
             ]);
+
+            // Kỳ lịch: tổng hợp OFF, xác nhận "đã nhập xong OFF" trước khi xếp tự động.
+            Route::group(['prefix' => 'periods', 'as' => 'periods.'], function (): void {
+                Route::get('/', ['as' => 'index', 'uses' => 'PeriodController@index', 'permission' => 'roster.index']);
+                Route::get('{id}', ['as' => 'show', 'uses' => 'PeriodController@show', 'permission' => 'roster.index'])->wherePrimaryKey('id');
+
+                Route::group(['permission' => 'roster.approve'], function (): void {
+                    Route::post('/', 'PeriodController@store')->name('store');
+                    Route::post('{id}/confirm-off', 'PeriodController@confirmOff')->name('confirm-off')->wherePrimaryKey('id');
+                    Route::post('{id}/reopen-off', 'PeriodController@reopenOff')->name('reopen-off')->wherePrimaryKey('id');
+                    Route::delete('{id}', 'PeriodController@destroy')->name('destroy')->wherePrimaryKey('id');
+                });
+            });
 
             // Thuật toán xếp lịch tự động.
             Route::group(['prefix' => 'auto', 'as' => 'auto.', 'permission' => 'roster.auto'], function (): void {
@@ -51,13 +68,15 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
 
             // Đơn OFF / ngày bận: quản lý tạo đơn; người có quyền duyệt mới duyệt/xóa.
             Route::group(['prefix' => 'availability', 'as' => 'availability.'], function (): void {
-                Route::group(['permission' => 'roster.index'], function (): void {
+                // GET hiển thị trang, POST tải dữ liệu bảng (datatable) – giống route index của Botble.
+                Route::match(['GET', 'POST'], '', ['as' => 'index', 'uses' => 'AvailabilityRequestController@index', 'permission' => 'roster.index']);
+
+                // Ghi / sửa / gỡ OFF làm thay đổi ô lịch đã khóa: chỉ quản lý có quyền roster.approve.
+                Route::group(['permission' => 'roster.approve'], function (): void {
                     Route::resource('', 'AvailabilityRequestController')
                         ->parameters(['' => 'availability'])
-                        ->except(['show', 'destroy']);
-                });
+                        ->except(['index', 'show', 'destroy']);
 
-                Route::group(['permission' => 'roster.approve'], function (): void {
                     Route::delete('{availability}', 'AvailabilityRequestController@destroy')->name('destroy')->wherePrimaryKey('availability');
                     Route::post('{availability}/approve', 'AvailabilityRequestController@approve')->name('approve')->wherePrimaryKey('availability');
                     Route::post('{availability}/reject', 'AvailabilityRequestController@reject')->name('reject')->wherePrimaryKey('availability');

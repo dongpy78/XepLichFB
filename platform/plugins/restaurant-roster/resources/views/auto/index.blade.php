@@ -29,11 +29,11 @@
                         <div class="row g-2 mb-3">
                             <div class="col-6">
                                 <label class="form-label required" for="auto-from">Từ ngày</label>
-                                <input type="date" class="form-control" id="auto-from" name="from" value="{{ reset($presets)[0] }}" required>
+                                <input type="date" class="form-control" id="auto-from" name="from" value="{{ $range[0] ?? reset($presets)[0] }}" required>
                             </div>
                             <div class="col-6">
                                 <label class="form-label required" for="auto-to">Đến ngày</label>
-                                <input type="date" class="form-control" id="auto-to" name="to" value="{{ reset($presets)[1] }}" required>
+                                <input type="date" class="form-control" id="auto-to" name="to" value="{{ $range[1] ?? reset($presets)[1] }}" required>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -60,9 +60,24 @@
                         </div>
                         <p class="form-hint mt-3 mb-0">
                             Kết quả chỉ là <strong>phương án</strong>: bạn xem, so sánh rồi mới bấm áp dụng. Lịch áp dụng luôn ở trạng thái nháp,
-                            không tự công bố. Ô đã khóa, nghỉ phép và đơn đã duyệt không bao giờ bị thay đổi.
+                            không tự công bố. Ô đã khóa (OFF quản lý đã cho, ca đã xác nhận, tiệc BQ) không bao giờ bị thay đổi.
+                            Tạo lịch / Tối ưu lại chỉ chạy được khi kỳ lịch đã xác nhận <strong>đã nhập xong OFF</strong>.
                         </p>
                     </form>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between"><h3 class="card-title">Kỳ lịch</h3><a href="{{ route('roster.periods.index') }}" class="btn btn-sm">Kỳ lịch & OFF</a></div>
+                <div class="list-group list-group-flush">
+                    @forelse ($periods as $period)
+                        <a href="{{ route('roster.periods.show', $period->id) }}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                            <span>{{ $period->name }} <span class="text-muted small">{{ $period->start_date->format('d/m') }} – {{ $period->end_date->format('d/m') }}</span></span>
+                            <span class="badge {{ $period->off_confirmed_at ? 'bg-success' : 'bg-warning' }} text-white">{{ $period->off_confirmed_at ? 'Đã xong OFF' : 'Đang nhập OFF' }}</span>
+                        </a>
+                    @empty
+                        <div class="list-group-item text-muted">Chưa có kỳ lịch. Tạo kỳ và xác nhận nhập xong OFF trước khi xếp tự động.</div>
+                    @endforelse
                 </div>
             </div>
 
@@ -82,7 +97,7 @@
                         <span class="badge {{ $health['unconfirmed_requirements'] ? 'bg-warning' : 'bg-success' }} text-white">{{ $health['unconfirmed_requirements'] }} / {{ $health['requirements'] }}</span>
                     </a>
                     <a href="{{ route('roster.availability.index') }}" class="list-group-item list-group-item-action d-flex justify-content-between">
-                        <span>Đơn OFF đang chờ duyệt</span>
+                        <span>Đơn OFF cũ còn "chờ xử lý"</span>
                         <span class="badge {{ $health['pending_requests'] ? 'bg-warning' : 'bg-success' }} text-white">{{ $health['pending_requests'] }}</span>
                     </a>
                 </div>

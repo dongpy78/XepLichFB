@@ -69,6 +69,8 @@ return [
         // "fortnight" = đủ 2 × số ngày OFF/tuần trong mỗi 2 tuần, mỗi tuần ít nhất min_off_per_week ngày.
         'days_off_mode' => 'weekly',
         'min_off_per_week' => 1,
+        // Chỉ chạy "Tạo lịch tự động" / "Tối ưu lại" khi kỳ lịch bao trọn phạm vi đã được xác nhận "đã nhập xong OFF".
+        'require_off_confirmation' => true,
         // Giới hạn tăng ca / tháng (Bộ luật Lao động 2019, Điều 107: không quá 40 giờ/tháng).
         'max_monthly_overtime_hours' => 40,
     ],

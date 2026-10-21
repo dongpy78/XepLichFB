@@ -28,7 +28,7 @@ final class HeuristicSolver implements SolverInterface
 {
     public function name(): string
     {
-        return 'heuristic-lexicographic-v2';
+        return 'heuristic-anneal-v3';
     }
 
     public function solve(Problem $problem): SolveResult
@@ -723,9 +723,22 @@ final class HeuristicSolver implements SolverInterface
 
     // ------------------------------------------------------------------ Giai đoạn 2
 
+    /**
+     * Tìm kiếm "luyện kim" (simulated annealing) trên điểm phạt có trọng số:
+     * bước tốt hơn hoặc bằng luôn được nhận; bước xấu hơn được nhận với xác suất e^(−chênh lệch / nhiệt độ).
+     * Nhiệt độ giảm dần theo tiến độ (số bước hoặc thời gian, cái nào tới trước) nên đầu kỳ thoát được chỗ kẹt,
+     * cuối kỳ chỉ còn tinh chỉnh. Nhóm "Bắt buộc" có trọng số rất lớn nên thực tế không bao giờ bị nhận xấu đi.
+     * Luôn giữ lại phương án tốt nhất đã gặp và trả lịch về phương án đó khi kết thúc.
+     */
     private function localSearch(ScheduleState $state, float $deadline): array
     {
-        $current = $state->objective();
+        $rules = $state->problem->rules;
+        // Pha dựng khung (Rules::FRAME_PHASE_WEIGHTS) – bỏ qua khi tối ưu lại lịch đang dùng (ưu tiên ít thay đổi).
+        $frame = $rules->stabilityFirst ? null : Rules::FRAME_PHASE_WEIGHTS;
+        [$real, $framed] = $state->costs($frame ?? []);
+        $current = $frame ? $framed : $real;
+        $best = $real;
+        $bestPlan = $state->plan;
         $stats = ['iterations' => 0, 'accepted' => 0, 'improved' => 0, 'time_limit_reached' => false];
         $employeeIds = array_keys($state->problem->employees);
         $scope = $state->scopeIndexes();
@@ -734,39 +747,110 @@ final class HeuristicSolver implements SolverInterface
             return $stats;
         }
 
-        while ($stats['iterations'] < $state->problem->rules->maxIterations) {
-            if (($stats['iterations'] & 31) === 0 && microtime(true) > $deadline) {
-                $stats['time_limit_reached'] = true;
+        $startedAt = microtime(true);
+        $span = max(1e-3, $deadline - $startedAt);
+        $t0 = max(1e-6, $rules->annealStartTemperature);
+        $t1 = max(1e-6, min($t0, $rules->annealEndTemperature));
+        $temperature = $t0;
+        $moves = [];
 
-                break;
+        while ($stats['iterations'] < $rules->maxIterations) {
+            if (($stats['iterations'] & 31) === 0) {
+                $now = microtime(true);
+
+                if ($now > $deadline) {
+                    $stats['time_limit_reached'] = true;
+
+                    break;
+                }
+
+                $progress = max($stats['iterations'] / $rules->maxIterations, ($now - $startedAt) / $span);
+                $temperature = $t0 * ($t1 / $t0) ** min(1, $progress);
+
+                if ($frame && $progress >= Rules::FRAME_PHASE_SHARE) {
+                    // Hết pha dựng khung: tiếp tục từ phương án tốt nhất theo trọng số thật.
+                    $frame = null;
+
+                    if ($best < $state->cost()) {
+                        $this->restorePlan($state, $bestPlan);
+                    }
+
+                    $current = $state->cost();
+                }
             }
 
             $stats['iterations']++;
 
+            $metrics = $state->metricsSnapshot();
+            $tick = microtime(true);
             $undo = $this->randomMove($state, $employeeIds, $scope);
+            $name = $this->lastMove;
+            $moves[$name] ??= ['tried' => 0, 'valid' => 0, 'accepted' => 0, 'improved' => 0, 'ms' => 0.0];
+            $moves[$name]['tried']++;
 
             if ($undo === null) {
+                $moves[$name]['ms'] += (microtime(true) - $tick) * 1000;
+
                 continue;
             }
 
-            $candidate = $state->objective();
-            $comparison = ScheduleState::compare($candidate, $current);
+            $moves[$name]['valid']++;
+            [$real, $framed] = $state->costs($frame ?? []);
+            $candidate = $frame ? $framed : $real;
+            $delta = $candidate - $current;
 
-            if ($comparison <= 0) {
+            if ($delta <= 0 || mt_rand() / mt_getrandmax() < exp(-$delta / $temperature)) {
                 $stats['accepted']++;
-
-                if ($comparison < 0) {
-                    $stats['improved']++;
-                }
-
+                $moves[$name]['accepted']++;
                 $current = $candidate;
+
+                if ($real < $best) {
+                    $stats['improved']++;
+                    $moves[$name]['improved']++;
+                    $best = $real;
+                    $bestPlan = $state->plan;
+                }
             } else {
                 $undo();
+                $state->restoreMetrics($metrics);
             }
+
+            $moves[$name]['ms'] += (microtime(true) - $tick) * 1000;
         }
+
+        if ($best < $state->cost()) {
+            $this->restorePlan($state, $bestPlan);
+        }
+
+        $stats['best_cost'] = $best;
+        $stats['moves'] = $moves;
 
         return $stats;
     }
+
+    /**
+     * Đưa lịch về một phương án đã lưu (ô thuật toán xếp; ô cố định không đổi).
+     *
+     * @param array<int, array<int, string>> $plan
+     */
+    private function restorePlan(ScheduleState $state, array $plan): void
+    {
+        foreach ($state->plan as $employeeId => $cells) {
+            foreach (array_keys($cells) as $i) {
+                $state->remove($employeeId, $i);
+            }
+        }
+
+        foreach ($plan as $employeeId => $cells) {
+            foreach ($cells as $i => $slot) {
+                [$o, $s, $f] = ScheduleState::parseSlot($slot);
+                $state->place($employeeId, $i, $o, $s, $f);
+            }
+        }
+    }
+
+    /** Tên loại bước vừa thử (thống kê hiệu quả từng loại bước). */
+    private string $lastMove = '';
 
     /**
      * Thực hiện một bước ngẫu nhiên hợp lệ; trả về hàm hoàn tác, hoặc null nếu không tìm được bước hợp lệ.
@@ -782,18 +866,400 @@ final class HeuristicSolver implements SolverInterface
 
         $move = mt_rand(0, 99);
         $hasCoverage = ! empty($state->coverage[$i]);
+        $this->lastMove = match (true) {
+            $move < 3 => 'fill', $move < 12 => 'reassign', $move < 19 => 'swap', $move < 24 => 'cross_swap', $move < 31 => 'swap_block',
+            $move < 34 => 'shift_day', $move < 39 => 'merge_off', $move < 41 => 'shift_pair', $move < 50 => 'swap_days',
+            $move < 62 => 'pattern', $move < 82 => 'pattern_swap', $move < 94 || ! $hasCoverage => 'cover', default => 'toggle_support',
+        };
 
-        return match (true) {
-            $move < 24 => $this->moveFill($state, $i, $slots, $employeeIds),
-            $move < 36 => $this->moveReassign($state, $i, $slots, $employeeIds),
-            $move < 46 => $this->moveSwap($state, $i, $employeeIds),
-            $move < 52 => $this->moveCrossSwap($state, $i, $scope, $employeeIds),
-            $move < 62 => $this->moveSwapBlock($state, $i, $employeeIds),
-            $move < 61 => $this->moveShiftDay($state, $i, $scope, $employeeIds),
-            $move < 67 => $this->moveMergeOff($state, $employeeIds),
-            $move < 73 => $this->moveShiftPair($state, $i, $scope, $employeeIds),
-            $move < 88 || ! $hasCoverage => $this->moveSwapDays($state, $i, $scope, $employeeIds),
+        return match ($this->lastMove) {
+            'fill' => $this->moveFill($state, $i, $slots, $employeeIds),
+            'reassign' => $this->moveReassign($state, $i, $slots, $employeeIds),
+            'swap' => $this->moveSwap($state, $i, $employeeIds),
+            'cross_swap' => $this->moveCrossSwap($state, $i, $scope, $employeeIds),
+            'swap_block' => $this->moveSwapBlock($state, $i, $employeeIds),
+            'shift_day' => $this->moveShiftDay($state, $i, $scope, $employeeIds),
+            'merge_off' => $this->moveMergeOff($state, $employeeIds),
+            'shift_pair' => $this->moveShiftPair($state, $i, $scope, $employeeIds),
+            'swap_days' => $this->moveSwapDays($state, $i, $scope, $employeeIds),
+            'pattern' => $this->movePattern($state, $employeeIds),
+            'pattern_swap' => $this->movePatternSwap($state, $employeeIds),
+            'cover' => $this->moveCover($state),
             default => $this->moveToggleSupport($state, $i, $employeeIds),
+        };
+    }
+
+    /** @var array<string, int[]>|null [tuần] => các ngày trong phạm vi */
+    private ?array $scopeWeeks = null;
+
+    /** @var array<string, int[]> "outletId|shiftId" => nhân viên có năng lực làm ô này */
+    private array $eligible = [];
+
+    /**
+     * @return array<string, int[]>
+     */
+    private function scopeWeeks(ScheduleState $state): array
+    {
+        if ($this->scopeWeeks === null) {
+            $this->scopeWeeks = [];
+
+            foreach ($state->scopeIndexes() as $d) {
+                $this->scopeWeeks[$state->weekKey($d)][] = $d;
+            }
+        }
+
+        return $this->scopeWeeks;
+    }
+
+    /**
+     * @return int[]
+     */
+    private function eligibleFor(ScheduleState $state, int $outletId, int $shiftId): array
+    {
+        return $this->eligible["{$outletId}|{$shiftId}"] ??= array_keys(array_filter(
+            $state->problem->employees,
+            fn (EmployeeSpec $e) => $e->skillLevel($outletId, $shiftId) !== null
+        ));
+    }
+
+    /**
+     * Đổi mẫu OFF của một người trong một tuần: chọn lại các ngày OFF (cùng số ngày, liền nhau / ghép cạnh ngày nghỉ đã biết
+     * với người OFF >= 2 ngày/tuần). Ngày được nghỉ thêm thì bỏ ca; ngày phải đi làm thêm nhận lại ô vừa bỏ nếu được,
+     * không thì ô còn thiếu người nhất mà người đó làm được. Số ngày làm trong tuần không đổi.
+     */
+    private function movePattern(ScheduleState $state, array $employeeIds): ?callable
+    {
+        $e = $employeeIds[mt_rand(0, count($employeeIds) - 1)];
+
+        if (! $change = $this->randomOffChange($state, $e)) {
+            return null;
+        }
+
+        [$toOff, $toWork] = $change;
+        $freed = [];
+
+        foreach ($toOff as $d) {
+            $freed[$d] = $state->plan[$e][$d];
+            $state->remove($e, $d);
+        }
+
+        $placed = [];
+        $undo = function () use ($state, $e, &$placed, $freed): void {
+            foreach ($placed as $d) {
+                $state->remove($e, $d);
+            }
+
+            foreach ($freed as $d => $slot) {
+                $this->restore($state, $e, $d, $slot);
+            }
+        };
+
+        foreach ($toWork as $d) {
+            $slot = $this->bestSlotFor($state, $e, $d, array_values($freed));
+
+            if ($slot === null) {
+                $undo();
+
+                return null;
+            }
+
+            [$o, $s] = ScheduleState::parseSlot($slot);
+            $state->place($e, $d, $o, $s);
+            $placed[] = $d;
+        }
+
+        return $undo;
+    }
+
+    /**
+     * Đổi chéo mẫu OFF giữa hai người, giữ nguyên số người mỗi ô: A đổi OFF từ ngày x sang ngày y (như movePattern);
+     * với mỗi cặp (y, x), người B đang OFF ngày y và đi làm ngày x vào đúng ô của A ngày y, A nhận ô của B ngày x.
+     */
+    private function movePatternSwap(ScheduleState $state, array $employeeIds): ?callable
+    {
+        $a = $employeeIds[mt_rand(0, count($employeeIds) - 1)];
+
+        if (! $change = $this->randomOffChange($state, $a)) {
+            return null;
+        }
+
+        [$toOff, $toWork] = $change;
+        shuffle($toWork);
+        $journal = [];
+
+        foreach ($toOff as $k => $y) {
+            $x = $toWork[$k];
+            $slotY = $state->plan[$a][$y] ?? null;
+
+            if ($slotY === null) {
+                return $this->rollback($state, $journal);
+            }
+
+            [$oy, $sy] = ScheduleState::parseSlot($slotY);
+            $partners = array_values(array_filter($this->eligibleFor($state, $oy, $sy), fn ($b) => $b !== $a
+                && isset($state->plan[$b][$x]) && ! $state->isOccupied($b, $y)
+                && ! $state->isFixed($b, $x) && ! isset($state->problem->hardUnavailable[$b][$state->dates[$y]])));
+
+            if (! $partners) {
+                return $this->rollback($state, $journal);
+            }
+
+            $b = $partners[mt_rand(0, count($partners) - 1)];
+            $slotX = $state->plan[$b][$x];
+
+            // Gỡ cả hai ô trước rồi mới đặt, để kiểm tra giờ nghỉ / ngày liên tục trên lịch mới.
+            if (! $this->journalPut($state, $journal, $a, $y, null) || ! $this->journalPut($state, $journal, $b, $x, null)
+                || ! $this->journalPut($state, $journal, $b, $y, ScheduleState::slotKey($oy, $sy))) {
+                return $this->rollback($state, $journal);
+            }
+
+            [$ox, $sx] = ScheduleState::parseSlot($slotX);
+
+            if (! $this->journalPut($state, $journal, $a, $x, ScheduleState::slotKey($ox, $sx))) {
+                $fallback = $this->bestSlotFor($state, $a, $x, [$slotX]);
+
+                if ($fallback === null || ! $this->journalPut($state, $journal, $a, $x, $fallback)) {
+                    return $this->rollback($state, $journal);
+                }
+            }
+        }
+
+        return fn () => $this->rollback($state, $journal);
+    }
+
+    /**
+     * Đặt một ô và ghi lại giá trị cũ vào nhật ký để hoàn tác. Trả về false nếu ô mới vi phạm (ô đã được trả về giá trị cũ).
+     *
+     * @param array<int, array{0: int, 1: int, 2: ?string}> $journal
+     */
+    private function journalPut(ScheduleState $state, array &$journal, int $e, int $d, ?string $slot): bool
+    {
+        $old = $state->plan[$e][$d] ?? null;
+
+        if (! $this->put($state, $e, $d, $slot)) {
+            $this->restore($state, $e, $d, $old);
+
+            return false;
+        }
+
+        $journal[] = [$e, $d, $old];
+
+        return true;
+    }
+
+    /**
+     * Hoàn tác nhật ký theo thứ tự ngược. Luôn trả về null (để dùng trực tiếp làm kết quả bước không hợp lệ).
+     *
+     * @param array<int, array{0: int, 1: int, 2: ?string}> $journal
+     */
+    private function rollback(ScheduleState $state, array $journal): ?callable
+    {
+        foreach (array_reverse($journal) as [$e, $d, $old]) {
+            $this->restore($state, $e, $d, $old);
+        }
+
+        return null;
+    }
+
+    /**
+     * Chọn ngẫu nhiên một cách đổi ngày OFF trong một tuần cho người e (cùng số ngày OFF; người OFF >= 2 ngày/tuần
+     * thì mỗi ngày OFF phải liền một ngày OFF khác trong tuần, kể cả ngày nghỉ đã biết như sinh nhật / ô khóa).
+     *
+     * @return array{0: int[], 1: int[]}|null [ngày chuyển sang OFF, ngày chuyển sang đi làm]
+     */
+    private function randomOffChange(ScheduleState $state, int $e): ?array
+    {
+        $employee = $state->problem->employees[$e];
+        $weeks = $this->scopeWeeks($state);
+        $days = $weeks[array_keys($weeks)[mt_rand(0, count($weeks) - 1)]];
+        $hard = $state->problem->hardUnavailable[$e] ?? [];
+        $decision = [];
+        $knownOff = [];
+
+        foreach ($days as $d) {
+            if ($state->isFixed($e, $d) || isset($hard[$state->dates[$d]])) {
+                if ($state->isOffDay($e, $d)) {
+                    $knownOff[$d] = true;
+                }
+
+                continue;
+            }
+
+            $decision[] = $d;
+        }
+
+        $offNow = array_values(array_filter($decision, fn ($d) => ! isset($state->plan[$e][$d])));
+        $k = count($offNow);
+
+        if ($k === 0 || $k === count($decision) || count($decision) > 7) {
+            return null;
+        }
+
+        // Mọi tập k ngày OFF hợp lệ: người OFF >= 2 ngày/tuần thì mỗi ngày OFF phải có ngày OFF cạnh bên trong tuần.
+        $options = [];
+        $n = count($decision);
+        $current = array_flip($offNow);
+
+        for ($mask = 1; $mask < (1 << $n); $mask++) {
+            if (substr_count(decbin($mask), '1') !== $k) {
+                continue;
+            }
+
+            $set = [];
+
+            for ($b = 0; $b < $n; $b++) {
+                if ($mask & (1 << $b)) {
+                    $set[$decision[$b]] = true;
+                }
+            }
+
+            if ($set == $current) {
+                continue;
+            }
+
+            if ($employee->daysOffPerWeek >= 2) {
+                $all = $set + $knownOff;
+
+                foreach (array_keys($set) as $d) {
+                    if (! isset($all[$d - 1]) && ! isset($all[$d + 1])) {
+                        continue 2;
+                    }
+                }
+            }
+
+            $options[] = $set;
+        }
+
+        if (! $options) {
+            return null;
+        }
+
+        $newOff = $options[mt_rand(0, count($options) - 1)];
+        $toOff = array_values(array_filter($decision, fn ($d) => isset($newOff[$d]) && ! isset($current[$d])));
+        $toWork = array_values(array_filter($decision, fn ($d) => ! isset($newOff[$d]) && isset($current[$d])));
+
+        return [$toOff, $toWork];
+    }
+
+    /**
+     * Ô tốt nhất cho một người phải đi làm ngày d: ưu tiên ô còn thiếu so với tối thiểu / mục tiêu, ô vừa được nhường (giữ cân bằng),
+     * đúng outlet chính, chuyên trách. Null nếu không có ô hợp lệ.
+     *
+     * @param string[] $preferred
+     */
+    private function bestSlotFor(ScheduleState $state, int $e, int $d, array $preferred = []): ?string
+    {
+        $employee = $state->problem->employees[$e];
+        $preferred = array_map(fn ($slot) => implode('|', array_slice(explode('|', $slot), 0, 2)), $preferred);
+        $ranked = [];
+
+        // Xếp hạng bằng phép tính rẻ trước, chỉ kiểm tra ràng buộc cứng (đắt) theo thứ tự hạng.
+        foreach ($state->requirements[$d] ?? [] as $key => $requirement) {
+            $level = $employee->skillLevel($requirement->outletId, $requirement->shiftId);
+            $count = $state->count($d, $requirement->outletId, $requirement->shiftId);
+
+            if ($level === null || $count >= $requirement->capacity()) {
+                continue;
+            }
+
+            $ranked[$key] = ($count < $requirement->min ? -3000 : 0)
+                + ($count < $requirement->target ? -1000 : max(0, $count - $requirement->target + 1) * 200)
+                + (in_array($key, $preferred, true) ? -300 : 0)
+                + ($state->problem->isHomeOutlet($employee, $requirement->outletId) ? 0 : 400)
+                + (isset($state->problem->outletParents[$requirement->outletId]) && ! $state->problem->isHomeOutlet($employee, $requirement->outletId) ? 2000 : 0)
+                + ($level === EmployeeSpec::PRIMARY ? 0 : 60)
+                + mt_rand(0, 250);
+        }
+
+        asort($ranked);
+
+        foreach (array_keys($ranked) as $key) {
+            $requirement = $state->requirements[$d][$key];
+
+            if (! $state->violation($e, $d, $requirement->outletId, $requirement->shiftId)) {
+                return ScheduleState::slotKey($requirement->outletId, $requirement->shiftId);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Bù ô thiếu người: chọn một ô đang thiếu (ưu tiên thiếu tối thiểu), lấy người đủ điều kiện
+     * đang làm ô khác cùng ngày (chuyển ô), hoặc đang OFF hôm đó (dời một ngày làm khác trong tuần sang hôm nay).
+     */
+    private function moveCover(ScheduleState $state): ?callable
+    {
+        $short = $state->shortSlots();
+
+        if (! $short) {
+            return null;
+        }
+
+        // Ô thiếu tối thiểu được chọn trước (3/4 số lần) nếu có.
+        $minShort = mt_rand(0, 3) ? array_filter($short, fn ($row) => $row[2]) : [];
+        $pool = array_values($minShort ?: $short);
+        [$i, $requirement] = $pool[mt_rand(0, count($pool) - 1)];
+        $o = $requirement->outletId;
+        $s = $requirement->shiftId;
+        $candidates = $this->eligibleFor($state, $o, $s);
+
+        if (! $candidates) {
+            return null;
+        }
+
+        $e = $candidates[mt_rand(0, count($candidates) - 1)];
+
+        if ($state->isFixed($e, $i) || isset($state->problem->hardUnavailable[$e][$state->dates[$i]])) {
+            return null;
+        }
+
+        $from = $state->plan[$e][$i] ?? null;
+
+        if ($from !== null) {
+            // Đang làm ô khác cùng ngày: chuyển sang ô thiếu.
+            [$fo, $fs] = ScheduleState::parseSlot($from);
+
+            if ($fo === $o && $fs === $s) {
+                return null;
+            }
+
+            $state->remove($e, $i);
+
+            if ($state->violation($e, $i, $o, $s)) {
+                $this->restore($state, $e, $i, $from);
+
+                return null;
+            }
+
+            $state->place($e, $i, $o, $s);
+
+            return fn () => $this->restore($state, $e, $i, $from);
+        }
+
+        // Đang OFF: dời một ngày làm khác trong tuần (không cố định) sang hôm nay.
+        $week = $this->scopeWeeks($state)[$state->weekKey($i)] ?? [];
+        $workDays = array_values(array_filter($week, fn ($d) => $d !== $i && isset($state->plan[$e][$d]) && ! $state->isFixed($e, $d)));
+
+        if (! $workDays) {
+            return null;
+        }
+
+        $j = $workDays[mt_rand(0, count($workDays) - 1)];
+        $old = $state->plan[$e][$j];
+        $state->remove($e, $j);
+
+        if ($state->violation($e, $i, $o, $s)) {
+            $this->restore($state, $e, $j, $old);
+
+            return null;
+        }
+
+        $state->place($e, $i, $o, $s);
+
+        return function () use ($state, $e, $i, $j, $old): void {
+            $state->remove($e, $i);
+            $this->restore($state, $e, $j, $old);
         };
     }
 
@@ -881,13 +1347,22 @@ final class HeuristicSolver implements SolverInterface
     private function moveSwap(ScheduleState $state, int $i, array $employeeIds): ?callable
     {
         $a = $employeeIds[mt_rand(0, count($employeeIds) - 1)];
-        $b = $employeeIds[mt_rand(0, count($employeeIds) - 1)];
+        $slotA = $state->plan[$a][$i] ?? null;
+
+        // Thường (3/4) chọn đối tác đang làm ô khác cùng ngày và làm được ô của A: đổi ca sáng ↔ chiều, đổi outlet.
+        if ($slotA !== null && mt_rand(0, 3)) {
+            [$oa, $sa] = ScheduleState::parseSlot($slotA);
+            $partners = array_values(array_filter($this->eligibleFor($state, $oa, $sa),
+                fn ($e) => $e !== $a && isset($state->plan[$e][$i]) && $state->plan[$e][$i] !== $slotA));
+            $b = $partners ? $partners[mt_rand(0, count($partners) - 1)] : $a;
+        } else {
+            $b = $employeeIds[mt_rand(0, count($employeeIds) - 1)];
+        }
 
         if ($a === $b || $state->isFixed($a, $i) || $state->isFixed($b, $i)) {
             return null;
         }
 
-        $slotA = $state->plan[$a][$i] ?? null;
         $slotB = $state->plan[$b][$i] ?? null;
 
         if ($slotA === $slotB) {
@@ -1158,7 +1633,7 @@ final class HeuristicSolver implements SolverInterface
     private function repairOffSplits(ScheduleState $state, float $deadline): int
     {
         $repaired = 0;
-        $current = $state->objective();
+        $current = $state->cost();
         $employeeIds = array_keys($state->problem->employees);
         $weeks = [];
 
@@ -1210,9 +1685,9 @@ final class HeuristicSolver implements SolverInterface
                                 continue;
                             }
 
-                            $candidate = $state->objective();
+                            $candidate = $state->cost();
 
-                            if (ScheduleState::compare($candidate, $current) < 0) {
+                            if ($candidate < $current) {
                                 $current = $candidate;
                                 $repaired++;
 

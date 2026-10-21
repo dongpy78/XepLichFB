@@ -489,12 +489,26 @@ class ProblemBuilder
             ->whereDate('date_to', '>=', $from)
             ->get();
 
+        // OFF quản lý đã cho được ghi thành ô khóa trên lịch: ô còn trên lịch mới chặn xếp ca
+        // (quản lý "gỡ OFF" ô nào thì ngày đó xếp ca được, kể cả khi đơn còn ngày khác).
+        $recorded = [];
+
+        Shift::query()
+            ->whereIn('availability_request_id', $requests->where('status', 'approved')->modelKeys())
+            ->where('kind', '!=', Shift::KIND_SHIFT)
+            ->get(['employee_id', 'date'])
+            ->each(function (Shift $cell) use (&$recorded): void {
+                $recorded[$cell->employee_id][$cell->date->toDateString()] = true;
+            });
+
         foreach ($requests as $request) {
             $label = trim(($labels[$request->type] ?? $request->type) . ($request->group_label ? " – {$request->group_label}" : ''));
 
             foreach (CarbonPeriod::create(max($request->date_from, $from), min($request->date_to, $to)) as $day) {
                 if ($request->status === 'approved') {
-                    $hard[$request->employee_id][$day->toDateString()] = $label . ' (đã duyệt)';
+                    if (isset($recorded[$request->employee_id][$day->toDateString()])) {
+                        $hard[$request->employee_id][$day->toDateString()] = $label . ' (quản lý đã cho OFF)';
+                    }
                 } else {
                     $soft[$request->employee_id][$day->toDateString()] ??= $label . ' (chờ duyệt)';
                 }

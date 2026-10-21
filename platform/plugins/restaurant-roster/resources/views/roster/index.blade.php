@@ -13,6 +13,8 @@
         data-lock-url="{{ route('roster.lock') }}"
         data-swap-url="{{ route('roster.swap-waiters') }}"
         data-overtime-url="{{ route('roster.overtime') }}"
+        data-off-remove-url="{{ route('roster.off-remove') }}"
+        data-review-url="{{ route('roster.review') }}"
         data-week="{{ $grid['weekStart']->toDateString() }}"
     >
         <div class="card mb-3">
@@ -108,6 +110,9 @@
                 <span class="roster-legend__item"><span class="roster-dot roster-dot--draft"></span> Nháp</span>
                 <span class="roster-legend__item"><span class="roster-dot roster-dot--published"></span> Đã công bố</span>
                 <span class="roster-legend__item"><x-core::icon name="ti ti-alert-triangle" class="text-warning" /> Cảnh báo xung đột</span>
+                <span class="roster-legend__item"><span class="roster-mini roster-mini--off is-locked is-recorded-off roster-legend__sample"><span class="roster-mini__code">OFF</span></span> OFF quản lý đã cho (khóa)</span>
+                <span class="roster-legend__item"><span class="roster-mini roster-mini--sky is-locked roster-legend__sample"><span class="roster-mini__code">M6</span></span> Ca đã xác nhận (khóa)</span>
+                <span class="roster-legend__item"><span class="roster-mini roster-mini--sand needs-review roster-legend__sample"><span class="roster-mini__code">A2</span></span> Cần xem xét</span>
             </div>
         </div>
     </div>
@@ -125,6 +130,25 @@
                     </div>
                     <div class="modal-body">
                         <div class="roster-cell-warnings alert alert-warning d-none" id="roster-cell-warnings"></div>
+
+                        <div class="alert alert-secondary d-none" id="roster-cell-recorded-off">
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                <span><x-core::icon name="ti ti-lock" /> OFF quản lý đã cho – ô đang khóa, thuật toán không đổi. Thiếu người thì gỡ OFF rồi xếp ca.</span>
+                                @if (Auth::user()->hasPermission('roster.approve'))
+                                    <button type="button" class="btn btn-sm btn-warning" data-off-remove data-confirm="Gỡ OFF ngày này để xếp ca cho nhân viên đi làm?">Gỡ OFF</button>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="alert alert-warning d-none" id="roster-cell-review">
+                            <div class="mb-2"><x-core::icon name="ti ti-alert-circle" /> <span id="roster-cell-review-text"></span></div>
+                            @if (Auth::user()->hasPermission('roster.approve'))
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-sm" data-review="keep">Giữ ca, không cho OFF</button>
+                                    <button type="button" class="btn btn-sm btn-warning" data-review="off">Cho OFF (thay ca này)</button>
+                                </div>
+                            @endif
+                        </div>
 
                         <div class="alert alert-info d-none" id="roster-cell-ot">
                             <div class="roster-ot-actions">

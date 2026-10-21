@@ -19,6 +19,9 @@ class Period extends BaseModel
         'confirmed_at',
         'published_by',
         'published_at',
+        'off_confirmed_by',
+        'off_confirmed_at',
+        'note',
     ];
 
     protected $casts = [
@@ -26,6 +29,7 @@ class Period extends BaseModel
         'end_date' => 'date',
         'confirmed_at' => 'datetime',
         'published_at' => 'datetime',
+        'off_confirmed_at' => 'datetime',
         'version' => 'int',
     ];
 }
