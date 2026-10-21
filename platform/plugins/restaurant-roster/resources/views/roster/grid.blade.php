@@ -3,7 +3,6 @@
     $summary = $grid['summary'];
     $today = now()->toDateString();
     $fmt = fn ($value) => rtrim(rtrim(number_format((float) $value, 1, '.', ''), '0'), '.');
-    $weekBirthdayKeys = $grid['days']->map(fn ($day) => $day->format('j/n'))->all();
 @endphp
 
 @if (! empty($grid['pendingRun']))
@@ -115,9 +114,6 @@
                                             title="Xóa lịch cả tuần của {{ $employee->name }} để xếp lại">
                                             <x-core::icon name="ti ti-eraser" />
                                         </button>
-                                    @endif
-                                    @if ($employee->birthday && in_array($employee->birthday_key, $weekBirthdayKeys, true))
-                                        <span class="text-danger" title="Sinh nhật trong tuần này"><x-core::icon name="ti ti-cake" /></span>
                                     @endif
                                     @if ($check['level'] !== 'ok' && $check['messages'])
                                         <span class="roster-row-flag roster-row-flag--{{ $check['level'] }}"><x-core::icon name="ti ti-alert-circle" /></span>
