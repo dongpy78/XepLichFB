@@ -13,8 +13,9 @@ class AvailabilityRequestRequest extends Request
 
         return [
             // Tạo mới: chọn được nhiều nhân viên (sự kiện tập thể, khám sức khỏe theo đợt).
+            // Từng nhân viên được kiểm tra ở withValidator() (chỉ phía server): quy tắc dạng employee_ids.* bị bộ kiểm tra
+            // trên trình duyệt của Botble báo sai với ô chọn nhiều người ("The employee_ids.* must be an integer").
             'employee_ids' => [$creating ? 'required' : 'nullable', 'array', 'min:1'],
-            'employee_ids.*' => ['integer', 'exists:roster_employees,id'],
             'employee_id' => [$creating ? 'nullable' : 'required', 'integer', 'exists:roster_employees,id'],
             'date_from' => ['required', 'date_format:Y-m-d'],
             'date_to' => ['required', 'date_format:Y-m-d', 'after_or_equal:date_from'],
@@ -28,6 +29,24 @@ class AvailabilityRequestRequest extends Request
             // Cho OFF đè lên ca làm đã khóa (đã xác nhận / BQ). Không chọn: giữ ca và đánh dấu "cần xem xét".
             'override_locked' => ['nullable', 'boolean'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $ids = (array) $this->input('employee_ids', []);
+
+            if (! $ids) {
+                return;
+            }
+
+            $valid = array_filter($ids, fn ($id) => is_numeric($id) && (int) $id == $id);
+            $found = \Botble\RestaurantRoster\Models\Employee::query()->whereIn('id', array_map('intval', $valid))->count();
+
+            if (count($valid) !== count($ids) || $found !== count(array_unique(array_map('intval', $valid)))) {
+                $validator->errors()->add('employee_ids', 'Danh sách nhân viên có người không hợp lệ hoặc đã bị xóa. Chọn lại nhân viên.');
+            }
+        });
     }
 
     public function attributes(): array

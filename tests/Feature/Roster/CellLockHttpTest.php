@@ -154,6 +154,13 @@ class CellLockHttpTest extends TestCase
         $this->assertStringContainsString('name="employee_ids[]"', $html);
         $this->assertStringNotContainsString('employee_ids[][]', $html);
         $this->assertMatchesRegularExpression('/type="date"[^>]*name="date_from"|name="date_from"[^>]*type="date"/', $html, 'Từ ngày là ô chọn ngày');
+        // Bộ kiểm tra trên trình duyệt không còn quy tắc từng phần tử (lỗi "The employee_ids.* must be an integer").
+        $this->assertStringNotContainsString('employee_ids.*', $html);
+        $this->assertStringNotContainsString('employee_ids[*]', $html);
+
+        // Server vẫn chặn mã nhân viên không tồn tại.
+        $this->actingAs($this->user([], true))->postJson(route('roster.availability.create.store'), ['employee_ids' => [$this->employee->getKey(), 99999],
+            'date_from' => '2030-01-20', 'date_to' => '2030-01-20', 'type' => 'off_request'])->assertStatus(422);
     }
 
     /** Ghi OFF trên bảng: ngày liền nhau gộp một đơn, ngày đã là OFF đã cho thì bỏ qua, ô được khóa. */
