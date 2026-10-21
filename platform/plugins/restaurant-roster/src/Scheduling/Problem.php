@@ -60,6 +60,12 @@ final class Problem
         public readonly array $outletParents = [],
         /** @var array<string, array{ids: int[], label: string}> Nhóm vị trí dùng cho định biên tối thiểu theo vị trí (vd "Quản lý": Junior Captain trở lên) */
         public readonly array $positionGroups = [],
+        /** @var array<int, array<string, int>> [employeeId][loại ca hỗ trợ] => số lượt trong historyWeeks tuần trước kỳ, vd "OH(L)", "M9(L)", "M6(L)", "A2(L)", "M6(K)", "A2(K)" */
+        public readonly array $supportHistory = [],
+        /** @var array<int, array{morning: int, afternoon: int}> [employeeId] => số ca sáng / chiều trong historyWeeks tuần trước kỳ */
+        public readonly array $shiftHistory = [],
+        // Khoảng đánh giá công bằng (số tuần lịch sử, vd 4 hoặc 8 tuần).
+        public readonly int $historyWeeks = 4,
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -89,6 +95,15 @@ final class Problem
         }
 
         $this->requirements = $indexed;
+    }
+
+    /**
+     * Tên loại ca hỗ trợ dùng để theo dõi lượt và luân phiên: mã ca + (L) khi có mặt ở Lobby, + (K) khi đứng khu trực thuộc
+     * (Kid-Deline). OH và OH(L) là cùng nhóm mã OH; M9 làm trọn ở Lobby luôn là M9(L).
+     */
+    public static function supportTypeKey(string $shiftCode, string $kind): string
+    {
+        return strtoupper($shiftCode) . ($kind === 'kid' ? '(K)' : '(L)');
     }
 
     /**
@@ -139,6 +154,7 @@ final class Problem
         return hash('sha256', serialize([
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
+            $this->supportHistory, $this->shiftHistory, $this->historyWeeks,
         ]));
     }
 }

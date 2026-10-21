@@ -529,6 +529,7 @@ final class HeuristicSolver implements SolverInterface
             // Chia đều giữa các outlet; trong outlet, ưu tiên người ít lượt Lobby; tránh làm outlet hụt mục tiêu.
             $score = $state->supportFrom($i, $k, $o) * 100
                 + $state->lobbyLoad($employeeId) * 20
+                + $state->supportTurns($employeeId, Problem::supportTypeKey($state->problem->shifts[$s]->code, 'lobby')) * 25
                 + ($requirement && $state->count($i, $o, $s) - 1 < $requirement->target ? 50 : 0)
                 + mt_rand(0, 9);
 
@@ -590,6 +591,7 @@ final class HeuristicSolver implements SolverInterface
                 $expected = max(0.5, $this->expectedDays($state, $employee));
                 $score = $state->supportFrom($i, $k, $source) * 100
                     + $state->lobbyLoad($employeeId) * 20
+                    + $state->supportTurns($employeeId, Problem::supportTypeKey($state->problem->shifts[$requirement->shiftId]->code, 'lobby')) * 25
                     + ($state->metricsFor($employeeId)['worked'] / $expected) * 100
                     + ($overNorm ? 1000 : 0)
                     + (isset($this->plannedOff[$employeeId][$i]) ? 300 : 0)
@@ -682,9 +684,15 @@ final class HeuristicSolver implements SolverInterface
                 $managerBias = 200 * ($counts[$category] - $counts[$category === 'morning' ? 'afternoon' : 'morning']);
             }
 
+            // Khu trực thuộc (Kid-Deline): ưu tiên người ít lượt M6(K) / A2(K) tích lũy (kể cả các tuần trước).
+            $kidBias = isset($state->problem->outletParents[$requirement->outletId])
+                ? $state->supportTurns($employeeId, Problem::supportTypeKey($state->problem->shifts[$requirement->shiftId]->code, 'kid')) * 40
+                : 0;
+
             $score = ($metrics['worked'] / $expected) * 100
                 + $mixBias
                 + $managerBias
+                + $kidBias
                 + $this->nightBias($state, $employeeId, $i, $requirement->shiftId)
                 + (isset($this->plannedOff[$employeeId][$i]) ? 300 : 0)
                 + ($overNorm ? 1000 : 0)

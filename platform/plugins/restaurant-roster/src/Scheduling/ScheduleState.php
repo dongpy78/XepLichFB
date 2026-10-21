@@ -345,6 +345,14 @@ final class ScheduleState
         return $this->metricsFor($employeeId)['lobby'] + 0.5 * ($this->problem->lobbyHistory[$employeeId] ?? 0);
     }
 
+    /**
+     * Số lượt tích lũy của một loại ca hỗ trợ (vd "OH(L)", "A2(K)"): lịch sử khoảng đánh giá + đã xếp trong kỳ.
+     */
+    public function supportTurns(int $employeeId, string $type): int
+    {
+        return ($this->problem->supportHistory[$employeeId][$type] ?? 0) + ($this->metricsFor($employeeId)['support_types'][$type] ?? 0);
+    }
+
     public function coverageCount(int $i, int $k): int
     {
         return $this->coverageCount[$i][$k] ?? 0;
@@ -810,6 +818,7 @@ final class ScheduleState
             'busy_off' => $m['busy_off'],
             'off_comfort' => $m['off_blocks'] + $m['off_overlong'] + $m['off_single'],
             'shift_mix' => $m['shift_mix'],
+            'shift_history' => $m['shift_history'],
             'over_norm' => $m['over_norm'],
             'under_norm' => $m['under_norm'],
             'child_borrow' => $m['child_borrow'],
@@ -831,6 +840,18 @@ final class ScheduleState
             $history = $this->problem->lobbyHistory[$employeeId] ?? 0;
             $terms['lobby_sq'] = 4 * $m['lobby'] ** 2 + ($m['lobby'] + $history) ** 2 - $history ** 2;
         }
+
+        // Luân phiên từng loại ca hỗ trợ (OH(L), M9(L), M6(L), A2(L), M6(K), A2(K)) có tính lịch sử các tuần trước:
+        // (lượt lịch sử + lượt kỳ này)² − (lượt lịch sử)² → người ít lượt tích lũy được giao lượt tiếp theo.
+        // Kid-Deline còn được chia đều trong kỳ (4 × lượt²) như Lobby.
+        $typeHistory = $this->problem->supportHistory[$employeeId] ?? [];
+
+        foreach ($m['support_types'] as $type => $count) {
+            $past = $typeHistory[$type] ?? 0;
+            $terms['lobby_sq'] += ($past + $count) ** 2 - $past ** 2;
+        }
+
+        $terms['lobby_sq'] += 4 * $m['kid'] ** 2;
 
         if ($this->expectedDays[$employeeId] > 0) {
             $ratio = $m['worked'] / $this->expectedDays[$employeeId];
@@ -888,6 +909,7 @@ final class ScheduleState
         $underNorm = $t['under_norm'] ?? 0;
         $childBorrow = $t['child_borrow'] ?? 0;
         $shiftMix = $t['shift_mix'] ?? 0;
+        $shiftHistory = $t['shift_history'] ?? 0;
         $offComfort = $t['off_comfort'] ?? 0;
         $preference = $t['preference'] ?? 0;
 
@@ -928,7 +950,7 @@ final class ScheduleState
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
             'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
-            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
+            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
 
@@ -1078,7 +1100,7 @@ final class ScheduleState
 
         $employee = $this->problem->employees[$employeeId];
         $shifts = $this->problem->shifts;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'outlets' => []];
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1125,8 +1147,15 @@ final class ScheduleState
             $m['worked']++;
 
             // Có mặt ở Lobby: ca làm trọn ở trạm, hoặc ca có khung (L) và đang bật (L) (như supportInterval()).
+            // Lượt hỗ trợ theo loại ca: có mặt ở Lobby → OH(L), M9(L), M6(L), A2(L); đứng khu trực thuộc → M6(K), A2(K).
             if (($o !== null && $o === $station) || ($f && $shift->lobbyWindow)) {
                 $m['lobby']++;
+                $type = Problem::supportTypeKey($shift->code, 'lobby');
+                $m['support_types'][$type] = ($m['support_types'][$type] ?? 0) + 1;
+            } elseif ($o !== null && isset($parents[$o])) {
+                $m['kid']++;
+                $type = Problem::supportTypeKey($shift->code, 'kid');
+                $m['support_types'][$type] = ($m['support_types'][$type] ?? 0) + 1;
             }
 
             if ($f && ! isset($fixedRow[$i])) {
@@ -1239,6 +1268,15 @@ final class ScheduleState
                         + (($morning === 0 || $afternoon === 0) ? 3 : 0);
                 }
             }
+        }
+
+        // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử historyWeeks tuần + kỳ này), cho người không có ca cứng, trừ cấp quản lý
+        // (quản lý có quy tắc cân bằng riêng). Lệch tới 2 ca là chấp nhận được.
+        if (! $employee->fixed && ! $employee->isManager) {
+            $past = $this->problem->shiftHistory[$employeeId] ?? ['morning' => 0, 'afternoon' => 0];
+            $morning = $past['morning'] + $m['morning'];
+            $afternoon = $past['afternoon'] + $m['afternoon'];
+            $m['shift_history'] = $m['morning'] + $m['afternoon'] > 0 ? max(0, abs($morning - $afternoon) - 2) : 0;
         }
 
         // Ngày làm từng tuần (kể cả ô cố định ngoài phạm vi).

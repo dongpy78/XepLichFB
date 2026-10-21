@@ -74,6 +74,9 @@ class ProblemBuilder
         $managerShiftIds = $templates->filter(fn (ShiftTemplate $t) => in_array(strtoupper((string) $t->code), $managerCodes, true))
             ->pluck('id')->map(fn ($id) => (int) $id)->values()->all() ?: null;
 
+        $childStaff = $this->childOutletStaffRules($outlets);
+        $positionNames = Position::query()->pluck('name', 'id')->map(fn ($name) => mb_strtolower(trim((string) $name)))->all();
+
         $specs = [];
         $decisionIds = [];
 
@@ -106,6 +109,15 @@ class ProblemBuilder
                 if (! $fixed && $employee->outlet_id) {
                     $skills["{$employee->outlet_id}:{$fixedShiftId}"] = EmployeeSpec::PRIMARY;
                     $fixed[] = "{$employee->outlet_id}:{$fixedShiftId}";
+                }
+            }
+
+            // Khu trực thuộc theo quy tắc chung (vd Kid-Deline: bất kỳ nữ Waiter của Gusto) – không cần khai báo từng người.
+            foreach ($childStaff as $childId => $rule) {
+                if ((int) $employee->outlet_id === $rule['parent_id']
+                    && ($rule['gender'] === null || $employee->gender === $rule['gender'])
+                    && (! $rule['positions'] || in_array($positionNames[(int) $employee->position_id] ?? '', $rule['positions'], true))) {
+                    $skills["{$childId}:0"] ??= EmployeeSpec::PRIMARY;
                 }
             }
 
@@ -150,6 +162,10 @@ class ProblemBuilder
 
         $requirements = $this->requirements($days, array_values(array_diff($targetOutletIds, [$stationOutletId])), $templates->pluck('id')->all());
 
+        // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
+        $historyWeeks = max(1, min(26, (int) ($overrides['history_weeks'] ?? config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))));
+        [$supportHistory, $shiftHistory] = $this->assignmentHistory($employeeIds, $from, $historyWeeks, $stationOutletId, $outlets, $templates);
+
         return new Problem(
             days: $days,
             employees: $specs,
@@ -171,12 +187,41 @@ class ProblemBuilder
             regularOff: $regularOff,
             coverage: $coverage,
             stationOutletId: $stationOutletId,
-            lobbyHistory: $this->lobbyHistory($employeeIds, $from, $stationOutletId),
-            nightHistory: $this->nightHistory($employeeIds, $from, $templates),
+            lobbyHistory: $this->lobbyHistory($employeeIds, $from, $stationOutletId, $historyWeeks),
+            nightHistory: $this->nightHistory($employeeIds, $from, $templates, $historyWeeks),
             positionNames: Position::query()->pluck('name', 'id')->all(),
             outletParents: $this->outletParents($outlets),
             positionGroups: $this->positionGroups(),
+            supportHistory: $supportHistory,
+            shiftHistory: $shiftHistory,
+            historyWeeks: $historyWeeks,
         );
+    }
+
+    /**
+     * Quy tắc ai được đứng khu trực thuộc (config scheduling.child_outlet_staff theo mã outlet).
+     *
+     * @return array<int, array{parent_id: int, gender: ?string, positions: string[]}>
+     */
+    private function childOutletStaffRules($outlets): array
+    {
+        $ids = $outlets->mapWithKeys(fn ($o) => [(string) $o->code => (int) $o->getKey()])->all();
+        $parents = $this->outletParents($outlets);
+        $rules = [];
+
+        foreach (config('plugins.restaurant-roster.general.scheduling.child_outlet_staff', []) as $code => $rule) {
+            $childId = $ids[$code] ?? null;
+
+            if ($childId && isset($parents[$childId])) {
+                $rules[$childId] = [
+                    'parent_id' => $parents[$childId],
+                    'gender' => $rule['gender'] ?? null,
+                    'positions' => array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) ($rule['positions'] ?? [])),
+                ];
+            }
+        }
+
+        return $rules;
     }
 
     /**
@@ -254,7 +299,7 @@ class ProblemBuilder
      *
      * @return array<int, int>
      */
-    private function nightHistory(array $employeeIds, CarbonImmutable $from, $templates): array
+    private function nightHistory(array $employeeIds, CarbonImmutable $from, $templates, int $weeks = 4): array
     {
         $nightIds = $templates->filter(fn (ShiftTemplate $t) => $this->shiftSpec($t)->category() === 'night')->pluck('id')->all();
 
@@ -267,7 +312,7 @@ class ProblemBuilder
         Shift::query()
             ->whereIn('employee_id', $employeeIds)
             ->whereIn('shift_template_id', $nightIds)
-            ->whereBetween('date', [$from->subWeeks(4)->toDateString(), $from->subDay()->toDateString()])
+            ->whereDate('date', '>=', $from->subWeeks($weeks)->toDateString())->whereDate('date', '<=', $from->subDay()->toDateString())
             ->get(['employee_id', 'date'])
             ->each(function (Shift $shift) use (&$weeks): void {
                 $weeks[(int) $shift->employee_id][$shift->date->format('o-W')] = true;
@@ -282,7 +327,7 @@ class ProblemBuilder
      *
      * @return array<int, float>
      */
-    private function lobbyHistory(array $employeeIds, CarbonImmutable $from, ?int $stationOutletId): array
+    private function lobbyHistory(array $employeeIds, CarbonImmutable $from, ?int $stationOutletId, int $weeks = 4): array
     {
         if ($stationOutletId === null) {
             return [];
@@ -292,7 +337,7 @@ class ProblemBuilder
 
         Shift::query()
             ->whereIn('employee_id', $employeeIds)
-            ->whereBetween('date', [$from->subWeeks(4)->toDateString(), $from->subDay()->toDateString()])
+            ->whereDate('date', '>=', $from->subWeeks($weeks)->toDateString())->whereDate('date', '<=', $from->subDay()->toDateString())
             ->get(['employee_id', 'outlet_id', 'tags'])
             ->each(function (Shift $shift) use (&$history, $stationOutletId): void {
                 if ((int) $shift->outlet_id === $stationOutletId || in_array('L', (array) $shift->tags, true)) {
@@ -300,7 +345,61 @@ class ProblemBuilder
                 }
             });
 
-        return array_map(fn (int $count) => round($count / 4, 2), $history);
+        return array_map(fn (int $count) => round($count / $weeks, 2), $history);
+    }
+
+    /**
+     * Lịch sử phân công thực tế trong $weeks tuần ngay trước kỳ (theo các ô lịch còn lại, không tính ô đã xóa / đổi):
+     * - lượt từng loại ca hỗ trợ: OH(L), M9(L), M6(L), A2(L) (có mặt ở Lobby), M6(K), A2(K) (đứng Kid-Deline);
+     * - số ca sáng / chiều (để cân bằng M6 / A2 qua nhiều tuần).
+     *
+     * @return array{0: array<int, array<string, int>>, 1: array<int, array{morning: int, afternoon: int}>}
+     */
+    private function assignmentHistory(array $employeeIds, CarbonImmutable $from, int $weeks, ?int $stationOutletId, $outlets, $templates): array
+    {
+        $childOutlets = array_flip(array_keys($this->outletParents($outlets)));
+        $specs = $templates->mapWithKeys(fn (ShiftTemplate $t) => [$t->getKey() => $this->shiftSpec($t)])->all();
+        $support = [];
+        $halves = [];
+
+        Shift::query()
+            ->whereIn('employee_id', $employeeIds)
+            ->where('kind', Shift::KIND_SHIFT)
+            ->whereNotNull('shift_template_id')
+            ->whereDate('date', '>=', $from->subWeeks($weeks)->toDateString())->whereDate('date', '<=', $from->subDay()->toDateString())
+            ->get(['employee_id', 'outlet_id', 'shift_template_id', 'tags'])
+            ->each(function (Shift $shift) use (&$support, &$halves, $specs, $childOutlets, $stationOutletId): void {
+                $spec = $specs[$shift->shift_template_id] ?? null;
+
+                if (! $spec) {
+                    return;
+                }
+
+                $employeeId = (int) $shift->employee_id;
+                $category = $spec->category();
+
+                if ($category !== 'night') {
+                    $halves[$employeeId][$category] = ($halves[$employeeId][$category] ?? 0) + 1;
+                }
+
+                $atStation = $stationOutletId !== null && (int) $shift->outlet_id === $stationOutletId;
+                $kind = match (true) {
+                    isset($childOutlets[(int) $shift->outlet_id]) => 'kid',
+                    $atStation || (in_array('L', (array) $shift->tags, true) && $spec->lobbyWindow) => 'lobby',
+                    default => null,
+                };
+
+                if ($kind) {
+                    $key = \Botble\RestaurantRoster\Scheduling\Problem::supportTypeKey($spec->code, $kind);
+                    $support[$employeeId][$key] = ($support[$employeeId][$key] ?? 0) + 1;
+                }
+            });
+
+        foreach ($halves as &$counts) {
+            $counts += ['morning' => 0, 'afternoon' => 0];
+        }
+
+        return [$support, $halves];
     }
 
     /**

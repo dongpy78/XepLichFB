@@ -142,9 +142,85 @@
         </div>
     @endif
 
+    @php $report = $proposal['support_report'] ?? []; @endphp
+    @if (! empty($report['rows']))
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Công bằng ca hỗ trợ Lobby / Kid-Deline và ca sáng / chiều</h3>
+                <span class="card-subtitle ms-2">kỳ này / {{ $report['history_weeks'] }} tuần trước</span>
+            </div>
+            <div class="table-responsive" style="max-height: 520px">
+                <table class="table table-sm table-vcenter card-table">
+                    <thead>
+                        <tr>
+                            <th>Nhân viên</th><th>Outlet</th><th>Khu vực</th>
+                            <th class="text-center" title="Ca sáng / chiều kỳ này (trong khoảng đánh giá)">Sáng / Chiều</th>
+                            @foreach ($report['types'] as $type)
+                                <th class="text-center">{{ $type }}</th>
+                            @endforeach
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($report['rows'] as $row)
+                            <tr>
+                                <td class="text-nowrap">{{ $row['name'] }}</td>
+                                <td>{{ $row['outlet'] }}</td>
+                                <td>{{ ['nha_trang' => 'Nha Trang', 'cam_ranh' => 'Cam Ranh'][$row['residence']] ?? '—' }}</td>
+                                <td class="text-center font-monospace">{{ $row['morning'] }}/{{ $row['afternoon'] }}
+                                    <span class="text-muted small">({{ $row['history_morning'] }}/{{ $row['history_afternoon'] }})</span></td>
+                                @foreach ($report['types'] as $type)
+                                    @php $can = in_array($type, $row['eligible'], true); $now = $row['period'][$type] ?? 0; @endphp
+                                    <td class="text-center font-monospace {{ $can && ! $now ? 'text-warning' : '' }} {{ $can ? '' : 'text-muted' }}"
+                                        title="{{ $can ? 'Đủ điều kiện' : 'Không đủ điều kiện theo cấu hình' }}">
+                                        @if ($can || $now || ! empty($row['history'][$type]))
+                                            {{ $now }} <span class="text-muted small">/ {{ $row['history'][$type] ?? 0 }}</span>
+                                        @else
+                                            ·
+                                        @endif
+                                    </td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-body border-top">
+                @if (! empty($report['female_split']))
+                    <div class="mb-2"><strong>Nhân viên nữ ca sáng / chiều theo outlet (tổng lượt trong kỳ):</strong>
+                        @foreach ($report['female_split'] as $outlet => $split)
+                            <span class="badge bg-secondary-lt me-1">{{ $outlet }}: sáng {{ $split['morning'] ?? 0 }} / chiều {{ $split['afternoon'] ?? 0 }}</span>
+                        @endforeach
+                    </div>
+                @endif
+                @if (! empty($report['idle']))
+                    <div class="mb-2"><strong>Đủ điều kiện nhưng chưa có lượt trong kỳ:</strong></div>
+                    <ul class="mb-2">
+                        @foreach ($report['idle'] as $type => $names)
+                            <li><span class="font-monospace">{{ $type }}</span>: {{ implode(', ', $names) }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+                @if (! empty($report['reasons']))
+                    <details>
+                        <summary class="fw-semibold">Lý do từng phân công hỗ trợ ({{ count($report['reasons']) }})</summary>
+                        <ul class="small mt-2 mb-0">
+                            @foreach ($report['reasons'] as $reason)
+                                <li>{{ \Carbon\Carbon::parse($reason['date'])->format('d/m') }} – {{ $reason['text'] }}</li>
+                            @endforeach
+                        </ul>
+                    </details>
+                @endif
+                <div class="form-hint mt-2">
+                    Người ít lượt tích lũy (kỳ này + {{ $report['history_weeks'] }} tuần trước) của từng loại ca được ưu tiên khi đủ điều kiện và đi làm được.
+                    OFF đã cho và việc không đủ điều kiện không làm giảm ưu tiên. Lịch sử lấy từ lịch thực tế các tuần trước (ô đã xóa / đổi không được tính).
+                </div>
+            </div>
+        </div>
+    @endif
+
     @if (! empty($proposal['warnings']))
         <div class="card mb-3">
-            <div class="card-header"><h3 class="card-title text-warning">Cấp quản lý – lệch ca sáng / chiều ({{ count($proposal['warnings']) }})</h3></div>
+            <div class="card-header"><h3 class="card-title text-warning">Cảnh báo vận hành ({{ count($proposal['warnings']) }})</h3></div>
             <div class="list-group list-group-flush">
                 @foreach ($proposal['warnings'] as $warning)
                     <div class="list-group-item">{{ $warning['message'] }}</div>

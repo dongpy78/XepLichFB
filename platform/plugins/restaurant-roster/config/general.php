@@ -37,13 +37,16 @@ return [
         // Hỗ trợ Lobby (L) và Kid Deline (K) chỉ dành cho nhân viên nữ.
         'support_gender' => 'female',
         'female_only_tags' => ['L', 'K'],
-        // Mỗi outlet góp tối đa bấy nhiêu người cho Lobby trong một ca (khung giờ) – bar thiếu người mới lấy người nhà hàng qua.
+        // Mỗi outlet góp tối đa bấy nhiêu người cho Lobby trong một khung giờ (quản lý 22/10/2026: 1 người / outlet, Gusto + Villa = 2).
         // Người đi hỗ trợ Lobby KHÔNG được tính vào định biên nhà hàng của ca đó.
-        'max_support_per_outlet' => 2,
+        'max_support_per_outlet' => 1,
         // Ngày đông khách (thứ ISO: 6 = thứ Bảy): hạn chế xếp OFF vào những ngày này.
         'busy_weekdays' => [6],
         // Khu trực thuộc một nhà hàng (vd Kid-Deline thuộc Gusto): nhân viên nhà hàng đó đứng khu này không tính là "ngoài outlet chính".
         'outlet_parents' => ['KID' => 'GUSTO'],
+        // Ai được đứng khu trực thuộc mà không cần khai báo năng lực từng người (quản lý 22/10/2026: Kid-Deline = bất kỳ nữ Waiter của Gusto).
+        // Người outlet khác (vd nữ Villa) chỉ được mượn khi có dòng năng lực tại khu đó và nhà hàng chủ quản thiếu người.
+        'child_outlet_staff' => ['KID' => ['gender' => 'female', 'positions' => ['Waiter']]],
         // Ngày đông khách: mỗi outlet × ca được nhận thêm tối đa bấy nhiêu người trên định biên mục tiêu (0 = tắt).
         'busy_day_extra_capacity' => 1,
         // Mỗi outlet × ca được nhận thêm tối đa bấy nhiêu người trên định biên mục tiêu, để ai cũng đủ ngày làm
@@ -69,6 +72,9 @@ return [
         // "fortnight" = đủ 2 × số ngày OFF/tuần trong mỗi 2 tuần, mỗi tuần ít nhất min_off_per_week ngày.
         'days_off_mode' => 'weekly',
         'min_off_per_week' => 1,
+        // Khoảng đánh giá công bằng (số tuần lịch sử): luân phiên OH(L), M9(L), M6(L), A2(L), Kid-Deline, ca đêm và cân bằng sáng / chiều.
+        // Quản lý chọn lại được khi chạy xếp lịch (4 hoặc 8 tuần).
+        'history_weeks' => 4,
         // Chỉ chạy "Tạo lịch tự động" / "Tối ưu lại" khi kỳ lịch bao trọn phạm vi đã được xác nhận "đã nhập xong OFF".
         'require_off_confirmation' => true,
         // Giới hạn tăng ca / tháng (Bộ luật Lao động 2019, Điều 107: không quá 40 giờ/tháng).
@@ -100,7 +106,7 @@ return [
     // Ký hiệu phụ trong ngoặc của ca, ví dụ A2(L)(BQ), M6(RS)+3.
     // 'outlet' => mã outlet: ca có ký hiệu này được tính là làm tại outlet đó (mượn người).
     'shift_tags' => [
-        'L' => ['label' => 'Lobby', 'description' => 'Hỗ trợ quầy bar Lobby: A2(L) 14–17h rồi về nhà hàng, OH(L) cả ca, M9(L) làm trọn ca ở Lobby'],
+        'L' => ['label' => 'Lobby', 'description' => 'Hỗ trợ quầy bar Lobby: M6(L) 06–09h ở nhà hàng, 09–12h ở Lobby; A2(L) 14–17h ở Lobby rồi về nhà hàng; OH(L) cả ca; M9(L) làm trọn ca ở Lobby'],
         'G' => ['label' => '→ Gusto', 'description' => 'Thiếu người – sang làm cả ca tại nhà hàng Gusto (tính định biên cho Gusto)', 'outlet' => 'GUSTO'],
         'V' => ['label' => '→ Villa', 'description' => 'Thiếu người – sang làm cả ca tại nhà hàng Villa (tính định biên cho Villa)', 'outlet' => 'VILLA'],
         'RS' => ['label' => 'Room Service', 'description' => 'Đi Room Service', 'outlet' => 'ROOM'],

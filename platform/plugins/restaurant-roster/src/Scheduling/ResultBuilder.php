@@ -40,11 +40,11 @@ final class ResultBuilder
             default => SolveResult::FEASIBLE,
         };
 
-        $warnings = $this->managerWarnings($state);
+        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state)];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
         if ($warnings) {
-            $explanation[] = sprintf('%d outlet × ngày lệch số quản lý ca sáng / chiều – xem cảnh báo bên dưới.', count($warnings));
+            $explanation[] = sprintf('%d cảnh báo vận hành (quản lý lệch ca sáng / chiều, Lobby vượt định biên, mượn người đứng Kid-Deline) – xem bên dưới.', count($warnings));
         }
 
         return new SolveResult(
@@ -64,6 +64,7 @@ final class ResultBuilder
             explanation: $explanation,
             solverMetadata: $metadata,
             warnings: $warnings,
+            supportReport: $this->supportReport($state),
         );
     }
 
@@ -425,6 +426,213 @@ final class ResultBuilder
             'heavy_total' => array_sum($heavy),
             'heavy_max_per_employee' => max($heavy),
         ];
+    }
+
+    /**
+     * Báo cáo công bằng ca hỗ trợ (Lobby, Kid-Deline) và ca sáng / chiều – để quản lý thấy vì sao ai được giao, ai chưa có lượt:
+     * - lượt từng loại ca của từng người: kỳ này và trong khoảng đánh giá trước kỳ;
+     * - người đủ điều kiện một loại ca nhưng chưa có lượt nào trong kỳ;
+     * - số nữ ca sáng / chiều theo outlet;
+     * - lý do từng phân công hỗ trợ do thuật toán xếp.
+     *
+     * "Đủ điều kiện" lấy từ cấu hình (năng lực, giới tính hỗ trợ Lobby, khu vực / giới tính / vị trí của mẫu ca), không suy đoán.
+     */
+    private function supportReport(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $weeks = $problem->historyWeeks;
+        $types = $this->supportTypeShifts($state);
+        $rows = [];
+        $idle = [];
+        $female = [];
+
+        foreach ($problem->employees as $employeeId => $employee) {
+            $m = $state->metricsFor($employeeId);
+            $eligible = array_values(array_filter(array_keys($types), fn ($type) => $this->eligibleFor($state, $employee, $types[$type])));
+            $history = $problem->supportHistory[$employeeId] ?? [];
+
+            if ($employee->gender === 'female') {
+                foreach ($state->scopeIndexes() as $i) {
+                    if (($current = $state->shiftAt($employeeId, $i)) && in_array($category = $problem->shifts[$current[1]]->category(), ['morning', 'afternoon'], true)) {
+                        $outlet = $problem->outletName($problem->outletParents[$current[0]] ?? $current[0]);
+                        $female[$outlet][$category] = ($female[$outlet][$category] ?? 0) + 1;
+                    }
+                }
+            }
+
+            if (! $eligible && ! $m['support_types'] && ! $history) {
+                continue;
+            }
+
+            $rows[] = [
+                'employee_id' => $employeeId,
+                'name' => $employee->name,
+                'outlet' => $problem->outletName($employee->homeOutletId),
+                'residence' => $employee->residence,
+                'worked' => $m['worked'],
+                'morning' => $m['morning'],
+                'afternoon' => $m['afternoon'],
+                'history_morning' => $problem->shiftHistory[$employeeId]['morning'] ?? 0,
+                'history_afternoon' => $problem->shiftHistory[$employeeId]['afternoon'] ?? 0,
+                'period' => $m['support_types'],
+                'history' => $history,
+                'eligible' => $eligible,
+            ];
+
+            foreach ($eligible as $type) {
+                if (empty($m['support_types'][$type]) && $m['worked'] > 0) {
+                    $idle[$type][] = sprintf('%s (%d lượt / %d tuần trước)', $employee->name, $history[$type] ?? 0, $weeks);
+                }
+            }
+        }
+
+        return [
+            'history_weeks' => $weeks,
+            'types' => array_keys($types),
+            'rows' => $rows,
+            'idle' => $idle,
+            'female_split' => $female,
+            'reasons' => $this->supportReasons($state, $types),
+        ];
+    }
+
+    /**
+     * Các loại ca hỗ trợ có nhu cầu trong kỳ: (L) theo khung Lobby, ca làm trọn ở Lobby, ca của khu trực thuộc (Kid-Deline).
+     *
+     * @return array<string, array{kind: string, shift_id: int, outlet_id: ?int}>
+     */
+    private function supportTypeShifts(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $types = [];
+
+        foreach ($state->requirements as $i => $requirements) {
+            foreach ($requirements as $requirement) {
+                $shift = $problem->shifts[$requirement->shiftId];
+
+                if (isset($problem->outletParents[$requirement->outletId])) {
+                    $types[Problem::supportTypeKey($shift->code, 'kid')] ??= ['kind' => 'kid', 'shift_id' => $shift->id, 'outlet_id' => $requirement->outletId];
+                } elseif ($requirement->outletId === $problem->stationOutletId) {
+                    $types[Problem::supportTypeKey($shift->code, 'lobby')] ??= ['kind' => 'station', 'shift_id' => $shift->id, 'outlet_id' => $requirement->outletId];
+                } elseif ($shift->lobbyWindow && $state->supportWindows($i, $requirement->outletId, $shift->id, true)) {
+                    $types[Problem::supportTypeKey($shift->code, 'lobby')] ??= ['kind' => 'lobby', 'shift_id' => $shift->id, 'outlet_id' => null];
+                }
+            }
+        }
+
+        ksort($types);
+
+        return $types;
+    }
+
+    private function eligibleFor(ScheduleState $state, EmployeeSpec $employee, array $type): bool
+    {
+        $problem = $state->problem;
+        $shift = $problem->shifts[$type['shift_id']];
+
+        if (($shift->allowedGender !== null && $employee->gender !== $shift->allowedGender)
+            || ($shift->allowedResidence !== null && $employee->residence !== $shift->allowedResidence)
+            || ($shift->allowedPositionId !== null && $employee->positionId !== $shift->allowedPositionId)) {
+            return false;
+        }
+
+        return match ($type['kind']) {
+            'kid', 'station' => $employee->skillLevel($type['outlet_id'], $shift->id) !== null,
+            default => $employee->homeOutletId !== null
+                && $employee->skillLevel($employee->homeOutletId, $shift->id) !== null
+                && $employee->canSupport($problem->stationOutletId, $shift->id)
+                && ($problem->rules->supportGender === null || $employee->gender === $problem->rules->supportGender),
+        };
+    }
+
+    /**
+     * Lý do từng phân công hỗ trợ (ô do thuật toán xếp): lượt tích lũy của người được giao so với người đủ điều kiện khác.
+     */
+    private function supportReasons(ScheduleState $state, array $types): array
+    {
+        $problem = $state->problem;
+        $weeks = $problem->historyWeeks;
+        $eligible = [];
+        $reasons = [];
+
+        foreach ($types as $type => $definition) {
+            $eligible[$type] = array_keys(array_filter($problem->employees, fn (EmployeeSpec $e) => $this->eligibleFor($state, $e, $definition)));
+        }
+
+        foreach ($state->scopeIndexes() as $i) {
+            foreach ($problem->employees as $employeeId => $employee) {
+                $current = $state->shiftAt($employeeId, $i);
+
+                if (! $current || $state->isFixed($employeeId, $i)) {
+                    continue;
+                }
+
+                [$o, $s, , $f] = $current;
+                $code = $problem->shifts[$s]->code;
+                $isKid = $o !== null && isset($problem->outletParents[$o]);
+                $type = match (true) {
+                    $isKid => Problem::supportTypeKey($code, 'kid'),
+                    (bool) $state->supportInterval($o, $s, $f) => Problem::supportTypeKey($code, 'lobby'),
+                    default => null,
+                };
+
+                if ($type === null) {
+                    continue;
+                }
+
+                $peers = array_values(array_diff($eligible[$type] ?? [], [$employeeId]));
+                $past = $problem->supportHistory[$employeeId][$type] ?? 0;
+                $peerAverage = $peers ? round(array_sum(array_map(fn ($e) => $problem->supportHistory[$e][$type] ?? 0, $peers)) / count($peers), 1) : null;
+                $text = sprintf('%s được xếp %s: %d lượt %s trong %d tuần gần nhất', $employee->name, $type, $past, $type, $weeks)
+                    . ($peerAverage !== null ? sprintf(' (trung bình %d người đủ điều kiện khác: %s)', count($peers), $peerAverage) : ' (là người duy nhất đủ điều kiện)')
+                    . ', không OFF ngày này';
+
+                if ($isKid && ! $problem->isHomeOutlet($employee, $o)) {
+                    $text .= sprintf('; mượn từ %s vì %s không còn người phù hợp đi làm được ca này', $problem->outletName($employee->homeOutletId), $problem->outletName($problem->outletParents[$o]));
+                } elseif (! $isKid) {
+                    $text .= '; Lobby còn nhu cầu ở khung giờ này';
+                }
+
+                $reasons[] = ['date' => $state->dates[$i], 'employee_id' => $employeeId, 'type' => $type, 'text' => $text . '.'];
+            }
+        }
+
+        return $reasons;
+    }
+
+    /**
+     * Cảnh báo vận hành ca hỗ trợ: khung Lobby vượt định biên, Kid-Deline phải mượn người outlet khác.
+     */
+    private function supportWarnings(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $warnings = [];
+
+        foreach ($state->coverage as $i => $windows) {
+            foreach ($windows as $k => [$start, $end, , $target, $label]) {
+                if (($have = $state->coverageCount($i, $k)) > $target) {
+                    $warnings[] = ['code' => 'lobby_over', 'date' => $state->dates[$i], 'outlet_id' => $problem->stationOutletId, 'outlet_name' => $problem->outletName($problem->stationOutletId),
+                        'message' => sprintf('%s %s %02d:%02d–%02d:%02d: %d người cùng lúc, định biên %d – có ca hỗ trợ dư (thường do ô đã khóa / xếp tay).',
+                            $label, date('d/m', strtotime($state->dates[$i])), intdiv($start, 60), $start % 60, intdiv($end, 60), $end % 60, $have, $target)];
+                }
+            }
+        }
+
+        foreach ($state->scopeIndexes() as $i) {
+            foreach ($problem->employees as $employee) {
+                $current = $state->shiftAt($employee->id, $i);
+
+                if ($current && $current[0] !== null && isset($problem->outletParents[$current[0]]) && ! $problem->isHomeOutlet($employee, $current[0])) {
+                    $warnings[] = ['code' => 'kid_borrow', 'date' => $state->dates[$i], 'outlet_id' => $current[0], 'outlet_name' => $problem->outletName($current[0]),
+                        'message' => sprintf('%s %s ca %s: mượn %s (%s) vì %s không còn người phù hợp đi làm được; %s vẫn đủ định biên tối thiểu.',
+                            $problem->outletName($current[0]), date('d/m', strtotime($state->dates[$i])), $problem->shifts[$current[1]]->code,
+                            $employee->name, $problem->outletName($employee->homeOutletId), $problem->outletName($problem->outletParents[$current[0]]),
+                            $problem->outletName($employee->homeOutletId))];
+                }
+            }
+        }
+
+        return $warnings;
     }
 
     /**

@@ -65,7 +65,10 @@ class AutoScheduleController extends BaseController
             'outlet_ids' => ['nullable', 'array'],
             'outlet_ids.*' => ['integer', 'exists:roster_outlets,id'],
             'type' => ['required', Rule::in(['generate', 'reoptimize', 'validate'])],
+            'history_weeks' => ['nullable', 'integer', Rule::in([4, 8])],
         ]);
+
+        $overrides = isset($data['history_weeks']) ? ['history_weeks' => (int) $data['history_weeks']] : [];
 
         $from = Carbon::parse($data['from']);
         $to = Carbon::parse($data['to']);
@@ -87,7 +90,7 @@ class AutoScheduleController extends BaseController
         try {
             $run = $data['type'] === 'validate'
                 ? $this->scheduler->validate($from, $to, $data['outlet_ids'] ?? null, $request->user()?->getKey())
-                : $this->scheduler->run($from, $to, $data['outlet_ids'] ?? null, $data['type'], $request->user()?->getKey());
+                : $this->scheduler->run($from, $to, $data['outlet_ids'] ?? null, $data['type'], $request->user()?->getKey(), $overrides);
         } catch (RuntimeException $exception) {
             return $this->httpResponse()->setError()->setMessage($exception->getMessage());
         }

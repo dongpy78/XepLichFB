@@ -88,7 +88,7 @@ class ShiftTemplateForm extends FormAbstract
                     ->helperText('Vd M9: nữ, Waiter, ở Cam Ranh.')
                     ->colspan(1)
             )
-            ->add('lobby_start_time', TimeField::class, $time('Ký hiệu (L): lên Lobby từ')->helperText('Vd M6(L) 09:00–14:00, A2(L) 14:00–17:00. Để trống nếu ca này không có (L).'))
+            ->add('lobby_start_time', TimeField::class, $time('Ký hiệu (L): lên Lobby từ')->helperText('Vd M6(L) 09:00–12:00, A2(L) 14:00–17:00. Để trống nếu ca này không có (L).'))
             ->add('lobby_end_time', TimeField::class, $time('Ký hiệu (L): đến'))
             ->add(
                 'order',

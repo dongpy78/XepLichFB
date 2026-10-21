@@ -33,6 +33,8 @@ final class SolveResult
         public readonly array $solverMetadata = [],
         /** @var array<int, array{code: string, date: string, outlet_id: ?int, outlet_name: string, message: string}> Cảnh báo vận hành (vd lệch quản lý sáng / chiều) */
         public readonly array $warnings = [],
+        /** Báo cáo công bằng ca hỗ trợ Lobby / Kid-Deline và ca sáng / chiều (xem ResultBuilder::supportReport) */
+        public readonly array $supportReport = [],
     ) {
     }
 
@@ -54,6 +56,7 @@ final class SolveResult
             'explanation' => $this->explanation,
             'solver_metadata' => $this->solverMetadata,
             'warnings' => $this->warnings,
+            'support_report' => $this->supportReport,
         ];
     }
 }

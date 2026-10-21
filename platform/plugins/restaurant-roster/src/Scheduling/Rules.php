@@ -35,6 +35,8 @@ final class Rules
         'shift_mix' => 2500,
         'heavy_transitions' => 2000,
         'lobby_mix' => 1500,
+        // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử khoảng đánh giá + kỳ này) – nhẹ hơn xen kẽ ca trong tuần.
+        'shift_history' => 500,
         // Nên có: công bằng → OFF liền 2–3 ngày → sở thích & ổn định.
         'fairness' => 5,
         'off_comfort' => 20,
