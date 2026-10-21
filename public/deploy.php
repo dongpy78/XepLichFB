@@ -112,12 +112,44 @@ try {
     exit;
 }
 
-// Chép lại JS/CSS của plugin vào public/vendor/core (thư mục này không có trong git).
-try {
-    $kernel->call('cms:publish:assets');
-    echo "Đã cập nhật JS/CSS\n";
-} catch (Throwable $e) {
-    echo 'Cảnh báo: không publish được asset - ' . $e->getMessage() . "\n";
+// Chép lại JS/CSS vào <thư mục web>/vendor/core (thư mục này không có trong git).
+// Chép thẳng từ platform/{core,packages,plugins}/*/public – không phụ thuộc lệnh cms:publish:assets
+// (lệnh đó từng chạy không lỗi nhưng không cập nhật file trên hosting).
+function copy_dir(string $from, string $to): int
+{
+    $count = 0;
+    $items = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($from, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+
+    foreach ($items as $item) {
+        $target = $to . DIRECTORY_SEPARATOR . substr($item->getPathname(), strlen($from) + 1);
+
+        if ($item->isDir()) {
+            is_dir($target) || mkdir($target, 0755, true);
+        } elseif (copy($item->getPathname(), $target)) {
+            $count++;
+        } else {
+            echo "Cảnh báo: không chép được {$target}\n";
+        }
+    }
+
+    return $count;
 }
+
+$webRoot = __DIR__;
+$copied = 0;
+
+foreach (['core', 'packages', 'plugins'] as $group) {
+    foreach (glob($basePath . "/platform/{$group}/*/public", GLOB_ONLYDIR) ?: [] as $source) {
+        $name = basename(dirname($source));
+        $target = "{$webRoot}/vendor/core/{$group}/{$name}";
+        is_dir($target) || mkdir($target, 0755, true);
+        $copied += copy_dir($source, $target);
+    }
+}
+
+echo "Đã cập nhật JS/CSS: {$copied} file vào {$webRoot}/vendor/core\n";
+
+$check = $webRoot . '/vendor/core/plugins/restaurant-roster/js/roster.js';
+echo 'Kiểm tra roster.js: ' . (is_file($check) ? filesize($check) . ' byte, sửa lúc ' . date('d/m/Y H:i', filemtime($check)) : 'KHÔNG CÓ FILE') . "\n";
 
 echo "DEPLOY OK\n";
