@@ -674,8 +674,17 @@ final class HeuristicSolver implements SolverInterface
                 $mixBias = 60 * ($week[$category] - $week[$category === 'morning' ? 'afternoon' : 'morning']);
             }
 
+            // Quản lý: ưu tiên ca (sáng / chiều) đang ít quản lý hơn ở outlet này trong ngày.
+            $managerBias = 0;
+
+            if ($employee->isManager && in_array($category, ['morning', 'afternoon'], true)) {
+                $counts = $state->managerShiftCounts($i, $requirement->outletId);
+                $managerBias = 200 * ($counts[$category] - $counts[$category === 'morning' ? 'afternoon' : 'morning']);
+            }
+
             $score = ($metrics['worked'] / $expected) * 100
                 + $mixBias
+                + $managerBias
                 + $this->nightBias($state, $employeeId, $i, $requirement->shiftId)
                 + (isset($this->plannedOff[$employeeId][$i]) ? 300 : 0)
                 + ($overNorm ? 1000 : 0)

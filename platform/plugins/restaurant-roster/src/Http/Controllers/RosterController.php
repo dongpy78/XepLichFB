@@ -147,6 +147,22 @@ class RosterController extends BaseController
             $message .= ' Ô đã tự khóa vì khác ca cứng ' . ($employee->fixedShift?->code ?? '') . ' – xếp tự động sẽ giữ nguyên.';
         }
 
+        // Cấp quản lý: thuật toán chỉ tự xếp M6 / A2 tại outlet chính. Quản lý xếp tay OH / M9 hoặc outlet khác là quyết định
+        // của người có quyền → tự khóa ô để "Tối ưu lại" không đổi ngược lại.
+        if ($shift->kind === Shift::KIND_SHIFT && $employee->position?->is_manager) {
+            $managerCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.manager_shift_codes', ['M6', 'A2']));
+            $outsideRules = ! in_array(strtoupper((string) $shift->template?->code), $managerCodes, true) || (int) $shift->outlet_id !== (int) $employee->outlet_id;
+
+            if ($outsideRules && ! $shift->is_locked) {
+                $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
+                $message .= ' Quản lý xếp ngoài M6 / A2 hoặc ngoài outlet chính – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
+            }
+
+            if ($balance = $this->managerBalanceNote($employee, $date)) {
+                $message .= " ⚠ {$balance}";
+            }
+        }
+
         $this->logChange($request, $employee->getKey(), $date, $before, $shift->load('template'), 'manual');
 
         return $this->gridResponse($request, $message);
@@ -581,6 +597,37 @@ class RosterController extends BaseController
         }
 
         return $this->gridResponse($request, $message);
+    }
+
+    /**
+     * Số quản lý ca sáng / chiều tại outlet của ô vừa sửa trong ngày: trả về cảnh báo nếu lệch quá mức không tránh được.
+     */
+    protected function managerBalanceNote(Employee $employee, Carbon $date): ?string
+    {
+        $split = ['morning' => 0, 'afternoon' => 0];
+        $shifts = Shift::query()
+            ->with('template:id,start_time')
+            ->whereDate('date', $date->toDateString())
+            ->where('kind', Shift::KIND_SHIFT)
+            ->where('outlet_id', $employee->outlet_id)
+            ->whereIn('employee_id', Employee::query()->whereIn('position_id', Position::query()->where('is_manager', true)->select('id'))->select('id'))
+            ->get();
+
+        foreach ($shifts as $shift) {
+            $hour = (int) substr((string) $shift->template?->start_time, 0, 2);
+
+            if ($hour >= 4 && $hour < 12) {
+                $split['morning']++;
+            } elseif ($hour >= 12 && $hour < 20) {
+                $split['afternoon']++;
+            }
+        }
+
+        if (\Botble\RestaurantRoster\Scheduling\ScheduleState::managerPenalty($split['morning'], $split['afternoon']) === 0) {
+            return null;
+        }
+
+        return sprintf('Ngày %s: quản lý ca sáng %d / ca chiều %d – chênh lệch nhiều, cân nhắc đổi ca.', $date->format('d/m'), $split['morning'], $split['afternoon']);
     }
 
     /**

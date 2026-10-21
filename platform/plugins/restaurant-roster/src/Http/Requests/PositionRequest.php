@@ -12,6 +12,7 @@ class PositionRequest extends Request
     {
         return [
             'name' => ['required', 'string', 'max:120'],
+            'is_manager' => ['nullable', 'boolean'],
             'description' => ['nullable', 'string', 'max:400'],
             'order' => ['nullable', 'integer', 'min:0'],
             'status' => Rule::in(BaseStatusEnum::values()),

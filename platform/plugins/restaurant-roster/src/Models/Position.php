@@ -13,6 +13,7 @@ class Position extends BaseModel
 
     protected $fillable = [
         'name',
+        'is_manager',
         'description',
         'order',
         'status',
@@ -22,6 +23,7 @@ class Position extends BaseModel
         'status' => BaseStatusEnum::class,
         'name' => SafeContent::class,
         'description' => SafeContent::class,
+        'is_manager' => 'bool',
     ];
 
     public function employees(): HasMany

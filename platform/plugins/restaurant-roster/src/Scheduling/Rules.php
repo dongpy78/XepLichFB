@@ -11,7 +11,7 @@ final class Rules
      * Trọng số mặc định của các mục tiêu (điểm phạt cho mỗi đơn vị), chia 3 nhóm:
      *  - Bắt buộc: luật lao động, định biên tối thiểu, đúng số ngày OFF – cách nhau nhiều bậc nên không bao giờ đổi lấy nhóm dưới.
      *  - Quan trọng, theo thứ tự: quy tắc phân người của quản lý (Kid-Deline chỉ mượn người khi Gusto thiếu,
-     *    luân phiên ca đêm) → đủ người theo định biên mục tiêu → hạn chế OFF thứ Bảy → OFF liền nhau → xen kẽ sáng/chiều → tránh ca nặng → chia đều Lobby.
+     *    luân phiên ca đêm) → đủ người theo định biên mục tiêu → cân bằng quản lý M6 / A2 → hạn chế OFF thứ Bảy → OFF liền nhau → xen kẽ sáng/chiều → tránh ca nặng → chia đều Lobby.
      *    Quyết định của quản lý 21/10/2026: đủ người theo mục tiêu được ưu tiên hơn OFF liền nhau và tránh ca nặng
      *    (1 chỗ thiếu mục tiêu ≈ 3 ngày OFF lẻ ≈ 5 lần chuyển ca nặng).
      *  - Nên có: công bằng, OFF liền 2–3 ngày, sở thích & ổn định.
@@ -27,6 +27,8 @@ final class Rules
         'child_borrow' => 60000,
         'night_rotation' => 30000,
         'target_shortage' => 10000,
+        // Cấp quản lý: số quản lý ca sáng (M6) và chiều (A2) cân bằng theo outlet × ngày – không đổi lấy thiếu người.
+        'manager_balance' => 8000,
         // Thứ Bảy đông khách: hạn chế OFF thứ Bảy, nhưng không đổi lấy thiếu người ngày khác.
         'busy_day_off' => 4000,
         'off_split' => 3000,

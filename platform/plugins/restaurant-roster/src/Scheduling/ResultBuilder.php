@@ -40,7 +40,12 @@ final class ResultBuilder
             default => SolveResult::FEASIBLE,
         };
 
+        $warnings = $this->managerWarnings($state);
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
+
+        if ($warnings) {
+            $explanation[] = sprintf('%d outlet × ngày lệch số quản lý ca sáng / chiều – xem cảnh báo bên dưới.', count($warnings));
+        }
 
         return new SolveResult(
             status: $status,
@@ -58,6 +63,7 @@ final class ResultBuilder
             employeeWorkload: $this->workload($state),
             explanation: $explanation,
             solverMetadata: $metadata,
+            warnings: $warnings,
         );
     }
 
@@ -419,6 +425,40 @@ final class ResultBuilder
             'heavy_total' => array_sum($heavy),
             'heavy_max_per_employee' => max($heavy),
         ];
+    }
+
+    /**
+     * Cảnh báo lệch quản lý ca sáng / chiều (outlet × ngày) kèm nguyên nhân, để người xếp lịch chủ động xử lý.
+     */
+    private function managerWarnings(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $warnings = [];
+
+        foreach ($state->managerImbalances() as $row) {
+            [$i, $date, $outletId] = [$row['i'], $row['date'], $row['outlet_id']];
+            $managers = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isManager && $e->homeOutletId === $outletId);
+            $off = count(array_filter($managers, fn (EmployeeSpec $e) => ! $state->shiftAt($e->id, $i)));
+            $locked = count(array_filter($managers, fn (EmployeeSpec $e) => $state->isFixed($e->id, $i) && $state->shiftAt($e->id, $i)));
+            $working = $row['morning'] + $row['afternoon'];
+
+            $reason = match (true) {
+                $working <= 1 => sprintf('chỉ có %d quản lý đi làm (%d OFF / nghỉ)', $working, $off),
+                $locked > 0 => sprintf('%d ca quản lý đã khóa / xếp tay nên không chuyển được', $locked),
+                default => 'giờ nghỉ giữa hai ca, số ngày làm liên tục hoặc định biên tối thiểu không cho chuyển thêm quản lý',
+            };
+
+            $warnings[] = [
+                'code' => 'manager_imbalance',
+                'date' => $date,
+                'outlet_id' => $outletId,
+                'outlet_name' => $problem->outletName($outletId),
+                'message' => sprintf('%s %s: quản lý ca sáng %d / ca chiều %d – %s.', $problem->outletName($outletId),
+                    date('d/m', strtotime($date)), $row['morning'], $row['afternoon'], $reason),
+            ];
+        }
+
+        return $warnings;
     }
 
     private function explain(ScheduleState $state, string $status, array $hard, array $unfilled, array $metadata): array

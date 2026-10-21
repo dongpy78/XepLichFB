@@ -36,6 +36,8 @@ class PositionTable extends TableAbstract
                     ->orderable(false)
                     ->searchable(false)
                     ->getValueUsing(fn (FormattedColumn $column) => (string) (int) $column->getItem()->employees_count),
+                FormattedColumn::make('is_manager')->title('Cấp quản lý')->width(120)->alignCenter()
+                    ->getValueUsing(fn (FormattedColumn $column) => $column->getItem()->is_manager ? '<span class="badge bg-primary-lt">Quản lý</span>' : '—'),
                 FormattedColumn::make('order')->title('Thứ tự')->width(100)->alignCenter(),
                 StatusColumn::make(),
             ])
@@ -48,7 +50,7 @@ class PositionTable extends TableAbstract
             ])
             ->queryUsing(function ($query): void {
                 $query
-                    ->select(['id', 'name', 'order', 'status'])
+                    ->select(['id', 'name', 'is_manager', 'order', 'status'])
                     ->withCount('employees')
                     ->orderBy('order');
             });

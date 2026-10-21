@@ -57,12 +57,12 @@ return [
         'staffing_rules' => [
             ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'min_male' => 1],
             ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'position' => 'Hostess', 'min' => 1],
-            // Mỗi ca có người quản lý: từ Junior Restaurant Captain trở lên.
-            ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'label' => 'Quản lý (Junior Captain trở lên)', 'min' => 1, 'positions' => [
-                'Junior Restaurant Captain', 'Restaurant Captain', 'Junior Restaurant Supervisor', 'Restaurant Supervisor',
-                'Senior Restaurant Supervisor', 'Assistant Manager', 'Restaurant Manager',
-            ]],
+            // Mỗi ca có người quản lý: các vị trí bật "Cấp quản lý" trên màn hình Vị trí (Junior Restaurant Captain trở lên).
+            ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'label' => 'Quản lý (Junior Captain trở lên)', 'min' => 1, 'managers' => true],
         ],
+        // Cấp quản lý (vị trí bật "Cấp quản lý"): thuật toán chỉ tự xếp các ca này, tại outlet chính, không đi Lobby;
+        // số quản lý ca sáng / chiều được cân bằng theo từng outlet, từng ngày. OH / M9 / đổi outlet do quản lý xếp tay.
+        'manager_shift_codes' => ['M6', 'A2'],
         // Một người được tính là phủ một khung giờ Lobby nếu có mặt ở Lobby ít nhất tỉ lệ này của khung.
         'coverage_overlap_ratio' => 0.5,
         // Ngày OFF: "weekly" = mỗi tuần đúng số ngày OFF cấu hình của nhân viên (quản lý 19/10/2026: bắt buộc).

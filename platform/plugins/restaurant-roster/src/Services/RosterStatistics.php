@@ -27,7 +27,8 @@ class RosterStatistics
         }
 
         $ids = Position::query()->pluck('id', 'name');
-        $leaderIds = [];
+        // Cấp quản lý theo cờ "Cấp quản lý" của vị trí (Junior Restaurant Captain trở lên).
+        $leaderIds = Position::query()->where('is_manager', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
         $hostessIds = [];
         $checks = [];
 
@@ -35,9 +36,7 @@ class RosterStatistics
             $names = (array) ($rule['positions'] ?? $rule['position'] ?? []);
             $groupIds = $names ? $ids->only($names)->values()->map(fn ($id) => (int) $id)->all() : [];
 
-            if (count($names) > 1) {
-                $leaderIds = $groupIds;
-            } elseif ($names) {
+            if ($names && empty($rule['managers'])) {
                 $hostessIds = $groupIds;
             }
 
@@ -94,6 +93,7 @@ class RosterStatistics
         $codes = [];
         $cells = [];
         $absent = [];
+        $managerSplit = [];
 
         foreach ($shifts as $shift) {
             $date = $shift->date->toDateString();
@@ -122,6 +122,15 @@ class RosterStatistics
                 $cell['total']++;
                 $cell[$employee->gender === 'male' ? 'male' : 'female']++;
                 $cell['leaders'] += in_array((int) $employee->position_id, $rules['leaderIds'], true) ? 1 : 0;
+
+                if (in_array((int) $employee->position_id, $rules['leaderIds'], true) && $shift->template?->start_time) {
+                    $hour = (int) substr((string) $shift->template->start_time, 0, 2);
+                    $half = $hour >= 4 && $hour < 12 ? 'morning' : ($hour >= 12 && $hour < 20 ? 'afternoon' : null);
+
+                    if ($half) {
+                        $managerSplit[$date][$shift->outlet_id][$half] = ($managerSplit[$date][$shift->outlet_id][$half] ?? 0) + 1;
+                    }
+                }
                 $cell['hostess'] += in_array((int) $employee->position_id, $rules['hostessIds'], true) ? 1 : 0;
             }
 
@@ -147,6 +156,19 @@ class RosterStatistics
 
         $problems = [];
 
+        // Cấp quản lý: số quản lý ca sáng / chiều lệch quá mức không tránh được (vd 4 sáng / 1 chiều) → báo ở các ca của outlet hôm đó.
+        foreach ($managerSplit as $date => $byOutlet) {
+            foreach ($byOutlet as $outletId => $split) {
+                [$morning, $afternoon] = [$split['morning'] ?? 0, $split['afternoon'] ?? 0];
+
+                if (\Botble\RestaurantRoster\Scheduling\ScheduleState::managerPenalty($morning, $afternoon) > 0) {
+                    foreach ($codes[$outletId] ?? [] as $code) {
+                        $problems[$date][$outletId][$code][] = "quản lý lệch: sáng {$morning} / chiều {$afternoon}";
+                    }
+                }
+            }
+        }
+
         foreach ($shifts->isEmpty() ? [] : $outlets as $outlet) {
             foreach ($codes[$outlet->id] ?? [] as $code) {
                 if (! isset($rules['checks'][$outlet->code . '|' . $code])) {
@@ -162,7 +184,7 @@ class RosterStatistics
                     ])) : ['không có ai'];
 
                     if ($list) {
-                        $problems[$date][$outlet->id][$code] = $list;
+                        $problems[$date][$outlet->id][$code] = [...$list, ...($problems[$date][$outlet->id][$code] ?? [])];
                     }
                 }
             }

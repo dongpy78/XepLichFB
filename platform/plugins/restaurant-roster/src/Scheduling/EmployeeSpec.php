@@ -23,6 +23,10 @@ final class EmployeeSpec
         public readonly array $fixed = [],
         public readonly ?string $residence = null,
         public readonly ?int $positionId = null,
+        // Cấp quản lý (Junior Restaurant Captain trở lên): chỉ tự xếp các ca $managerShiftIds tại outlet chính, không đi Lobby.
+        public readonly bool $isManager = false,
+        /** @var int[]|null Ca quản lý được tự xếp (M6, A2); null = không giới hạn ca */
+        public readonly ?array $managerShiftIds = null,
     ) {
     }
 
@@ -42,6 +46,12 @@ final class EmployeeSpec
             return null;
         }
 
+        // Quản lý: thuật toán không tự điều chuyển sang outlet khác và chỉ tự xếp M6 / A2 (OH, M9 do quản lý xếp tay).
+        if ($this->isManager && ($outletId !== $this->homeOutletId
+            || ($this->managerShiftIds !== null && ! in_array($shiftId, $this->managerShiftIds, true)))) {
+            return null;
+        }
+
         if ($this->fixed && ! in_array("{$outletId}:{$shiftId}", $this->fixed, true) && ! in_array("{$outletId}:0", $this->fixed, true)) {
             return null;
         }
@@ -54,7 +64,7 @@ final class EmployeeSpec
      */
     public function canSupport(?int $stationOutletId, int $shiftId): bool
     {
-        return $stationOutletId !== null
+        return $stationOutletId !== null && ! $this->isManager
             && (isset($this->skills["{$stationOutletId}:0"]) || isset($this->skills["{$stationOutletId}:{$shiftId}"]));
     }
 

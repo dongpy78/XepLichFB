@@ -142,6 +142,21 @@
         </div>
     @endif
 
+    @if (! empty($proposal['warnings']))
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title text-warning">Cấp quản lý – lệch ca sáng / chiều ({{ count($proposal['warnings']) }})</h3></div>
+            <div class="list-group list-group-flush">
+                @foreach ($proposal['warnings'] as $warning)
+                    <div class="list-group-item">{{ $warning['message'] }}</div>
+                @endforeach
+            </div>
+            <div class="card-footer small text-muted">
+                Thuật toán không đổi OFF đã cho, ca đã khóa hay outlet của quản lý để cân bằng. Nếu cần, điều chỉnh tay trên Bảng xếp ca
+                (đổi ca M6 ↔ A2, chuyển OH / M9, điều chuyển outlet theo quyết định của cấp có thẩm quyền).
+            </div>
+        </div>
+    @endif
+
     @if ($diff)
         <div class="card mb-3">
             <div class="card-header"><h3 class="card-title">So sánh trước / sau ({{ count($diff) }} ô thay đổi)</h3></div>

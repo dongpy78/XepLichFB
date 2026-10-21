@@ -68,6 +68,12 @@ class ProblemBuilder
             ->with('skills')
             ->get();
 
+        // Cấp quản lý: theo cờ "Cấp quản lý" của vị trí (không so tên chức vụ); chỉ tự xếp các ca manager_shift_codes.
+        $managerPositions = array_flip($this->managerPositionIds());
+        $managerCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.manager_shift_codes', ['M6', 'A2']));
+        $managerShiftIds = $templates->filter(fn (ShiftTemplate $t) => in_array(strtoupper((string) $t->code), $managerCodes, true))
+            ->pluck('id')->map(fn ($id) => (int) $id)->values()->all() ?: null;
+
         $specs = [];
         $decisionIds = [];
 
@@ -122,6 +128,8 @@ class ProblemBuilder
                 fixed: $fixed,
                 residence: $employee->residence,
                 positionId: $employee->position_id ? (int) $employee->position_id : null,
+                isManager: isset($managerPositions[(int) $employee->position_id]),
+                managerShiftIds: $managerShiftIds,
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {
@@ -201,6 +209,13 @@ class ProblemBuilder
         foreach (config('plugins.restaurant-roster.general.scheduling.staffing_rules', []) as $rule) {
             $names = (array) ($rule['positions'] ?? $rule['position'] ?? []);
 
+            // "managers" => true: nhóm các vị trí bật "Cấp quản lý".
+            if (! empty($rule['managers']) && ($key = $this->positionGroupKey($rule))) {
+                $groups[$key] = ['ids' => $this->managerPositionIds(), 'label' => (string) ($rule['label'] ?? 'Quản lý')];
+
+                continue;
+            }
+
             if ($names && ($key = $this->positionGroupKey($rule))) {
                 $groups[$key] = [
                     'ids' => array_values(array_map('intval', array_filter(array_map(fn ($name) => $ids[$name] ?? null, $names)))),
@@ -214,10 +229,25 @@ class ProblemBuilder
 
     private function positionGroupKey(array $rule): ?string
     {
+        if (! empty($rule['managers'])) {
+            return 'grp:' . ($rule['label'] ?? 'Quản lý');
+        }
+
         $names = (array) ($rule['positions'] ?? $rule['position'] ?? []);
 
         return $names ? 'grp:' . ($rule['label'] ?? implode('|', $names)) : null;
     }
+
+    /**
+     * @return int[] Vị trí bật "Cấp quản lý" (Junior Restaurant Captain trở lên).
+     */
+    private function managerPositionIds(): array
+    {
+        return $this->managerPositionIds ??= Position::query()->where('is_manager', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /** @var int[]|null */
+    private ?array $managerPositionIds = null;
 
     /**
      * Số tuần có làm ca đêm của từng nhân viên trong 4 tuần ngay trước kỳ – để luân phiên ca Night theo tuần.

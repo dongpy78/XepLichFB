@@ -80,6 +80,12 @@ final class ScheduleState
     /** Tổng bình phương số người dôi ra trên định biên mục tiêu (cập nhật tăng dần trong adjustCount). */
     private int $overTarget = 0;
 
+    /** @var array<int, array<int, array{morning: int, afternoon: int}>> [dayIndex][outletId] => số quản lý ca sáng / chiều */
+    private array $managerShifts = [];
+
+    /** Tổng độ lệch quản lý sáng / chiều (xem managerPenalty), cập nhật tăng dần. */
+    private int $managerImbalance = 0;
+
     private int $fixedHardViolations = 0;
 
     /** @var array<int, array<string, mixed>> */
@@ -922,7 +928,7 @@ final class ScheduleState
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
             'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
-            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
+            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
 
@@ -1398,6 +1404,16 @@ final class ScheduleState
         $requirement = $this->requirements[$i]["{$outletId}|{$shiftId}"] ?? null;
         $isMale = $this->problem->employees[$employeeId]?->isMale() ?? false;
 
+        // Quản lý ca sáng / chiều theo outlet × ngày (cân bằng M6 / A2 của cấp quản lý).
+        if (($this->problem->employees[$employeeId] ?? null)?->isManager
+            && in_array($category = $this->problem->shifts[$shiftId]->category(), ['morning', 'afternoon'], true)) {
+            $counts = $this->managerShifts[$i][$outletId] ?? ['morning' => 0, 'afternoon' => 0];
+            $before = self::managerPenalty($counts['morning'], $counts['afternoon']);
+            $counts[$category] += $delta;
+            $this->managerShifts[$i][$outletId] = $counts;
+            $this->managerImbalance += self::managerPenalty($counts['morning'], $counts['afternoon']) - $before;
+        }
+
         $before = $this->count[$key] ?? 0;
         $beforeMale = $this->maleCount[$key] ?? 0;
         $this->count[$key] = $before + $delta;
@@ -1463,6 +1479,49 @@ final class ScheduleState
 
     /** @var array<string, array{0: int, 1: Requirement, 2: bool}> "i|o|s" => [ngày, định biên, thiếu tối thiểu?] ô đang thiếu so với mục tiêu */
     private array $shortSlots = [];
+
+    /**
+     * Độ lệch quản lý giữa ca sáng và ca chiều của một outlet trong ngày: chênh lệch vượt mức không tránh được
+     * (tổng lẻ thì lệch 1 là cân bằng nhất). Vd 4 sáng / 1 chiều → 2; 3 / 2 → 0; 2 / 2 → 0.
+     */
+    public static function managerPenalty(int $morning, int $afternoon): int
+    {
+        return max(0, abs($morning - $afternoon) - (($morning + $afternoon) % 2));
+    }
+
+    /**
+     * Số quản lý ca sáng / chiều của một outlet trong ngày i.
+     *
+     * @return array{morning: int, afternoon: int}
+     */
+    public function managerShiftCounts(int $i, int $outletId): array
+    {
+        return $this->managerShifts[$i][$outletId] ?? ['morning' => 0, 'afternoon' => 0];
+    }
+
+    /**
+     * Outlet × ngày đang lệch quản lý sáng / chiều.
+     *
+     * @return array<int, array{i: int, date: string, outlet_id: int, morning: int, afternoon: int}>
+     */
+    public function managerImbalances(): array
+    {
+        $rows = [];
+
+        foreach ($this->managerShifts as $i => $outlets) {
+            if (! ($this->inScope[$i] ?? false)) {
+                continue;
+            }
+
+            foreach ($outlets as $outletId => $counts) {
+                if (self::managerPenalty($counts['morning'], $counts['afternoon']) > 0) {
+                    $rows[] = ['i' => $i, 'date' => $this->dates[$i], 'outlet_id' => $outletId, 'morning' => $counts['morning'], 'afternoon' => $counts['afternoon']];
+                }
+            }
+        }
+
+        return $rows;
+    }
 
     /**
      * Các ô định biên đang thiếu người so với mục tiêu (kèm cờ thiếu tối thiểu).

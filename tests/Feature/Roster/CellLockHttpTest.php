@@ -129,7 +129,7 @@ class CellLockHttpTest extends TestCase
         $request = \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->firstOrFail();
 
         foreach ([route('roster.periods.index'), route('roster.availability.index'), route('roster.auto.index'),
-            route('roster.index', ['week' => '2030-01-07']), route('roster.availability.edit', $request->id)] as $url) {
+            route('roster.index', ['week' => '2030-01-07']), route('roster.availability.edit', $request->id), route('roster.positions.create')] as $url) {
             $this->actingAs($manager)->get($url)->assertOk();
         }
 
@@ -178,6 +178,47 @@ class CellLockHttpTest extends TestCase
         $denied = $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.off-record'), ['cells' => [['employee_id' => $other->getKey(), 'date' => '2030-01-12']], 'off_type' => 'off_request']);
         $this->assertTrue($denied->status() >= 400 || $denied->json('error') === true, 'Bị chặn bởi phân quyền');
         $this->assertSame($before, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count(), 'Không tạo OFF');
+    }
+
+    /** Cấp quản lý theo cờ của vị trí: thuật toán nhận đúng, xếp tay ngoài M6 / A2 thì ô tự khóa, bảng báo lệch sáng / chiều. */
+    public function test_manager_flag_drives_engine_and_manual_edits(): void
+    {
+        $outlet = Outlet::query()->firstOrFail();
+        $m6 = ShiftTemplate::query()->where('code', 'M6')->firstOrFail();
+        ShiftTemplate::query()->create(['code' => 'A2', 'name' => 'Chiều', 'start_time' => '14:00:00', 'end_time' => '22:00:00', 'status' => 'published']);
+        ShiftTemplate::query()->create(['code' => 'OH', 'name' => 'OH', 'start_time' => '08:45:00', 'end_time' => '16:45:00', 'status' => 'published']);
+        $captain = \Botble\RestaurantRoster\Models\Position::query()->create(['name' => 'Restaurant Captain', 'is_manager' => true, 'status' => 'published']);
+        $waiter = \Botble\RestaurantRoster\Models\Position::query()->create(['name' => 'Waiter', 'is_manager' => false, 'status' => 'published']);
+
+        $managers = [];
+
+        foreach (range(1, 3) as $k) {
+            $managers[] = Employee::query()->create(['code' => "MGR{$k}", 'name' => "Synthetic Captain {$k}", 'outlet_id' => $outlet->getKey(), 'position_id' => $captain->getKey(),
+                'weekly_hours' => 48, 'days_off_per_week' => 2, 'auto_schedule' => true, 'status' => 'published']);
+        }
+
+        $this->employee->update(['position_id' => $waiter->getKey()]);
+
+        $problem = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->build(\Carbon\Carbon::parse('2030-01-07'), \Carbon\Carbon::parse('2030-01-13'));
+        $this->assertTrue($problem->employees[$managers[0]->getKey()]->isManager);
+        $this->assertSame([(int) $m6->getKey(), (int) ShiftTemplate::query()->where('code', 'A2')->value('id')], $problem->employees[$managers[0]->getKey()]->managerShiftIds);
+        $this->assertFalse($problem->employees[$this->employee->getKey()]->isManager);
+
+        $manager = $this->user([], true);
+        $assign = fn (Employee $e, string $notation) => $this->actingAs($manager)->postJson(route('roster.assign'), [
+            'employee_id' => $e->getKey(), 'date' => '2030-01-09', 'action' => 'notation', 'notation' => $notation, 'week' => '2030-01-07',
+        ]);
+        $cell = fn (Employee $e) => Shift::query()->where('employee_id', $e->getKey())->whereDate('date', '2030-01-09')->first();
+
+        $assign($managers[0], 'M6')->assertJson(['error' => false]);
+        $this->assertFalse($cell($managers[0])->is_locked, 'M6 tại outlet chính: không cần khóa');
+
+        $assign($managers[1], 'M6');
+        $response = $assign($managers[2], 'OH')->assertJson(['error' => false]);
+        $this->assertTrue($cell($managers[2])->is_locked, 'Quản lý xếp tay OH: ô tự khóa');
+        $this->assertSame(Shift::LOCK_MANUAL, $cell($managers[2])->lock_reason);
+        $this->assertStringContainsString('quản lý ca sáng 3 / ca chiều 0', $response->json('message'), 'Cảnh báo lệch sáng / chiều');
+        $this->assertStringContainsString('quản lý lệch: sáng 3 / chiều 0', $response->json('data.html'), 'Bảng xếp ca báo lệch');
     }
 
     public function test_removing_recorded_off_requires_permission(): void

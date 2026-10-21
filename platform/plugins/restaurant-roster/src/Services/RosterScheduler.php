@@ -288,6 +288,12 @@ class RosterScheduler
                     'suggestions' => json_encode(array_column($u['proposals'], 'text'), JSON_UNESCAPED_UNICODE), 'created_at' => $now, 'updated_at' => $now];
             }
 
+            foreach ($result->warnings as $w) {
+                $rows[] = ['run_id' => $run->getKey(), 'date' => $w['date'], 'outlet_id' => $w['outlet_id'], 'shift_template_id' => null, 'employee_id' => null,
+                    'category' => 'operations', 'severity' => 'medium', 'code' => $w['code'], 'message' => mb_substr($w['message'], 0, 500),
+                    'suggestions' => null, 'created_at' => $now, 'updated_at' => $now];
+            }
+
             foreach ($result->employeeWorkload as $w) {
                 if ($w['heavy_transitions'] >= 3) {
                     $rows[] = ['run_id' => $run->getKey(), 'date' => null, 'outlet_id' => null, 'shift_template_id' => null, 'employee_id' => $w['employee_id'],

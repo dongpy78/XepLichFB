@@ -31,6 +31,8 @@ final class SolveResult
         public readonly array $employeeWorkload = [],
         public readonly array $explanation = [],
         public readonly array $solverMetadata = [],
+        /** @var array<int, array{code: string, date: string, outlet_id: ?int, outlet_name: string, message: string}> Cảnh báo vận hành (vd lệch quản lý sáng / chiều) */
+        public readonly array $warnings = [],
     ) {
     }
 
@@ -51,6 +53,7 @@ final class SolveResult
             'proposed_reassignments' => array_merge(...array_map(fn ($u) => $u['proposals'] ?? [], $this->unfilledRequirements ?: [[]])),
             'explanation' => $this->explanation,
             'solver_metadata' => $this->solverMetadata,
+            'warnings' => $this->warnings,
         ];
     }
 }
