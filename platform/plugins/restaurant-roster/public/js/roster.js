@@ -174,9 +174,105 @@ $(() => {
 
     $app.on('click', '[data-roster-undo-dismiss]', () => $undo.addClass('d-none'))
 
+    // Ghi OFF trên bảng: bật chế độ chọn ô, bấm các ô cần OFF (Shift = chọn liền nhiều ngày của một người), rồi ghi & khóa.
+    const $offBar = $('#roster-off-bar')
+    const offSelection = new Map()
+    let offSelecting = false
+    let lastOffCell = null
+
+    const cellKey = ($cell) => `${$cell.data('employee')}|${$cell.data('date')}`
+
+    const paintOffSelection = () => {
+        $grid.find('.roster-cell').each((_, cell) => {
+            $(cell).toggleClass('is-off-selected', offSelection.has(cellKey($(cell))))
+        })
+
+        const count = offSelection.size
+        $('#roster-off-count').text(count ? `Đã chọn ${count} ô` : 'Bấm vào các ô cần cho OFF')
+        $offBar.find('[data-off-save]').prop('disabled', !count)
+    }
+
+    const setOffSelecting = (enabled) => {
+        offSelecting = enabled
+        offSelection.clear()
+        lastOffCell = null
+        $grid.toggleClass('is-off-selecting', enabled)
+        $offBar.toggleClass('d-none', !enabled)
+        $app.find('[data-off-select]').toggleClass('active', enabled)
+        paintOffSelection()
+    }
+
+    const toggleOffCell = ($cell, value) => {
+        const key = cellKey($cell)
+
+        if (value ?? !offSelection.has(key)) {
+            offSelection.set(key, { employee_id: $cell.data('employee'), date: $cell.data('date') })
+        } else {
+            offSelection.delete(key)
+        }
+    }
+
+    const recordOff = (cells, type, reason) => request('POST', urls.offRecordUrl, { cells, off_type: type, off_reason: reason })
+
+    $app.on('click', '[data-off-select]', () => setOffSelecting(!offSelecting))
+    $offBar.on('click', '[data-off-cancel]', () => setOffSelecting(false))
+
+    $offBar.on('click', '[data-off-save]', (event) => {
+        const $button = $(event.currentTarget)
+
+        Botble.showButtonLoading($button)
+        recordOff([...offSelection.values()], $('#roster-off-type').val(), $('#roster-off-reason').val())
+            .done((response) => {
+                if (!response.error) {
+                    $('#roster-off-reason').val('')
+                    setOffSelecting(false)
+                }
+            })
+            .always(() => Botble.hideButtonLoading($button))
+    })
+
+    // Chạy trước handler mở hộp xếp ca: đang chọn OFF thì bấm ô = chọn / bỏ chọn.
+    $grid.on('click', '.roster-cell', (event) => {
+        if (!offSelecting) {
+            return
+        }
+
+        event.stopImmediatePropagation()
+        const $cell = $(event.currentTarget)
+
+        if (event.shiftKey && lastOffCell && String(lastOffCell.data('employee')) === String($cell.data('employee'))) {
+            // Chọn liền các ngày giữa ô trước và ô này trên cùng hàng nhân viên.
+            const $row = $cell.closest('tr').find('.roster-cell')
+            const [from, to] = [$row.index(lastOffCell), $row.index($cell)].sort((a, b) => a - b)
+            $row.slice(from, to + 1).each((_, cell) => toggleOffCell($(cell), true))
+        } else {
+            toggleOffCell($cell)
+        }
+
+        lastOffCell = $cell
+        paintOffSelection()
+    })
+
+    // Bảng được vẽ lại (đổi tuần, lưu ô...): tô lại các ô đang chọn.
+    new MutationObserver(() => offSelecting && $grid.toggleClass('is-off-selecting', true) && paintOffSelection())
+        .observe($grid[0], { childList: true })
+
     if (!$modal.length) {
         return
     }
+
+    // Trong hộp xếp ca: nhân viên xin OFF ngày này → ghi OFF & khóa.
+    $modal.on('click', '[data-off-quick]', () => {
+        if (!currentCell) {
+            return
+        }
+
+        recordOff([{ employee_id: currentCell.employee_id, date: currentCell.date }], 'off_request', $('#roster-cell-note').val()).done((response) => {
+            if (!response.error) {
+                $modal.modal('hide')
+            }
+        })
+    })
 
     $grid.on('click', '.roster-table--editable .roster-cell', (event) => {
         const $cell = $(event.currentTarget)

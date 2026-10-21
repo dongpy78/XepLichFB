@@ -5,6 +5,7 @@ namespace Botble\RestaurantRoster\Forms;
 use Botble\Base\Forms\FieldOptions\OnOffFieldOption;
 use Botble\Base\Forms\FieldOptions\SelectFieldOption;
 use Botble\Base\Forms\FieldOptions\TextFieldOption;
+use Botble\Base\Forms\Fields\DateField;
 use Botble\Base\Forms\Fields\OnOffCheckboxField;
 use Botble\Base\Forms\Fields\SelectField;
 use Botble\Base\Forms\Fields\TextField;
@@ -40,19 +41,21 @@ class AvailabilityRequestForm extends FormAbstract
         if ($editing) {
             $this->add('employee_id', SelectField::class, SelectFieldOption::make()->label('Nhân viên')->required()->searchable()->colspan(2)->choices($employees));
         } else {
-            $this->add('employee_ids[]', SelectField::class, SelectFieldOption::make()->label('Nhân viên (chọn được nhiều người cho sự kiện tập thể)')
+            // Tên không kèm []: Botble tự thêm [] cho ô chọn nhiều (ghi "employee_ids[]" sẽ thành employee_ids[][]).
+            $this->add('employee_ids', SelectField::class, SelectFieldOption::make()->label('Nhân viên (chọn được nhiều người cho sự kiện tập thể)')
                 ->required()->multiple()->searchable()->colspan(2)->choices($employees));
         }
 
         $this
-            ->add('date_from', TextField::class, TextFieldOption::make()->label('Từ ngày')->placeholder('YYYY-MM-DD')->required()->colspan(1)
+            ->add('date_from', DateField::class, TextFieldOption::make()->label('Từ ngày')->required()->colspan(1)
                 ->value($editing ? $model->date_from?->toDateString() : null))
-            ->add('date_to', TextField::class, TextFieldOption::make()->label('Đến ngày')->placeholder('YYYY-MM-DD')->required()->colspan(1)
+            ->add('date_to', DateField::class, TextFieldOption::make()->label('Đến ngày')->required()->colspan(1)
+                ->helperText('OFF một ngày: chọn "Đến ngày" trùng "Từ ngày". Có thể ghi OFF ngay trên Bảng xếp ca bằng nút "Ghi OFF".')
                 ->value($editing ? $model->date_to?->toDateString() : null))
             ->add('type', SelectField::class, SelectFieldOption::make()->label('Loại')->required()->colspan(1)
                 ->choices(config('plugins.restaurant-roster.general.availability_types', []))
                 ->helperText('Nghỉ phép năm / nghỉ ốm ghi thành AL / SL; các loại khác ghi OFF.'))
-            ->add('received_at', TextField::class, TextFieldOption::make()->label('Ngày nhận tin nhắn Zalo')->placeholder('YYYY-MM-DD')->colspan(1)
+            ->add('received_at', DateField::class, TextFieldOption::make()->label('Ngày nhận tin nhắn Zalo')->colspan(1)
                 ->value($editing ? $model->received_at?->toDateString() : now()->toDateString()))
             ->add('group_label', TextField::class, TextFieldOption::make()->label('Tên đợt / sự kiện')->placeholder('VD: Đi chơi đợt 2, Khám sức khỏe nhóm A')->maxLength(120)->colspan(1))
             ->add('reason', TextField::class, TextFieldOption::make()->label('Lý do')->maxLength(255)->colspan(1))

@@ -493,6 +493,97 @@ class RosterController extends BaseController
     }
 
     /**
+     * Ghi OFF ngay trên bảng xếp ca: quản lý chọn các ô (nhiều người, nhiều ngày) rồi ghi OFF & khóa.
+     * Các ngày liền nhau của cùng một người gộp thành một đơn OFF. Ô đã là OFF đã cho thì bỏ qua. Cần quyền roster.approve.
+     */
+    public function offRecord(Request $request)
+    {
+        $data = $request->validate([
+            'cells' => ['required', 'array', 'min:1', 'max:400'],
+            'cells.*.employee_id' => ['required', 'integer', 'exists:roster_employees,id'],
+            'cells.*.date' => ['required', 'date_format:Y-m-d'],
+            'off_type' => ['required', Rule::in(array_keys(config('plugins.restaurant-roster.general.availability_types', [])))],
+            'off_reason' => ['nullable', 'string', 'max:255'],
+            'override_locked' => ['nullable', 'boolean'],
+        ]);
+
+        $offs = app(OffRequestService::class);
+        $dates = [];
+
+        foreach ($data['cells'] as $cell) {
+            $dates[(int) $cell['employee_id']][$cell['date']] = true;
+        }
+
+        // Ngày đã là OFF quản lý đã cho: bỏ qua (không tạo đơn trùng).
+        $allDates = array_merge(...array_map('array_keys', array_values($dates)));
+        $recorded = Shift::query()->whereIn('employee_id', array_keys($dates))
+            ->whereDate('date', '>=', min($allDates))->whereDate('date', '<=', max($allDates))
+            ->where('lock_reason', Shift::LOCK_OFF_REQUEST)->where('kind', '!=', Shift::KIND_SHIFT)
+            ->get(['employee_id', 'date']);
+
+        foreach ($recorded as $cell) {
+            unset($dates[$cell->employee_id][$cell->date->toDateString()]);
+        }
+
+        // Gộp ngày liền nhau thành khoảng [từ, đến] cho từng người.
+        $runs = [];
+
+        foreach ($dates as $employeeId => $set) {
+            $days = array_keys($set);
+            sort($days);
+            $runs[$employeeId] = [];
+
+            foreach ($days as $day) {
+                $last = $runs[$employeeId] ? end($runs[$employeeId]) : null;
+
+                if ($last && Carbon::parse($last[1])->addDay()->toDateString() === $day) {
+                    $runs[$employeeId][array_key_last($runs[$employeeId])][1] = $day;
+                } else {
+                    $runs[$employeeId][] = [$day, $day];
+                }
+            }
+        }
+
+        $duplicates = [];
+
+        foreach ($runs as $employeeId => $ranges) {
+            foreach ($ranges as [$from, $to]) {
+                $duplicates = [...$duplicates, ...$offs->conflicts([$employeeId], $from, $to)['duplicates']];
+            }
+        }
+
+        if ($duplicates) {
+            return $this->httpResponse()->setError()->setMessage('Trùng với OFF đã nhập: '
+                . implode('; ', array_map(fn ($d) => "{$d['employee']} {$d['range']} (đơn #{$d['request_id']})", $duplicates))
+                . '. Sửa đơn đó ở màn hình OFF của nhân viên.');
+        }
+
+        $written = 0;
+        $kept = [];
+
+        DB::transaction(function () use ($runs, $data, $offs, $request, &$written, &$kept): void {
+            foreach ($runs as $employeeId => $ranges) {
+                foreach ($ranges as [$from, $to]) {
+                    $result = $offs->record([$employeeId], [
+                        'date_from' => $from, 'date_to' => $to, 'type' => $data['off_type'],
+                        'reason' => $data['off_reason'] ?? null, 'received_at' => now()->toDateString(),
+                    ], $request->user()?->getKey(), (bool) ($data['override_locked'] ?? false));
+                    $written += $result['written'];
+                    $kept = [...$kept, ...$result['kept']];
+                }
+            }
+        });
+
+        $message = $written ? "Đã ghi {$written} ô OFF và khóa." : 'Các ô đã chọn đều đã là OFF đã cho.';
+
+        if ($kept) {
+            $message .= ' ⚠ Giữ nguyên ca đã khóa, đánh dấu "cần xem xét": ' . implode('; ', $kept) . '.';
+        }
+
+        return $this->gridResponse($request, $message);
+    }
+
+    /**
      * Gỡ OFF quản lý đã cho (thiếu người – cho nhân viên đi làm ngày đó). Cần quyền roster.approve.
      */
     public function offRemove(Request $request)

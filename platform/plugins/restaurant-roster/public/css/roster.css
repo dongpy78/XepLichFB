@@ -715,3 +715,24 @@
     text-align: center;
 }
 .roster-legend__sample { position: relative; display: inline-flex; min-width: 34px; height: 22px; align-items: center; justify-content: center; border-radius: 4px; }
+
+/* Ghi OFF trên bảng: chế độ chọn ô */
+.roster-off-bar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(980px, calc(100% - 32px));
+    z-index: 1040;
+    padding: .75rem 1rem;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, .15);
+}
+.roster-off-bar__inner { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.roster-off-bar__inner .form-select { width: auto; }
+.roster-off-bar__inner .form-control { width: 220px; max-width: 100%; }
+.is-off-selecting .roster-cell { cursor: crosshair; }
+.roster-cell.is-off-selected .roster-mini { box-shadow: 0 0 0 2px #2563eb; background-color: #dbeafe; color: #1e3a8a; }
+[data-bs-theme="dark"] .roster-off-bar { background: #1e293b; border-color: #475569; }

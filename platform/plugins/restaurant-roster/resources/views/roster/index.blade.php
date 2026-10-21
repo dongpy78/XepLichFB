@@ -15,6 +15,7 @@
         data-overtime-url="{{ route('roster.overtime') }}"
         data-off-remove-url="{{ route('roster.off-remove') }}"
         data-review-url="{{ route('roster.review') }}"
+        data-off-record-url="{{ route('roster.off-record') }}"
         data-week="{{ $grid['weekStart']->toDateString() }}"
     >
         <div class="card mb-3">
@@ -55,6 +56,11 @@
                                 <x-core::icon name="ti ti-arrows-exchange" /> Đổi Waiter Gusto ⇄ Villa
                             </button>
                         @endif
+                        @if (Auth::user()->hasPermission('roster.approve'))
+                            <button type="button" class="btn btn-outline-secondary" data-off-select title="Bấm vào các ô cần cho OFF (nhiều người, nhiều ngày; giữ Shift để chọn liền nhiều ngày của một người), rồi bấm Ghi OFF & khóa">
+                                <x-core::icon name="ti ti-calendar-off" /> Ghi OFF
+                            </button>
+                        @endif
                         <button type="button" class="btn" data-roster-action="copy">
                             <x-core::icon name="ti ti-copy" /> Sao chép tuần trước
                         </button>
@@ -68,6 +74,24 @@
                 @endif
             </div>
         </div>
+
+        @if ($canManage && Auth::user()->hasPermission('roster.approve'))
+            <div id="roster-off-bar" class="roster-off-bar d-none">
+                <div class="roster-off-bar__inner">
+                    <strong><x-core::icon name="ti ti-calendar-off" /> Ghi OFF:</strong>
+                    <span id="roster-off-count">Bấm vào các ô cần cho OFF</span>
+                    <select class="form-select form-select-sm" id="roster-off-type" aria-label="Loại OFF">
+                        @foreach (config('plugins.restaurant-roster.general.availability_types', []) as $code => $label)
+                            <option value="{{ $code }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                    <input type="text" class="form-control form-control-sm" id="roster-off-reason" maxlength="255" placeholder="Lý do (tùy chọn)">
+                    <button type="button" class="btn btn-sm btn-primary" data-off-save disabled>Ghi OFF & khóa</button>
+                    <button type="button" class="btn btn-sm" data-off-cancel>Hủy</button>
+                </div>
+                <div class="form-hint mt-1">Giữ <kbd>Shift</kbd> rồi bấm để chọn liền nhiều ngày của cùng một người. Ca đã khóa không bị đè – ô sẽ được đánh dấu "cần xem xét".</div>
+            </div>
+        @endif
 
         <div id="roster-undo" class="alert alert-warning d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
             <div>
@@ -197,9 +221,15 @@
 
                         <div class="mt-3 mb-2 fw-semibold">Nghỉ</div>
                         <div class="roster-picker roster-picker--inline">
+                            @if (Auth::user()->hasPermission('roster.approve'))
+                                <button type="button" class="roster-picker__item" data-off-quick title="Nhân viên xin OFF (nhắn Zalo): ghi OFF và khóa – thuật toán không đổi">
+                                    <span class="roster-chip roster-chip--off"><x-core::icon name="ti ti-lock" /> OFF</span>
+                                    <span class="roster-picker__name">Nhân viên xin OFF (khóa)</span>
+                                </button>
+                            @endif
                             <button type="button" class="roster-picker__item" data-assign="off">
                                 <span class="roster-chip roster-chip--off">OFF</span>
-                                <span class="roster-picker__name">Nghỉ tuần</span>
+                                <span class="roster-picker__name">Nghỉ tuần (thuật toán có thể đổi)</span>
                             </button>
                             @foreach ($leaveTypes as $code => $label)
                                 <button type="button" class="roster-picker__item" data-assign="leave" data-leave="{{ $code }}">

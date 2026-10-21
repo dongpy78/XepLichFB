@@ -139,6 +139,47 @@ class CellLockHttpTest extends TestCase
         $this->actingAs($manager)->post(route('roster.availability.index'))->assertOk();
     }
 
+    /** Form nhập OFF: ô chọn nhiều nhân viên gửi đúng employee_ids[] (lỗi cũ: employee_ids[][] → "must be an integer"). */
+    public function test_off_form_employee_select_is_flat_array(): void
+    {
+        $html = $this->actingAs($this->user([], true))->get(route('roster.availability.create'))->getContent();
+
+        $this->assertStringContainsString('name="employee_ids[]"', $html);
+        $this->assertStringNotContainsString('employee_ids[][]', $html);
+        $this->assertMatchesRegularExpression('/type="date"[^>]*name="date_from"|name="date_from"[^>]*type="date"/', $html, 'Từ ngày là ô chọn ngày');
+    }
+
+    /** Ghi OFF trên bảng: ngày liền nhau gộp một đơn, ngày đã là OFF đã cho thì bỏ qua, ô được khóa. */
+    public function test_record_off_from_grid_selection(): void
+    {
+        $other = Employee::query()->create(['code' => 'SYN2', 'name' => 'Synthetic 2', 'outlet_id' => $this->employee->outlet_id,
+            'weekly_hours' => 48, 'days_off_per_week' => 2, 'auto_schedule' => true, 'status' => 'published']);
+        $cells = [
+            ['employee_id' => $this->employee->getKey(), 'date' => '2030-01-08'], // đã là OFF (setUp) → bỏ qua
+            ['employee_id' => $this->employee->getKey(), 'date' => '2030-01-09'],
+            ['employee_id' => $other->getKey(), 'date' => '2030-01-10'],
+            ['employee_id' => $other->getKey(), 'date' => '2030-01-11'],
+            ['employee_id' => $other->getKey(), 'date' => '2030-01-13'],
+        ];
+
+        $this->actingAs($this->user([], true))->postJson(route('roster.off-record'), ['cells' => $cells, 'off_type' => 'off_request', 'off_reason' => 'Zalo', 'week' => '2030-01-07'])
+            ->assertJson(['error' => false]);
+
+        $requests = \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->where('employee_id', $other->getKey())->orderBy('date_from')->get();
+        $this->assertSame([['2030-01-10', '2030-01-11'], ['2030-01-13', '2030-01-13']],
+            $requests->map(fn ($r) => [$r->date_from->toDateString(), $r->date_to->toDateString()])->all(), 'Ngày liền nhau gộp một đơn');
+        $this->assertTrue(Shift::query()->where('employee_id', $other->getKey())->whereDate('date', '2030-01-13')->first()->isRecordedOff());
+        $this->assertSame(1, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->where('employee_id', $this->employee->getKey())->whereDate('date_from', '2030-01-09')->count());
+        // Ngày 08/01 đã có OFF (đơn trong setUp) → không có đơn trùng
+        $this->assertSame(1, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->where('employee_id', $this->employee->getKey())->whereDate('date_from', '2030-01-08')->count());
+
+        // Người không có quyền ghi OFF bị chặn.
+        $before = \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count();
+        $denied = $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.off-record'), ['cells' => [['employee_id' => $other->getKey(), 'date' => '2030-01-12']], 'off_type' => 'off_request']);
+        $this->assertTrue($denied->status() >= 400 || $denied->json('error') === true, 'Bị chặn bởi phân quyền');
+        $this->assertSame($before, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count(), 'Không tạo OFF');
+    }
+
     public function test_removing_recorded_off_requires_permission(): void
     {
         $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.lock'), [
