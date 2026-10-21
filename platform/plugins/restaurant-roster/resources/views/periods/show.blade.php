@@ -24,6 +24,14 @@
                 <a href="{{ route('roster.availability.index') }}" class="btn">Danh sách OFF</a>
                 <a href="{{ route('roster.index', ['week' => $period->start_date->toDateString()]) }}" class="btn">Bảng xếp ca</a>
                 @if ($canApprove)
+                    <form method="POST" action="{{ route('roster.periods.destroy', $period->id) }}"
+                        onsubmit="return confirm('Xóa kỳ lịch {{ $period->name }}? Lịch làm việc và OFF đã ghi không bị xóa.')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-outline-danger"><x-core::icon name="ti ti-trash" /> Xóa kỳ</button>
+                    </form>
+                @endif
+                @if ($canApprove)
                     @if ($period->off_confirmed_at)
                         <form method="POST" action="{{ route('roster.periods.reopen-off', $period->id) }}">
                             @csrf

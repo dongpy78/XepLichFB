@@ -63,6 +63,8 @@ class SupportHistoryTest extends TestCase
         $lobby = Outlet::query()->create(['name' => 'Lobby', 'code' => 'LOBBY', 'status' => 'published']);
         $m6 = ShiftTemplate::query()->create(['code' => 'M6', 'name' => 'Sáng', 'start_time' => '06:00:00', 'end_time' => '14:00:00', 'lobby_start_time' => '09:00:00', 'lobby_end_time' => '14:00:00', 'status' => 'published']);
         $a2 = ShiftTemplate::query()->create(['code' => 'A2', 'name' => 'Chiều', 'start_time' => '14:00:00', 'end_time' => '22:00:00', 'lobby_start_time' => '14:00:00', 'lobby_end_time' => '17:00:00', 'status' => 'published']);
+        // Có ca đêm: lịch sử ca đêm cũng được đọc (lỗi cũ: tên biến trùng làm hỏng phép tính ngày).
+        $night = ShiftTemplate::query()->create(['code' => 'N', 'name' => 'Đêm', 'start_time' => '22:00:00', 'end_time' => '06:00:00', 'status' => 'published']);
         $m9 = ShiftTemplate::query()->create(['code' => 'M9', 'name' => 'Lobby', 'start_time' => '09:00:00', 'end_time' => '17:00:00', 'support_station' => 'LOBBY', 'status' => 'published']);
         $employee = Employee::query()->create(['code' => 'SYN1', 'name' => 'Synthetic 1', 'gender' => 'female', 'outlet_id' => $gusto->getKey(),
             'weekly_hours' => 48, 'days_off_per_week' => 2, 'auto_schedule' => true, 'status' => 'published']);
@@ -79,11 +81,13 @@ class SupportHistoryTest extends TestCase
         $cell(3, $a2, $gusto);          // A2 thường
         $cell(4, $m9, $lobby, ['L']);   // M9(L) làm trọn ở Lobby
         $cell(5, $m6, $kid, ['K']);     // M6(K)
+        $cell(10, $night, $gusto);       // ca đêm
         $cell(40, $a2, $gusto, ['L']);  // 40 ngày trước: chỉ tính khi khoảng đánh giá 8 tuần
 
         $build = fn (int $weeks) => app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['history_weeks' => $weeks]);
 
         $four = $build(4);
+        $this->assertSame(1, $four->nightHistory[$employee->getKey()] ?? null, 'Số tuần có ca đêm');
         $this->assertSame(4, $four->historyWeeks);
         $this->assertEqualsCanonicalizing(['A2(L)' => 2, 'M9(L)' => 1, 'M6(K)' => 1], $four->supportHistory[$employee->getKey()] ?? null);
         $this->assertEquals(['morning' => 2, 'afternoon' => 3], $four->shiftHistory[$employee->getKey()] ?? null);

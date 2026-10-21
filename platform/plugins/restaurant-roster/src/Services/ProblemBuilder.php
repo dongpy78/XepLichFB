@@ -307,18 +307,18 @@ class ProblemBuilder
             return [];
         }
 
-        $weeks = [];
+        $nightWeeks = [];
 
         Shift::query()
             ->whereIn('employee_id', $employeeIds)
             ->whereIn('shift_template_id', $nightIds)
             ->whereDate('date', '>=', $from->subWeeks($weeks)->toDateString())->whereDate('date', '<=', $from->subDay()->toDateString())
             ->get(['employee_id', 'date'])
-            ->each(function (Shift $shift) use (&$weeks): void {
-                $weeks[(int) $shift->employee_id][$shift->date->format('o-W')] = true;
+            ->each(function (Shift $shift) use (&$nightWeeks): void {
+                $nightWeeks[(int) $shift->employee_id][$shift->date->format('o-W')] = true;
             });
 
-        return array_map('count', $weeks);
+        return array_map('count', $nightWeeks);
     }
 
     /**

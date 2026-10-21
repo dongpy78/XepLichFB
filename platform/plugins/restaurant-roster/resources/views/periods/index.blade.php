@@ -52,7 +52,17 @@
                                             <span class="badge bg-warning-lt">Đang nhập OFF</span>
                                         @endif
                                     </td>
-                                    <td class="text-end"><a href="{{ route('roster.periods.show', $period->id) }}" class="btn btn-sm">Xem tổng hợp</a></td>
+                                    <td class="text-end text-nowrap">
+                                        <a href="{{ route('roster.periods.show', $period->id) }}" class="btn btn-sm">Xem tổng hợp</a>
+                                        @if (Auth::user()->hasPermission('roster.approve'))
+                                            <form method="POST" action="{{ route('roster.periods.destroy', $period->id) }}" class="d-inline"
+                                                onsubmit="return confirm('Xóa kỳ lịch {{ $period->name }}? Lịch làm việc và OFF đã ghi không bị xóa.')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Xóa kỳ lịch (không xóa lịch làm việc)"><x-core::icon name="ti ti-trash" /></button>
+                                            </form>
+                                        @endif
+                                    </td>
                                 </tr>
                             @empty
                                 <tr><td colspan="4" class="text-center text-muted py-4">Chưa có kỳ lịch nào.</td></tr>

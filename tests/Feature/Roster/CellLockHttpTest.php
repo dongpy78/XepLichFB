@@ -120,6 +120,13 @@ class CellLockHttpTest extends TestCase
 
         $run()->assertJson(['error' => false]);
         $this->assertSame(1, \Botble\RestaurantRoster\Models\Run::query()->count());
+
+        // Xóa kỳ lịch: chỉ xóa kỳ, lịch làm việc và OFF đã ghi giữ nguyên.
+        $cells = Shift::query()->count();
+        $this->actingAs($manager)->delete(route('roster.periods.destroy', $period->id));
+        $this->assertNull(\Botble\RestaurantRoster\Models\Period::query()->find($period->id));
+        $this->assertSame($cells, Shift::query()->count());
+        $this->actingAs($manager)->get(route('roster.periods.index'))->assertOk();
     }
 
     /** Các trang quản lý mở được (không lỗi khi render). */
