@@ -5,7 +5,8 @@ namespace Botble\RestaurantRoster\Models;
 use Botble\Base\Models\BaseModel;
 
 /**
- * Định biên phủ trạm hỗ trợ theo khung giờ, ví dụ Lobby 09:00–14:00 cần 3 người.
+ * Định biên phủ trạm hỗ trợ theo khung giờ: số người CÓ MẶT CÙNG LÚC trong suốt khung,
+ * ví dụ Lobby 09:00–16:45 cần 2 nữ waiter đồng thời.
  */
 class CoverageRequirement extends BaseModel
 {
@@ -18,6 +19,7 @@ class CoverageRequirement extends BaseModel
         'start_time',
         'end_time',
         'shift_codes',
+        'female_only',
         'min_staff',
         'target_staff',
         'is_confirmed',
@@ -31,6 +33,7 @@ class CoverageRequirement extends BaseModel
         'min_staff' => 'int',
         'target_staff' => 'int',
         'is_confirmed' => 'bool',
+        'female_only' => 'bool',
     ];
 
     /**

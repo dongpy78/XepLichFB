@@ -171,7 +171,8 @@ final class ResultBuilder
     }
 
     /**
-     * Khung giờ phủ Lobby chưa đủ người, kèm người có thể giao (L) hoặc xếp thêm ca làm trọn ở Lobby.
+     * Đoạn giờ phủ Lobby chưa đủ người CÙNG LÚC (vd 14:00–16:45 trong khung 09:00–16:45), kèm ai đang có mặt,
+     * nguyên nhân từng nữ waiter không lên được và phương án hợp lệ (giao (L), xếp OH(L) / M9 cho người đang OFF).
      */
     private function uncoveredWindows(ScheduleState $state): array
     {
@@ -179,47 +180,90 @@ final class ResultBuilder
         $result = [];
 
         foreach ($state->coverage as $i => $windows) {
-            foreach ($windows as $k => [$start, $end, $min, $target, $label]) {
+            foreach ($windows as $k => [$start, $end, $min, $target, $label, , $femaleOnly, $group]) {
                 $have = $state->coverageCount($i, $k);
 
                 if ($have >= $target) {
                     continue;
                 }
 
+                $date = $state->dates[$i];
+                [$windowStart, $windowEnd] = $state->coverageGroups[$i][$group];
                 $level = $have < $min ? 'min' : 'target';
-                $window = sprintf('%s %02d:%02d–%02d:%02d', $label, intdiv($start, 60), $start % 60, intdiv($end, 60), $end % 60);
-                $reasons = ['support_candidates' => [], 'station_candidates' => [], 'blocked' => []];
+                $segment = LobbyCoverage::time($start) . '–' . LobbyCoverage::time($end);
+                $window = $label . ' ' . $segment . ([$start, $end] === [$windowStart, $windowEnd] ? '' : ' (khung ' . LobbyCoverage::time($windowStart) . '–' . LobbyCoverage::time($windowEnd) . ')');
+                $reasons = ['present' => [], 'support_candidates' => [], 'station_candidates' => [], 'source_minimum' => [], 'no_overlap' => [], 'approved_off' => [], 'locked' => [], 'blocked' => []];
                 $proposals = [];
                 $eligible = 0;
+
+                // Ca có thể đưa một người lên Lobby trọn đoạn này (OH(L), M9 ở Lobby, M6(L), A2(L)…).
+                $slots = array_filter($state->requirements[$i] ?? [], fn (Requirement $r) => in_array($k, $state->supportWindows($i, $r->outletId, $r->shiftId, $r->outletId !== $problem->stationOutletId), true));
 
                 foreach ($problem->employees as $employeeId => $employee) {
                     if (! $employee->canSupport($problem->stationOutletId, 0) && ! array_filter(array_keys($employee->skills), fn ($key) => str_starts_with($key, $problem->stationOutletId . ':'))) {
                         continue;
                     }
 
-                    $eligible++;
-                    $current = $state->shiftAt($employeeId, $i);
+                    if ($femaleOnly && ! $employee->isFemaleStaff) {
+                        continue;
+                    }
 
-                    if ($current && ! $current[3] && in_array($k, $state->supportWindows($i, $current[0], $current[1], true), true)) {
-                        $reasons['support_candidates'][] = sprintf('%s đang làm %s tại %s', $employee->name, $problem->shifts[$current[1]]->code, $problem->outletName($current[0]));
-                    } elseif (! $current && ! isset($problem->hardUnavailable[$employeeId][$state->dates[$i]])) {
-                        $reasons['station_candidates'][] = $employee->name;
+                    $eligible++;
+                    $name = $employee->name;
+                    $current = $state->shiftAt($employeeId, $i);
+                    $fixed = $state->fixed[$employeeId][$i] ?? null;
+
+                    if ($current && in_array($k, $state->supportWindows($i, $current[0], $current[1], (bool) $current[3]), true)) {
+                        $reasons['present'][] = $name . ' (' . $problem->shifts[$current[1]]->code . ($current[3] ? '(L)' : ' tại Lobby') . ')';
+                    } elseif ($reason = $problem->hardUnavailable[$employeeId][$date] ?? null) {
+                        $reasons['approved_off'][] = "{$name} ({$reason})";
+                    } elseif ($fixed && ! $fixed->isWorking()) {
+                        $reasons['locked'][] = "{$name} (ô đã khóa: OFF)";
+                    } elseif ($current && in_array($k, $state->supportWindows($i, $current[0], $current[1], true), true)) {
+                        $text = sprintf('%s đang làm %s tại %s', $name, $problem->shifts[$current[1]]->code, $problem->outletName($current[0]));
+                        $requirement = $state->requirements[$i]["{$current[0]}|{$current[1]}"] ?? null;
+
+                        if ($fixed) {
+                            $reasons['locked'][] = "{$text} (ô đã khóa)";
+                        } elseif ($state->removalBreaksMinimum($employeeId, $i, $current[0], $current[1]) && ! $state->supportCountsAtOutlet($requirement, $current[1])) {
+                            $reasons['source_minimum'][] = $text . ' – ' . $problem->outletName($current[0]) . ' ' . $problem->shifts[$current[1]]->code . ' sẽ dưới tối thiểu';
+                        } else {
+                            $reasons['support_candidates'][] = $text;
+                        }
+                    } elseif ($current) {
+                        $reasons['no_overlap'][] = sprintf('%s đang làm %s tại %s – không có mặt ở Lobby %s', $name, $problem->shifts[$current[1]]->code, $problem->outletName($current[0]), $segment);
+                    } else {
+                        $options = [];
+
+                        foreach ($slots as $slot) {
+                            $atStation = $slot->outletId === $problem->stationOutletId;
+
+                            if ($employee->skillLevel($slot->outletId, $slot->shiftId) !== null && ! $state->violation($employeeId, $i, $slot->outletId, $slot->shiftId, support: ! $atStation)) {
+                                $options[] = $problem->shifts[$slot->shiftId]->code . ($atStation ? '' : '(L)');
+                            }
+                        }
+
+                        if ($options) {
+                            $reasons['station_candidates'][] = $name . ' – ' . implode('/', array_unique($options));
+                        } else {
+                            $reasons['blocked'][] = "{$name} (OFF theo lịch – không ca Lobby nào hợp lệ: khu vực sống, giờ nghỉ, số ngày làm)";
+                        }
                     }
                 }
 
                 foreach (array_slice($reasons['support_candidates'], 0, 3) as $text) {
-                    $proposals[] = ['date' => $state->dates[$i], 'type' => 'support', 'label' => 'A', 'text' => "Giao hỗ trợ Lobby (L): {$text}."];
+                    $proposals[] = ['date' => $date, 'type' => 'support', 'label' => 'A', 'text' => "Giao hỗ trợ Lobby (L): {$text}."];
                 }
 
                 if ($reasons['station_candidates']) {
-                    $proposals[] = ['date' => $state->dates[$i], 'type' => 'station_shift', 'label' => 'B',
-                        'text' => 'Xếp thêm ca làm trọn ở Lobby (OH/M9) cho người đang OFF và đồng ý: ' . implode(', ', array_slice($reasons['station_candidates'], 0, 5)) . '.'];
+                    $proposals[] = ['date' => $date, 'type' => 'station_shift', 'label' => 'B',
+                        'text' => 'Xếp thêm ca phủ Lobby cho người đang OFF và đồng ý: ' . implode('; ', array_slice($reasons['station_candidates'], 0, 5)) . '.'];
                 }
 
-                $proposals[] = ['date' => $state->dates[$i], 'type' => 'keep_warning', 'label' => 'D', 'text' => 'Giữ cảnh báo thiếu người ở Lobby để quản lý chủ động xử lý.'];
+                $proposals[] = ['date' => $date, 'type' => 'keep_warning', 'label' => 'D', 'text' => "Giữ cảnh báo: Lobby {$segment} chỉ có {$have} người cùng lúc – quản lý chủ động xử lý."];
 
                 $result[] = [
-                    'date' => $state->dates[$i],
+                    'date' => $date,
                     'outlet_id' => $problem->stationOutletId,
                     'outlet_name' => $problem->outletName($problem->stationOutletId),
                     'shift_id' => null,
@@ -234,7 +278,8 @@ final class ResultBuilder
                     'missing' => ($level === 'min' ? $min : $target) - $have,
                     'eligible_total' => $eligible,
                     'reasons' => $reasons,
-                    'provably_impossible' => false,
+                    'provably_impossible' => ! $reasons['support_candidates'] && ! $reasons['station_candidates'],
+                    'lobby' => ['segment_start' => $start, 'segment_end' => $end, 'window_start' => $windowStart, 'window_end' => $windowEnd, 'female_only' => $femaleOnly],
                     'proposals' => $proposals,
                 ];
             }

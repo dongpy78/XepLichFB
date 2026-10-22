@@ -120,10 +120,19 @@ final class ScheduleState
     /** @var array<int, array<string, true>> [dayIndex]["o|s"] ô đang thiếu tối thiểu (tổng, nam hoặc vị trí) – cập nhật tăng dần */
     private array $minShortSlots = [];
 
-    /** @var array<int, array<int, array{0: int, 1: int, 2: int, 3: int, 4: string, 5: ?array}>> [dayIndex][k] => [phút bắt đầu, phút kết thúc, tối thiểu, mục tiêu, nhãn, ca được tính (null = mọi ca)] */
+    /**
+     * @var array<int, array<int, array{0: int, 1: int, 2: int, 3: int, 4: string, 5: ?array, 6: bool, 7: int}>>
+     *      [dayIndex][k] => một ĐOẠN của khung phủ Lobby: [phút bắt đầu, phút kết thúc, tối thiểu, mục tiêu, nhãn, ca được tính (null = mọi ca), chỉ nữ waiter, khung gốc g]
+     */
     public array $coverage = [];
 
-    /** @var array<int, array<int, int>> [dayIndex][k] => số người đang phủ khung giờ */
+    /**
+     * @var array<int, array<int, array{0: int, 1: int, 2: int, 3: int, 4: string, 5: bool, 6: int[]}>>
+     *      [dayIndex][g] => khung định biên gốc: [bắt đầu, kết thúc, tối thiểu, mục tiêu, nhãn, chỉ nữ waiter, chỉ số các đoạn k]
+     */
+    public array $coverageGroups = [];
+
+    /** @var array<int, array<int, int>> [dayIndex][k] => số người có mặt trọn đoạn k */
     private array $coverageCount = [];
 
     /** @var array<int, array<int, array<int, int>>> [dayIndex][k][outlet nguồn] => số người outlet đó đưa sang phủ khung Lobby k */
@@ -164,15 +173,57 @@ final class ScheduleState
             }
         }
 
+        // Khung phủ Lobby → các đoạn tại mốc vào / ra Lobby của các ca (đếm người có mặt cùng lúc, xem LobbyCoverage).
+        $stationShifts = [];
+
+        foreach ($problem->requirements as $requirement) {
+            if ($problem->stationOutletId !== null && $requirement->outletId === $problem->stationOutletId) {
+                $stationShifts[$requirement->date][$requirement->shiftId] = true;
+            }
+        }
+
+        foreach ($problem->fixed as $assignment) {
+            if ($problem->stationOutletId !== null && $assignment->outletId === $problem->stationOutletId && $assignment->shiftId !== null) {
+                $stationShifts[$assignment->date][$assignment->shiftId] = true;
+            }
+        }
+
         foreach ($problem->coverage as $window) {
             $i = $this->index[$window->date] ?? null;
 
-            if ($i !== null && $this->inScope[$i]) {
-                $this->coverage[$i][] = [$window->start, $window->end, $window->min, max($window->min, $window->target), $window->label, $window->shiftIds];
+            if ($i === null || ! $this->inScope[$i]) {
+                continue;
+            }
+
+            $intervals = [];
+
+            foreach ($problem->shifts as $shift) {
+                if ($window->shiftIds !== null && ! in_array($shift->id, $window->shiftIds, true)) {
+                    continue;
+                }
+
+                if ($shift->lobbyWindow) {
+                    $intervals[] = $shift->lobbyWindow;
+                }
+
+                if (isset($stationShifts[$window->date][$shift->id])) {
+                    $intervals[] = [$shift->start(), $shift->end()];
+                }
+            }
+
+            $group = count($this->coverageGroups[$i] ?? []);
+            $target = max($window->min, $window->target);
+            $segments = [];
+
+            foreach (LobbyCoverage::segments($window->start, $window->end, $intervals) as [$start, $end]) {
+                $segments[] = count($this->coverage[$i] ?? []);
+                $this->coverage[$i][] = [$start, $end, $window->min, $target, $window->label, $window->shiftIds, $window->femaleOnly, $group];
                 $this->coverageCount[$i][] = 0;
                 $this->minShort += $window->min;
-                $this->targetShort += max($window->min, $window->target);
+                $this->targetShort += $target;
             }
+
+            $this->coverageGroups[$i][$group] = [$window->start, $window->end, $window->min, $target, $window->label, $window->femaleOnly, $segments];
         }
 
         foreach ($problem->fixed as $assignment) {
@@ -357,15 +408,46 @@ final class ScheduleState
         return ($this->problem->supportHistory[$employeeId][$type] ?? 0) + ($this->metricsFor($employeeId)['support_types'][$type] ?? 0);
     }
 
+    /**
+     * Người này được tính phủ đoạn k (đoạn chỉ đếm nữ waiter thì người khác không tính).
+     */
+    public function countsForCoverage(int $employeeId, int $i, int $k): bool
+    {
+        return ! ($this->coverage[$i][$k][6] ?? false) || ($this->problem->employees[$employeeId]?->isFemaleStaff ?? false);
+    }
+
+    /**
+     * Số khung phủ Lobby trong ngày mà ô này có mặt ở Lobby nhưng không trọn khung (vd M6(L) 09–14h trong khung 09:00–16:45):
+     * phương án thay thế – chỉ dùng khi ca phủ trọn khung (OH(L), M9) không đủ.
+     */
+    public function lobbyPartial(int $i, ?int $outletId, int $shiftId, bool $support): int
+    {
+        $interval = $this->supportInterval($outletId, $shiftId, $support);
+
+        if (! $interval || empty($this->coverageGroups[$i])) {
+            return 0;
+        }
+
+        $partial = 0;
+
+        foreach ($this->coverageGroups[$i] as [$start, $end]) {
+            if (min($end, $interval[1]) > max($start, $interval[0]) && ! LobbyCoverage::covers($interval, $start, $end)) {
+                $partial++;
+            }
+        }
+
+        return $partial;
+    }
+
     public function coverageCount(int $i, int $k): int
     {
         return $this->coverageCount[$i][$k] ?? 0;
     }
 
     /**
-     * Khung giờ phủ Lobby mà khoảng [start, end] được tính là phủ (có mặt >= tỉ lệ cấu hình của khung).
+     * Đoạn phủ Lobby mà khoảng [start, end] có mặt TRỌN đoạn (đếm người cùng lúc, xem LobbyCoverage).
      *
-     * @return int[] chỉ số khung
+     * @return int[] chỉ số đoạn
      */
     public function coveredWindows(int $i, ?array $interval, ?int $shiftId = null): array
     {
@@ -381,9 +463,7 @@ final class ScheduleState
                 continue;
             }
 
-            $overlap = min($end, $interval[1]) - max($start, $interval[0]);
-
-            if ($overlap > 0 && $overlap >= ($end - $start) * $this->problem->rules->coverageOverlapRatio) {
+            if (LobbyCoverage::covers($interval, $start, $end)) {
                 $covered[] = $k;
             }
         }
@@ -718,7 +798,7 @@ final class ScheduleState
                 // không kiểm tra năng lực, nhưng giờ nghỉ, ngày làm liên tục, ngày OFF vẫn được kiểm tra.
                 // Ô (L) đang được đếm trong số người đi hỗ trợ của outlet: trừ tạm để không tự tính chính nó vào trần.
                 $source = $this->supportSource($employeeId, $o);
-                $windows = $source === null ? [] : $this->supportWindows($i, $o, $s, $f);
+                $windows = $source === null ? [] : array_filter($this->supportWindows($i, $o, $s, $f), fn ($k) => $this->countsForCoverage($employeeId, $i, $k));
 
                 foreach ($windows as $k) {
                     $this->supportFrom[$i][$k][$source]--;
@@ -835,6 +915,7 @@ final class ScheduleState
             'over_norm' => $m['over_norm'],
             'under_norm' => $m['under_norm'],
             'child_borrow' => $m['child_borrow'],
+            'lobby_partial' => $m['lobby_partial'],
             // Cờ (L) không cần thiết bị phạt nhẹ để thuật toán chỉ giao hỗ trợ Lobby khi khung giờ cần người.
             'preference' => $m['support_flags'] + $m['non_home'] * 3 + $m['non_primary'] * 2 + $m['soft_conflicts'] * 6 + $m['changes'] * 4,
             'heavy' => $m['heavy'],
@@ -962,7 +1043,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1116,7 +1197,7 @@ final class ScheduleState
 
         $employee = $this->problem->employees[$employeeId];
         $shifts = $this->problem->shifts;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1166,6 +1247,7 @@ final class ScheduleState
             // Lượt hỗ trợ theo loại ca: có mặt ở Lobby → OH(L), M9(L), M6(L), A2(L); đứng khu trực thuộc → M6(K), A2(K).
             if (($o !== null && $o === $station) || ($f && $shift->lobbyWindow)) {
                 $m['lobby']++;
+                $m['lobby_partial'] += empty($this->coverageGroups[$i]) ? 0 : $this->lobbyPartial($i, $o, $s, (bool) $f);
                 $type = Problem::supportTypeKey($shift->code, 'lobby');
                 $m['support_types'][$type] = ($m['support_types'][$type] ?? 0) + 1;
             } elseif ($o !== null && isset($parents[$o])) {
@@ -1432,7 +1514,14 @@ final class ScheduleState
         if (! empty($this->coverage[$i])) {
             $source = $this->supportSource($employeeId, $outletId);
 
+            $femaleStaff = $this->problem->employees[$employeeId]?->isFemaleStaff ?? false;
+
             foreach ($this->supportWindows($i, $outletId, $shiftId, $support) as $k) {
+                // Khung chỉ đếm nữ waiter (Lobby): người khác vẫn rời nhà hàng nhưng không được tính phủ.
+                if ($this->coverage[$i][$k][6] && ! $femaleStaff) {
+                    continue;
+                }
+
                 if ($source !== null) {
                     $this->supportFrom[$i][$k][$source] = ($this->supportFrom[$i][$k][$source] ?? 0) + $delta;
                 }

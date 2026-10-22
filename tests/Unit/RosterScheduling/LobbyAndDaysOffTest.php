@@ -140,7 +140,8 @@ class LobbyAndDaysOffTest extends TestCase
 
         $result = $this->solve($this->problem($employees, [new Requirement($day, self::VILLA, self::OH, 0, 0, 1)], [
             'days' => [$day],
-            'coverage' => [new Coverage($day, 9 * 60, 14 * 60, 1, 1, 'Lobby sáng'), new Coverage($day, 14 * 60, 17 * 60, 1, 1, 'Lobby chiều')],
+            // Khung chính Lobby kết thúc 16:45 (16:45–17:00 không bắt buộc).
+            'coverage' => [new Coverage($day, 9 * 60, 14 * 60, 1, 1, 'Lobby sáng'), new Coverage($day, 14 * 60, 16 * 60 + 45, 1, 1, 'Lobby chiều')],
         ]));
 
         $this->assertNull($this->shiftOf($result, 1, $day), 'OH chỉ cho nhân viên ở Nha Trang');

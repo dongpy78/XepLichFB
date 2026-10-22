@@ -62,8 +62,8 @@ return [
         // Vị trí được tính là "nữ waiter" cho định biên nữ waiter trực tiếp tại outlet (Định biên nhân sự → Nữ waiter tối thiểu / mục tiêu).
         // Không tính cấp quản lý, người đang hỗ trợ Lobby (L) hay đứng Kid-Deline trong ca.
         'female_staff_positions' => ['Waiter'],
-        // Một người được tính là phủ một khung giờ Lobby nếu có mặt ở Lobby ít nhất tỉ lệ này của khung.
-        'coverage_overlap_ratio' => 0.5,
+        // Định biên phủ Lobby = số người CÓ MẶT CÙNG LÚC (quản lý chốt 22/10/2026): khung được chia tại các mốc vào / ra Lobby
+        // của ca, một người chỉ được tính ở đoạn mà họ có mặt trọn đoạn (không còn "phủ ≥ 50% khung").
         // Ngày OFF: "weekly" = mỗi tuần đúng số ngày OFF cấu hình của nhân viên (quản lý 19/10/2026: bắt buộc).
         // "fortnight" = đủ 2 × số ngày OFF/tuần trong mỗi 2 tuần, mỗi tuần ít nhất min_off_per_week ngày.
         'days_off_mode' => 'weekly',
@@ -102,7 +102,7 @@ return [
     // Ký hiệu phụ trong ngoặc của ca, ví dụ A2(L)(BQ), M6(RS)+3.
     // 'outlet' => mã outlet: ca có ký hiệu này được tính là làm tại outlet đó (mượn người).
     'shift_tags' => [
-        'L' => ['label' => 'Lobby', 'description' => 'Hỗ trợ quầy bar Lobby: M6(L) 06–09h ở nhà hàng, 09–12h ở Lobby; A2(L) 14–17h ở Lobby rồi về nhà hàng; OH(L) cả ca; M9(L) làm trọn ca ở Lobby'],
+        'L' => ['label' => 'Lobby', 'description' => 'Hỗ trợ quầy bar Lobby (cần 2 nữ waiter cùng lúc 09:00–16:45): OH(L) 08:45–16:45 (Nha Trang), M9(L) 09:00–17:00 (Cam Ranh); thay thế: M6(L) 09–14h ở Lobby, A2(L) 14–17h ở Lobby rồi về nhà hàng'],
         'G' => ['label' => '→ Gusto', 'description' => 'Thiếu người – sang làm cả ca tại nhà hàng Gusto (tính định biên cho Gusto)', 'outlet' => 'GUSTO'],
         'V' => ['label' => '→ Villa', 'description' => 'Thiếu người – sang làm cả ca tại nhà hàng Villa (tính định biên cho Villa)', 'outlet' => 'VILLA'],
         'RS' => ['label' => 'Room Service', 'description' => 'Đi Room Service', 'outlet' => 'ROOM'],

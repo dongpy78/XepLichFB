@@ -34,8 +34,9 @@ class CoverageRequirementTable extends TableAbstract
                     ->getValueUsing(fn (FormattedColumn $c) => e($c->getItem()->date
                         ? 'Ngày ' . $c->getItem()->date->format('d/m/Y')
                         : (\Botble\RestaurantRoster\Models\StaffingRequirement::WEEKDAYS[$c->getItem()->weekday] ?? 'Mọi ngày'))),
-                FormattedColumn::make('min_staff')->title('Người (tối thiểu / mục tiêu)')->width(190)->alignCenter()
-                    ->getValueUsing(fn (FormattedColumn $c) => "<strong>{$c->getItem()->min_staff}</strong> / {$c->getItem()->target_staff}"),
+                FormattedColumn::make('min_staff')->title('Cùng lúc (tối thiểu / mục tiêu)')->width(210)->alignCenter()
+                    ->getValueUsing(fn (FormattedColumn $c) => "<strong>{$c->getItem()->min_staff}</strong> / {$c->getItem()->target_staff}"
+                        . ($c->getItem()->female_only ? ' <span class="text-muted small">nữ waiter</span>' : '')),
                 FormattedColumn::make('is_confirmed')->title('Trạng thái')->width(170)
                     ->getValueUsing(fn (FormattedColumn $c) => $c->getItem()->is_confirmed
                         ? '<span class="badge bg-success-lt">Đã xác nhận</span>'

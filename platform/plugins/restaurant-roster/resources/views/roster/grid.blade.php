@@ -213,6 +213,7 @@
                     @if ($currentOutlet !== null)
                         @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentOutlet])
                     @endif
+                    @include('plugins/restaurant-roster::roster.partials.lobby-stats')
                 </tbody>
             </table>
         </div>

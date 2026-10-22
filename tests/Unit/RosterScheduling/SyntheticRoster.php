@@ -51,8 +51,8 @@ trait SyntheticRoster
     protected function shifts(): array
     {
         return [
-            // M6(L): Lobby 09:00–12:00 (06–09h ở nhà hàng); A2(L): Lobby 14:00–17:00 (quản lý xác nhận 22/10/2026).
-            new ShiftSpec(self::M6, 'M6', [[6 * 60, 14 * 60]], 8, [9 * 60, 12 * 60]),
+            // M6(L): Lobby 09:00–14:00 (06–09h ở nhà hàng); A2(L): Lobby 14:00–17:00 (quy tắc Lobby chốt 22/10/2026).
+            new ShiftSpec(self::M6, 'M6', [[6 * 60, 14 * 60]], 8, [9 * 60, 14 * 60]),
             new ShiftSpec(self::A2, 'A2', [[14 * 60, 22 * 60]], 8, [14 * 60, 17 * 60]),
             new ShiftSpec(self::N, 'N', [[22 * 60, 30 * 60]], 8),
             // OH 08:45–16:45 làm ở nhà hàng, chỉ cho nhân viên ở Nha Trang; OH(L) = hỗ trợ Lobby cả ca.

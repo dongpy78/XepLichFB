@@ -35,6 +35,9 @@ final class Rules
         'shift_mix' => 2500,
         'heavy_transitions' => 2000,
         'lobby_mix' => 1500,
+        // Lobby: ưu tiên OH(L) (Nha Trang) + M9(L) (Cam Ranh) phủ trọn 09:00–16:45; M6(L) / A2(L) chỉ phủ một phần khung
+        // là phương án thay thế – mỗi lượt bị phạt, nên chỉ dùng khi bù được thiếu người.
+        'lobby_partial' => 1200,
         // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử khoảng đánh giá + kỳ này) – nhẹ hơn xen kẽ ca trong tuần.
         'shift_history' => 500,
         // Nên có: công bằng → OFF liền 2–3 ngày → sở thích & ổn định.
@@ -75,7 +78,6 @@ final class Rules
         public readonly int $seed = 20261012,
         // Tối ưu lại lịch đang dùng: "ít thay đổi" có trọng số cao để không xáo trộn người không liên quan.
         public readonly bool $stabilityFirst = false,
-        public readonly float $coverageOverlapRatio = 0.5,
         // weekly: đủ số ngày OFF trong từng tuần; fortnight: đủ trong mỗi cặp 2 tuần, mỗi tuần ít nhất minOffPerWeek ngày.
         public readonly string $daysOffMode = 'weekly',
         public readonly int $minOffPerWeek = 1,
@@ -129,7 +131,6 @@ final class Rules
             maxIterations: (int) ($config['max_iterations'] ?? 200000),
             seed: (int) ($config['seed'] ?? 20261012),
             stabilityFirst: (bool) ($config['stability_first'] ?? false),
-            coverageOverlapRatio: (float) ($config['coverage_overlap_ratio'] ?? 0.5),
             daysOffMode: (string) ($config['days_off_mode'] ?? 'weekly'),
             minOffPerWeek: (int) ($config['min_off_per_week'] ?? 1),
             supportGender: $config['support_gender'] ?? null,

@@ -62,6 +62,84 @@ class RosterStatistics
         return $this->rules = ['leaderIds' => $leaderIds, 'hostessIds' => $hostessIds, 'femaleStaffIds' => $femaleStaffIds, 'checks' => $checks];
     }
 
+    /**
+     * Định biên phủ Lobby theo số người CÓ MẶT CÙNG LÚC cho từng ngày của tuần (đúng cách bộ giải đếm – LobbyCoverage):
+     * người làm trọn ca ở Lobby (M9) có mặt cả ca, người có (L) có mặt trong khung (L) của mẫu ca (OH(L), M6(L), A2(L)).
+     * Đọc mọi ca của tuần (không theo bộ lọc outlet của bảng) để không báo thiếu sai.
+     *
+     * @return array<string, array{min: int, min_count: int, short: string[], segments: string[], present: string[]}>
+     */
+    public function lobbyCoverage(Carbon $weekStart): array
+    {
+        $station = (string) config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY');
+        $stationOutletId = \Botble\RestaurantRoster\Models\Outlet::query()->where('code', $station)->value('id');
+        $templates = \Botble\RestaurantRoster\Models\ShiftTemplate::query()->get();
+        $days = array_map(fn ($d) => $d->toDateString(), iterator_to_array(CarbonPeriod::create($weekStart, $weekStart->copy()->addDays(6))));
+        $builder = app(ProblemBuilder::class);
+        $coverage = $builder->coverage($days, $station, $templates);
+
+        if (! $coverage) {
+            return [];
+        }
+
+        $specs = $templates->mapWithKeys(fn ($t) => [$t->getKey() => $builder->shiftSpec($t)]);
+        $stationCodes = $templates->where('support_station', $station)->pluck('id');
+        $femaleStaffIds = $this->rules()['femaleStaffIds'];
+        $presence = [];
+
+        Shift::query()
+            ->whereDate('date', '>=', $days[0])->whereDate('date', '<=', $days[6])
+            ->with(['employee:id,name,gender,position_id'])
+            ->get()
+            ->each(function (Shift $shift) use (&$presence, $specs, $stationOutletId, $stationCodes, $femaleStaffIds): void {
+                $spec = $specs[$shift->shift_template_id] ?? null;
+
+                if (! $spec || ! $shift->isWorking() || ! $shift->employee) {
+                    return;
+                }
+
+                // Ca làm trọn ở Lobby: xếp vào outlet Lobby, hoặc mẫu ca thuộc trạm Lobby (M9).
+                $atStation = ($stationOutletId && (int) $shift->outlet_id === (int) $stationOutletId) || $stationCodes->contains($shift->shift_template_id);
+                $interval = $atStation ? [$spec->start(), $spec->end()]
+                    : (in_array('L', $shift->tags ?: [], true) ? $spec->lobbyWindow : null);
+
+                if ($interval) {
+                    $presence[$shift->date->toDateString()][] = [
+                        'interval' => $interval,
+                        'shift_id' => (int) $shift->shift_template_id,
+                        'female_staff' => $shift->employee->gender === 'female' && in_array((int) $shift->employee->position_id, $femaleStaffIds, true),
+                        'name' => $shift->employee->name . ' ' . $spec->code . ($atStation ? '' : '(L)'),
+                    ];
+                }
+            });
+
+        $result = [];
+
+        foreach ($coverage as $window) {
+            $people = array_values(array_filter($presence[$window->date] ?? [], fn ($p) => (! $window->femaleOnly || $p['female_staff'])
+                && ($window->shiftIds === null || in_array($p['shift_id'], $window->shiftIds, true))));
+            $check = \Botble\RestaurantRoster\Scheduling\LobbyCoverage::evaluate($window->start, $window->end, $window->min, array_column($people, 'interval'));
+            $time = fn ($row) => \Botble\RestaurantRoster\Scheduling\LobbyCoverage::time($row['start']) . '–' . \Botble\RestaurantRoster\Scheduling\LobbyCoverage::time($row['end']);
+            $day = $result[$window->date] ?? ['min' => 0, 'min_count' => PHP_INT_MAX, 'short' => [], 'segments' => [], 'present' => []];
+
+            $day['min'] = max($day['min'], $window->min);
+            $day['min_count'] = min($day['min_count'], $check['min_count']);
+            $day['present'] = array_values(array_unique([...$day['present'], ...array_column($people, 'name')]));
+
+            foreach ($check['segments'] as $row) {
+                $day['segments'][] = $time($row) . ": {$row['count']}/{$window->min}";
+            }
+
+            foreach ($check['short'] as $row) {
+                $day['short'][] = 'Lobby ' . $time($row) . ": {$row['count']}/{$window->min} " . ($window->femaleOnly ? 'nữ waiter' : 'người') . ' cùng lúc';
+            }
+
+            $result[$window->date] = $day;
+        }
+
+        return $result;
+    }
+
     public function summarize(Collection $employees): array
     {
         $leaderIds = $this->rules()['leaderIds'];
@@ -272,6 +350,8 @@ class RosterStatistics
             'problems' => $problems,
             // [date][outletId][mã ca] => [nữ waiter tối thiểu, mục tiêu] – ô có cấu hình thì hiện số nữ waiter trực tiếp.
             'female_rules' => $femaleRules ?? [],
+            // [date] => số nữ waiter có mặt cùng lúc ở Lobby, các đoạn giờ thiếu (quy tắc 2 nữ waiter cùng lúc 09:00–16:45).
+            'lobby' => $shifts->isEmpty() ? [] : $this->lobbyCoverage($weekStart->copy()),
             'outlets' => $outlets->filter(fn ($o) => ! empty($codes[$o->id]) || collect($absent)->contains(fn ($day) => isset($day[$o->id])))->values(),
             'empty' => $shifts->isEmpty(),
         ];

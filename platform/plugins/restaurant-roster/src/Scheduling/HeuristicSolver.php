@@ -515,7 +515,7 @@ final class HeuristicSolver implements SolverInterface
 
             [$o, $s, $f] = ScheduleState::parseSlot($slot);
 
-            if ($f || ! in_array($k, $state->supportWindows($i, $o, $s, true), true)) {
+            if ($f || ! in_array($k, $state->supportWindows($i, $o, $s, true), true) || ! $state->countsForCoverage($employeeId, $i, $k)) {
                 continue;
             }
 
@@ -540,6 +540,8 @@ final class HeuristicSolver implements SolverInterface
                 + $state->supportTurns($employeeId, Problem::supportTypeKey($state->problem->shifts[$s]->code, 'lobby')) * 25
                 + ($requirement && $state->count($i, $o, $s) - 1 < $requirement->target ? 50 : 0)
                 + ($requirement && $employee->isFemaleStaff && $state->femaleCount($i, $o, $s) - 1 < $requirement->targetFemale ? 80 : 0)
+                // Phương án thay thế (M6(L), A2(L) chỉ phủ một phần khung Lobby) xếp sau ca phủ trọn khung (OH(L), M9).
+                + $state->lobbyPartial($i, $o, $s, true) * 400
                 + mt_rand(0, 9);
 
             if ($score < $bestScore) {
@@ -585,6 +587,7 @@ final class HeuristicSolver implements SolverInterface
 
             foreach ($state->problem->employees as $employeeId => $employee) {
                 if ($state->isOccupied($employeeId, $i)
+                    || ! $state->countsForCoverage($employeeId, $i, $k)
                     || $employee->skillLevel($requirement->outletId, $requirement->shiftId) === null
                     || $state->violation($employeeId, $i, $requirement->outletId, $requirement->shiftId, support: ! $atStation)) {
                     continue;
@@ -608,6 +611,8 @@ final class HeuristicSolver implements SolverInterface
                     + ($this->wouldBeHeavy($state, $employeeId, $i, $requirement) ? 150 : 0)
                     // Chia đều loại ca trong khung Lobby: đã có OH(L) thì ưu tiên M9 và ngược lại.
                     + $state->supportShiftCount($i, $k, $requirement->shiftId) * 100
+                    // Ưu tiên OH(L) + M9 (phủ trọn khung Lobby); M6(L) / A2(L) chỉ để bù khi thiếu.
+                    + $state->lobbyPartial($i, $requirement->outletId, $requirement->shiftId, ! $atStation) * 400
                     + mt_rand(0, 100) / 1000;
 
                 if ($score < $bestScore) {

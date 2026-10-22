@@ -28,6 +28,7 @@ class CoverageRequirementRequest extends Request
             'min_staff' => ['required', 'integer', 'min:0', 'max:20'],
             'target_staff' => ['required', 'integer', 'min:0', 'max:20', 'gte:min_staff'],
             'is_confirmed' => ['required', 'boolean'],
+            'female_only' => ['required', 'boolean'],
             'note' => ['nullable', 'string', 'max:255'],
         ];
     }
@@ -36,7 +37,7 @@ class CoverageRequirementRequest extends Request
     {
         return [
             'start_time' => 'Từ giờ', 'end_time' => 'Đến giờ', 'min_staff' => 'Tối thiểu', 'target_staff' => 'Mục tiêu',
-            'weekday' => 'Thứ', 'date' => 'Ngày cụ thể', 'shift_codes' => 'Chỉ tính ca',
+            'weekday' => 'Thứ', 'date' => 'Ngày cụ thể', 'shift_codes' => 'Chỉ tính ca', 'female_only' => 'Đếm',
         ];
     }
 }

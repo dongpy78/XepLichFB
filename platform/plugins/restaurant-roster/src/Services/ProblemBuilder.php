@@ -379,11 +379,12 @@ class ProblemBuilder
     }
 
     /**
-     * Định biên phủ Lobby theo khung giờ cho từng ngày: dòng ngày cụ thể > theo thứ > chung, cho mỗi khung giờ.
+     * Định biên phủ Lobby theo khung giờ cho từng ngày: dòng ngày cụ thể > theo thứ > chung (cả ngày theo một mức).
+     * Số người là số người có mặt cùng lúc (ScheduleState chia khung thành các đoạn giờ, xem LobbyCoverage).
      *
      * @return Coverage[]
      */
-    private function coverage(array $days, string $station, $templates): array
+    public function coverage(array $days, string $station, $templates): array
     {
         $idsByCode = $templates->mapWithKeys(fn (ShiftTemplate $t) => [strtoupper((string) $t->code) => (int) $t->getKey()])->all();
         $rows = CoverageRequirement::query()->where('station', $station)->get();
@@ -392,33 +393,20 @@ class ProblemBuilder
 
         foreach ($days as $date) {
             $weekday = CarbonImmutable::parse($date)->dayOfWeekIso;
-            $best = [];
 
-            foreach ($rows as $row) {
-                if ($row->date && $row->date->toDateString() !== $date) {
-                    continue;
-                }
+            // Cả ngày theo một mức: có dòng ngày cụ thể thì chỉ dùng các dòng đó, không thì theo thứ, không thì dòng chung.
+            $matching = $rows->filter(fn ($row) => $row->date ? $row->date->toDateString() === $date : (! $row->weekday || $row->weekday === $weekday));
+            $rank = fn ($row) => $row->date ? 2 : ($row->weekday ? 1 : 0);
+            $top = $matching->max($rank);
 
-                if (! $row->date && $row->weekday && $row->weekday !== $weekday) {
-                    continue;
-                }
-
-                $window = substr((string) $row->start_time, 0, 5) . '-' . substr((string) $row->end_time, 0, 5);
-                $rank = $row->date ? 2 : ($row->weekday ? 1 : 0);
-
-                if (! isset($best[$window]) || $rank > $best[$window][0]) {
-                    $best[$window] = [$rank, $row];
-                }
-            }
-
-            foreach ($best as [, $row]) {
+            foreach ($matching->filter(fn ($row) => $rank($row) === $top) as $row) {
                 if ($row->min_staff > 0 || $row->target_staff > 0) {
                     $codes = $row->shift_code_list;
                     $shiftIds = $codes ? array_values(array_filter(array_map(fn ($code) => $idsByCode[$code] ?? null, $codes))) : null;
-                    $label = $codes ? 'Lobby (' . implode('/', $codes) . ')' : 'Lobby';
+                    $label = ($codes ? 'Lobby (' . implode('/', $codes) . ')' : 'Lobby') . ($row->female_only ? ' – nữ waiter cùng lúc' : ' – cùng lúc');
 
                     $result[] = new Coverage($date, $toMinutes((string) $row->start_time), $toMinutes((string) $row->end_time),
-                        (int) $row->min_staff, max((int) $row->min_staff, (int) $row->target_staff), $label, $shiftIds);
+                        (int) $row->min_staff, max((int) $row->min_staff, (int) $row->target_staff), $label, $shiftIds, (bool) $row->female_only);
                 }
             }
         }

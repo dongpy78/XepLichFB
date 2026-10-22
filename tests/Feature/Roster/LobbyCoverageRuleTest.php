@@ -1,0 +1,110 @@
+<?php
+
+namespace Tests\Feature\Roster;
+
+use Botble\RestaurantRoster\Models\CoverageRequirement;
+use Botble\RestaurantRoster\Models\Employee;
+use Botble\RestaurantRoster\Models\Outlet;
+use Botble\RestaurantRoster\Models\Position;
+use Botble\RestaurantRoster\Models\Shift;
+use Botble\RestaurantRoster\Models\ShiftTemplate;
+use Botble\RestaurantRoster\Services\ProblemBuilder;
+use Botble\RestaurantRoster\Services\RosterStatistics;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+
+require_once __DIR__ . '/OffWorkflowTest.php';
+
+/**
+ * Quy tắc Lobby Bar trong database: dòng định biên 2 nữ waiter cùng lúc 09:00–16:45 (migration), bộ giải đọc đúng,
+ * và dòng cảnh báo LOBBY trên bảng xếp ca đếm số người cùng lúc như bộ giải – DỮ LIỆU GIẢ LẬP.
+ */
+class LobbyCoverageRuleTest extends TestCase
+{
+    private const DATE = '2030-03-04';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['plugins.restaurant-roster.general' => require dirname(__DIR__, 3) . '/platform/plugins/restaurant-roster/config/general.php']);
+
+        if (! Schema::hasTable('roster_shifts')) {
+            $this->artisan('migrate', ['--path' => 'platform/plugins/restaurant-roster/database/migrations', '--force' => true]);
+        }
+    }
+
+    public function test_migration_stores_the_concurrent_female_waiter_rule(): void
+    {
+        $rows = CoverageRequirement::query()->where('station', 'LOBBY')->get();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(['09:00', '16:45', 2, 2, true, null, true], [substr($rows[0]->start_time, 0, 5), substr($rows[0]->end_time, 0, 5),
+            $rows[0]->min_staff, $rows[0]->target_staff, $rows[0]->female_only, $rows[0]->shift_codes, $rows[0]->is_confirmed]);
+    }
+
+    public function test_problem_builder_reads_the_rule_as_concurrent_female_only_window(): void
+    {
+        $this->world();
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::DATE), Carbon::parse(self::DATE)->addDays(6));
+
+        $this->assertCount(7, $problem->coverage);
+        $window = $problem->coverage[0];
+        $this->assertSame([540, 1005, 2, 2, true, null], [$window->start, $window->end, $window->min, $window->target, $window->femaleOnly, $window->shiftIds]);
+    }
+
+    public function test_grid_lobby_row_counts_people_present_at_the_same_time(): void
+    {
+        [$templates, $staff] = $this->world();
+        $statistics = fn () => (new RosterStatistics())->lobbyCoverage(Carbon::parse(self::DATE));
+
+        $this->cell($staff['oh'], $templates['OH'], 'VILLA', ['L']);
+        $this->cell($staff['m6'], $templates['M6'], 'GUSTO', ['L']);
+        $day = $statistics()[self::DATE];
+        $this->assertSame(1, $day['min_count']);
+        $this->assertSame(['Lobby 14:00–16:45: 1/2 nữ waiter cùng lúc'], $day['short'], 'OH(L) + M6(L): thiếu 14:00–16:45');
+
+        $this->cell($staff['a2'], $templates['A2'], 'GUSTO', ['L']);
+        $day = $statistics()[self::DATE];
+        $this->assertSame([2, []], [$day['min_count'], $day['short']], 'Thêm A2(L): đủ 2 người ở mọi đoạn');
+
+        // Ngày khác: M6(L) + A2(L) không phải 2 người cùng lúc.
+        $next = Carbon::parse(self::DATE)->addDay()->toDateString();
+        $this->cell($staff['m6'], $templates['M6'], 'GUSTO', ['L'], $next);
+        $this->cell($staff['a2'], $templates['A2'], 'GUSTO', ['L'], $next);
+        $this->assertSame(1, $statistics()[$next]['min_count']);
+        $this->assertCount(2, $statistics()[$next]['short']);
+    }
+
+    /** @return array{0: array<string, ShiftTemplate>, 1: array<string, Employee>} */
+    private function world(): array
+    {
+        foreach (['GUSTO' => 'Gusto', 'VILLA' => 'Villa', 'LOBBY' => 'Lobby'] as $code => $name) {
+            Outlet::query()->create(['name' => $name, 'code' => $code, 'status' => 'published']);
+        }
+
+        $template = fn (string $code, string $start, string $end, array $extra = []) => ShiftTemplate::query()->create(
+            ['code' => $code, 'name' => $code, 'start_time' => $start, 'end_time' => $end, 'status' => 'published', ...$extra]);
+        $templates = [
+            'OH' => $template('OH', '08:45:00', '16:45:00', ['lobby_start_time' => '08:45:00', 'lobby_end_time' => '16:45:00', 'allowed_residence' => 'nha_trang']),
+            'M9' => $template('M9', '09:00:00', '17:00:00', ['support_station' => 'LOBBY', 'allowed_residence' => 'cam_ranh', 'allowed_gender' => 'female']),
+            'M6' => $template('M6', '06:00:00', '14:00:00', ['lobby_start_time' => '09:00:00', 'lobby_end_time' => '14:00:00']),
+            'A2' => $template('A2', '14:00:00', '22:00:00', ['lobby_start_time' => '14:00:00', 'lobby_end_time' => '17:00:00']),
+        ];
+
+        $waiter = Position::query()->create(['name' => 'Waiter', 'status' => 'published']);
+        $make = fn (string $code, string $outlet, string $residence) => Employee::query()->create(['code' => $code, 'name' => "Synthetic {$code}", 'gender' => 'female',
+            'outlet_id' => Outlet::query()->where('code', $outlet)->value('id'), 'position_id' => $waiter->getKey(), 'residence' => $residence,
+            'weekly_hours' => 48, 'days_off_per_week' => 2, 'auto_schedule' => true, 'status' => 'published']);
+
+        return [$templates, ['oh' => $make('NT1', 'VILLA', 'nha_trang'), 'm6' => $make('CR1', 'GUSTO', 'cam_ranh'), 'a2' => $make('CR2', 'GUSTO', 'cam_ranh')]];
+    }
+
+    private function cell(Employee $employee, ShiftTemplate $template, string $outlet, array $tags, string $date = self::DATE): void
+    {
+        Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => $date, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $template->getKey(),
+            'outlet_id' => Outlet::query()->where('code', $outlet)->value('id'), 'tags' => $tags, 'status' => 'published',
+            'start_at' => "{$date} {$template->start_time}", 'end_at' => "{$date} {$template->end_time}", 'hours' => 8]);
+    }
+}
