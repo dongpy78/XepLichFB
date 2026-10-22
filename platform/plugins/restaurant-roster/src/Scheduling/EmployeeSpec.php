@@ -38,6 +38,13 @@ final class EmployeeSpec
 
     public const NIGHT_CORE = 'core';
     public const NIGHT_FLEX = 'flex';
+    // Nam waiter đủ điều kiện luân phiên Night (Villa / Gusto / Night, không phải Night cứng, không phải Room Service cứng).
+    public const NIGHT_ROTATION = 'rotation';
+
+    public function isNightCore(): bool
+    {
+        return $this->nightRole === self::NIGHT_CORE;
+    }
 
     public function isMale(): bool
     {

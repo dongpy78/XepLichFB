@@ -127,8 +127,8 @@ final class ScheduleState
     public array $coverage = [];
 
     /**
-     * @var array<int, array<int, array{0: int, 1: int, 2: int, 3: int, 4: string, 5: bool, 6: int[]}>>
-     *      [dayIndex][g] => khung định biên gốc: [bắt đầu, kết thúc, tối thiểu, mục tiêu, nhãn, chỉ nữ waiter, chỉ số các đoạn k]
+     * @var array<int, array<int, array{0: int, 1: int, 2: int, 3: int, 4: string, 5: bool, 6: int[], 7: int}>>
+     *      [dayIndex][g] => khung định biên gốc: [bắt đầu, kết thúc, tối thiểu, mục tiêu, nhãn, chỉ nữ waiter, chỉ số các đoạn k, số phút ca phủ tốt nhất]
      */
     public array $coverageGroups = [];
 
@@ -151,8 +151,17 @@ final class ScheduleState
     {
         $this->buildTimeline();
 
+        $hasCore = (bool) array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isNightCore());
+
         foreach ($problem->requirements as $requirement) {
             $i = $this->index[$requirement->date] ?? null;
+
+            // Night: mỗi ngày có ít nhất 1 nhân viên Night cứng (điều phối) – tính như thiếu tối thiểu.
+            if ($hasCore && $i !== null && $this->inScope[$i] && $requirement->min > 0
+                && ($problem->shifts[$requirement->shiftId] ?? null)?->category() === 'night') {
+                $this->coreNeed[$i][$requirement->outletId] = 0;
+                $this->minShort++;
+            }
 
             if ($i !== null && $this->inScope[$i]) {
                 $this->requirements[$i]["{$requirement->outletId}|{$requirement->shiftId}"] = $requirement;
@@ -223,7 +232,9 @@ final class ScheduleState
                 $this->targetShort += $target;
             }
 
-            $this->coverageGroups[$i][$group] = [$window->start, $window->end, $window->min, $target, $window->label, $window->femaleOnly, $segments];
+            // Thời gian có mặt dài nhất mà một ca phủ được trong khung (OH(L) / M9): ca kém hơn mức này là phương án thay thế.
+            $best = max([0, ...array_map(fn ($iv) => max(0, min($window->end, $iv[1]) - max($window->start, $iv[0])), $intervals)]);
+            $this->coverageGroups[$i][$group] = [$window->start, $window->end, $window->min, $target, $window->label, $window->femaleOnly, $segments, $best];
         }
 
         foreach ($problem->fixed as $assignment) {
@@ -267,7 +278,9 @@ final class ScheduleState
                 }
             }
 
-            if (isset($this->nightPool[$employee->id]) && $dayShift && ! $employee->fixed && ! isset($this->nightOutlets[$employee->homeOutletId])) {
+            // Người luân phiên Night: đánh dấu trong hồ sơ (nam waiter Villa / Gusto / Night đủ điều kiện), hoặc dữ liệu cũ: người ngoài outlet Night có năng lực ca đêm.
+            if ($employee->nightRole === EmployeeSpec::NIGHT_ROTATION
+                || ($employee->nightRole === null && isset($this->nightPool[$employee->id]) && $dayShift && ! $employee->fixed && ! isset($this->nightOutlets[$employee->homeOutletId]))) {
                 $this->nightRotation[$employee->id] = true;
             }
         }
@@ -430,8 +443,13 @@ final class ScheduleState
 
         $partial = 0;
 
-        foreach ($this->coverageGroups[$i] as [$start, $end]) {
-            if (min($end, $interval[1]) > max($start, $interval[0]) && ! LobbyCoverage::covers($interval, $start, $end)) {
+        // Phủ một phần = có mặt ở Lobby ngắn hơn ca phủ tốt nhất của khung quá 30 phút (vd M6(L) 5h, A2(L) 3h so với OH(L) / M9 8h).
+        // Không so với cả khung: khung đặt rộng hơn giờ ca (vd 08:30–17:00) vẫn ưu tiên đúng OH(L) + M9.
+        foreach ($this->coverageGroups[$i] as $group) {
+            [$start, $end] = $group;
+            $overlap = min($end, $interval[1]) - max($start, $interval[0]);
+
+            if ($overlap > 0 && ! LobbyCoverage::covers($interval, $start, $end) && $overlap < ($group[7] ?? $end - $start) - 30) {
                 $partial++;
             }
         }
@@ -645,6 +663,40 @@ final class ScheduleState
         if ($checkEligibility && isset($this->nightRotation[$employeeId]) && $shift->category() === 'night'
             && $this->problem->nightPlanned($employeeId, $date) === false) {
             return ['night_plan', 'Chưa được chọn luân phiên Night tuần này (Quản lý nhân sự Night)'];
+        }
+
+        // Người luân phiên Night: hôm sau đêm cuối bắt buộc OFF (không xếp ca ngày ngay sau ca đêm, không xếp đêm ngay trước ca ngày).
+        if ($checkEligibility && $employee->nightRole === EmployeeSpec::NIGHT_ROTATION) {
+            $isNight = $shift->category() === 'night';
+            $prev = $i > 0 ? $this->shiftAt($employeeId, $i - 1) : null;
+            $next = isset($this->dates[$i + 1]) ? $this->shiftAt($employeeId, $i + 1) : null;
+
+            if ((! $isNight && $prev && $this->problem->shifts[$prev[1]]->category() === 'night')
+                || ($isNight && $next && $this->problem->shifts[$next[1]]->category() !== 'night')) {
+                return ['night_off', 'Người luân phiên Night phải OFF ngay sau đêm cuối'];
+            }
+
+            // Tối đa 3 đêm / tuần được chọn luân phiên (mục tiêu 2, đêm thứ 3 chỉ khi cần đủ 3 người / ngày).
+            if ($isNight && $this->problem->nightPlanned($employeeId, $date) === true) {
+                $nights = [$i];
+
+                foreach ($this->weekDaysBySeq[$this->weekSeq[$i]] ?? [] as $k) {
+                    $cell = $k === $i ? null : $this->shiftAt($employeeId, $k);
+
+                    if ($cell && $this->problem->shifts[$cell[1]]->category() === 'night') {
+                        $nights[] = $k;
+                    }
+                }
+
+                if (count($nights) > 3) {
+                    return ['night_max', 'Người luân phiên Night đã đủ 3 đêm trong tuần'];
+                }
+
+                // Các đêm trong tuần phải liền nhau (một cụm): không N … OFF … N.
+                if (max($nights) - min($nights) + 1 !== count($nights)) {
+                    return ['night_block', 'Các đêm luân phiên trong tuần phải liền nhau'];
+                }
+            }
         }
 
         if ($support) {
@@ -922,6 +974,7 @@ final class ScheduleState
             'under_norm' => $m['under_norm'],
             'child_borrow' => $m['child_borrow'],
             'lobby_partial' => $m['lobby_partial'],
+            'night_extra' => 0,
             // Cờ (L) không cần thiết bị phạt nhẹ để thuật toán chỉ giao hỗ trợ Lobby khi khung giờ cần người.
             'preference' => $m['support_flags'] + $m['non_home'] * 3 + $m['non_primary'] * 2 + $m['soft_conflicts'] * 6 + $m['changes'] * 4,
             'heavy' => $m['heavy'],
@@ -965,10 +1018,11 @@ final class ScheduleState
             // (ít người có tuần đêm trong kỳ, người đã làm đêm các tuần trước được nghỉ đêm), không trộn đêm với ca ngày trong tuần.
             $history = $this->problem->nightHistory[$employeeId] ?? 0;
             // + ca ngày trong tuần đã được chọn luân phiên Night (người được chọn đi Night cả tuần, không ở lại nhà hàng).
-            $terms['night_rotation'] = ($m['night_weeks'] + $history) ** 2 - $history ** 2 + $m['night_mixed'] + $m['night_plan_day'];
+            $terms['night_rotation'] = ($m['night_weeks'] + $history) ** 2 - $history ** 2 + $m['night_mixed'] + $m['night_plan_day'] + $m['night_plan_gap'];
+            $terms['night_extra'] = $m['night_plan_extra'];
         } elseif (isset($this->nightPool[$employeeId])) {
             $terms['night_sq'] = $m['night'] ** 2;
-            $terms['night_rotation'] = $m['night_staff_day'];
+            $terms['night_rotation'] = $m['night_staff_day'] + $m['night_flex_planned'];
         }
 
         return $terms;
@@ -1050,7 +1104,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1242,7 +1296,8 @@ final class ScheduleState
         $employee = $this->problem->employees[$employeeId];
         $shifts = $this->problem->shifts;
         $planned = isset($this->nightRotation[$employeeId]) && $this->problem->nightPlan;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
+        $flexPlanned = $employee->isNightFlex() && $this->problem->nightPlan;
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1266,6 +1321,7 @@ final class ScheduleState
         $baselineRow = $this->problem->baseline[$employeeId] ?? [];
         $softRow = $this->problem->softUnavailable[$employeeId] ?? [];
         $byWeek = [];
+        $plannedWeeks = [];
         $home = $employee->homeOutletId;
         $parents = $this->problem->outletParents;
         $station = $this->problem->stationOutletId;
@@ -1288,8 +1344,24 @@ final class ScheduleState
             $category = $shift->category();
             $m['worked']++;
 
-            if ($category !== 'night' && $planned && $this->problem->nightPlanned($employeeId, $this->dates[$i]) === true) {
-                $m['night_plan_day']++;
+            // Tuần được chọn luân phiên Night: đếm số đêm và số cụm đêm (2 đêm liền nhau, tối đa 3 khi cần đủ 3 người / ngày).
+            if ($planned && $this->problem->nightPlanned($employeeId, $date) === true) {
+                $week = $this->weekOf[$i];
+                $plannedWeeks[$week] ??= ['nights' => 0, 'blocks' => 0];
+
+                if ($category === 'night') {
+                    $plannedWeeks[$week]['nights']++;
+                    $prev = $i > 0 ? $work[$i - 1] : null;
+
+                    if (! $prev || $shifts[$prev[1]]->category() !== 'night') {
+                        $plannedWeeks[$week]['blocks']++;
+                    }
+                }
+            }
+
+            // Ngày đã có người luân phiên Night được duyệt: Night đa năng nhường ca đêm cho họ (đi Room Service / hỗ trợ nhà hàng).
+            if ($category === 'night' && $flexPlanned && ! empty($this->problem->nightPlan[$this->dates[$i]])) {
+                $m['night_flex_planned']++;
             }
 
             // Có mặt ở Lobby: ca làm trọn ở trạm, hoặc ca có khung (L) và đang bật (L) (như supportInterval()).
@@ -1367,9 +1439,16 @@ final class ScheduleState
 
         // Tuần có ca đêm, và số ca ngày lẫn trong tuần có ca đêm.
         // Night đa năng (Room Service / hỗ trợ nhà hàng) không bị đẩy về ca đêm như nhân viên chỉ làm Night.
-        $staffDay = isset($this->nightPool[$employeeId], $this->nightOutlets[$employee->homeOutletId]) && ! $employee->fixed && ! $employee->isNightFlex();
+        $staffDay = isset($this->nightPool[$employeeId], $this->nightOutlets[$employee->homeOutletId]) && ! $employee->fixed && ! $employee->isNightFlex()
+            && $employee->nightRole !== EmployeeSpec::NIGHT_ROTATION;
 
-        foreach ($byWeek as $counts) {
+        // Tuần luân phiên: mục tiêu 2 đêm (3 khi cần), một cụm liền nhau; ngày còn lại làm ca chính ở outlet (không tính "trộn đêm / ngày").
+        foreach ($plannedWeeks as $week) {
+            $m['night_plan_gap'] += max(0, 2 - $week['nights']) + max(0, $week['nights'] - 3) + max(0, $week['blocks'] - 1);
+            $m['night_plan_extra'] += $week['nights'] === 3 ? 1 : 0;
+        }
+
+        foreach ($byWeek as $weekKey => $counts) {
             $night = $counts['night'] ?? 0;
             $day = ($counts['morning'] ?? 0) + ($counts['afternoon'] ?? 0);
 
@@ -1379,7 +1458,7 @@ final class ScheduleState
 
             if ($night > 0) {
                 $m['night_weeks']++;
-                $m['night_mixed'] += min($night, $day);
+                $m['night_mixed'] += isset($plannedWeeks[$weekKey]) ? 0 : min($night, $day);
             }
         }
 
@@ -1559,8 +1638,38 @@ final class ScheduleState
         return null;
     }
 
+    /** @var array<int, array<int, int>> [dayIndex][outlet Night] => số nhân viên Night cứng đang làm ca đêm */
+    private array $coreNeed = [];
+
+    /**
+     * Ngày Night không có nhân viên Night cứng nào: [[dayIndex, outletId], ...].
+     *
+     * @return array<int, array{0: int, 1: int}>
+     */
+    public function coreShortDays(): array
+    {
+        $result = [];
+
+        foreach ($this->coreNeed as $i => $outlets) {
+            foreach ($outlets as $outletId => $count) {
+                if ($count < 1) {
+                    $result[] = [$i, $outletId];
+                }
+            }
+        }
+
+        return $result;
+    }
+
     private function adjustCount(int $i, int $outletId, int $shiftId, int $employeeId, int $delta, bool $support = false): void
     {
+        if (isset($this->coreNeed[$i][$outletId]) && ($this->problem->employees[$employeeId]?->isNightCore() ?? false)
+            && $this->problem->shifts[$shiftId]->category() === 'night') {
+            $before = $this->coreNeed[$i][$outletId];
+            $this->coreNeed[$i][$outletId] = $before + $delta;
+            $this->minShort += max(0, 1 - $before - $delta) - max(0, 1 - $before);
+        }
+
         if (! empty($this->coverage[$i])) {
             $source = $this->supportSource($employeeId, $outletId);
 

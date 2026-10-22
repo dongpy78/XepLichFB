@@ -88,6 +88,21 @@ class LobbyConcurrencyTest extends TestCase
         $this->assertSame([[540, 840], [840, 1005]], LobbyCoverage::segments(540, 1005, [[525, 1005], [540, 1020], [540, 840], [840, 1020]]));
     }
 
+    /** Khung đặt rộng hơn giờ ca (08:30–17:00): OH(L) và M9 vẫn là ca ưu tiên, M6(L) / A2(L) vẫn là phương án thay thế. */
+    public function test_oh_l_and_m9_stay_preferred_when_window_is_wider_than_shifts(): void
+    {
+        $day = $this->day(0);
+        $state = new ScheduleState($this->problem([$this->oh(), $this->m9()], [new Requirement($day, self::LOBBY, self::M9, 0, 0, 2)],
+            ['days' => [$day], 'coverage' => [new Coverage($day, 8 * 60 + 30, 17 * 60, 2, 2, 'Lobby', null, true)]]));
+
+        $this->assertSame([0, 0, 1, 1], [
+            $state->lobbyPartial(0, self::VILLA, self::OH, true),
+            $state->lobbyPartial(0, self::LOBBY, self::M9, false),
+            $state->lobbyPartial(0, self::GUSTO, self::M6, true),
+            $state->lobbyPartial(0, self::GUSTO, self::A2, true),
+        ]);
+    }
+
     /** 6.1: OH(L) + M9(L) đạt định biên – 2 người cùng lúc suốt 09:00–16:45. */
     public function test_oh_l_plus_m9_meets_the_rule(): void
     {

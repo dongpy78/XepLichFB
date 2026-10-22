@@ -114,12 +114,13 @@ class EmployeeForm extends FormAbstract
                     ->colspan(1)
             )
             ->add(
-                'night_role',
+                'night_rotation_enabled',
                 SelectField::class,
                 SelectFieldOption::make()
-                    ->label('Vai trò Night')
-                    ->choices(['' => '— Không (nhân viên thường / luân phiên nếu có năng lực Night) —'] + Employee::NIGHT_ROLES)
-                    ->helperText('Night cố định: chọn Ca cứng là ca đêm (N), không cần chọn ở đây. Night đa năng: làm Night, Room Service, hỗ trợ nhà hàng theo năng lực đã khai – được điều chuyển bù nam waiter.')
+                    ->label('Tham gia luân phiên Night')
+                    ->choices([1 => 'Có (nếu là nam waiter có năng lực Night)', 0 => 'Không – tạm ngừng luân phiên'])
+                    ->defaultValue(1)
+                    ->helperText('Night cứng: chọn Ca cứng là ca đêm (N). Room Service chuyên trách: chọn ở trang Nhân sự Room Service. Hai nhóm này không vào luân phiên.')
                     ->colspan(1)
             )
             ->add(

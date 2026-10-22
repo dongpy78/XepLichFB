@@ -38,6 +38,8 @@ final class Rules
         // Lobby: ưu tiên OH(L) (Nha Trang) + M9(L) (Cam Ranh) phủ trọn 09:00–16:45; M6(L) / A2(L) chỉ phủ một phần khung
         // là phương án thay thế – mỗi lượt bị phạt, nên chỉ dùng khi bù được thiếu người.
         'lobby_partial' => 1200,
+        // Người luân phiên Night làm đêm thứ 3 trong tuần: chỉ khi cần để Night đủ 3 người / ngày (mục tiêu 2 đêm / người).
+        'night_extra' => 3000,
         // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử khoảng đánh giá + kỳ này) – nhẹ hơn xen kẽ ca trong tuần.
         'shift_history' => 500,
         // Nên có: công bằng → OFF liền 2–3 ngày → sở thích & ổn định.

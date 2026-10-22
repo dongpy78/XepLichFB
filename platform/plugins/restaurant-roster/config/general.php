@@ -64,12 +64,19 @@ return [
         'female_staff_positions' => ['Waiter'],
         // Vị trí được tính là "nam waiter" cho định biên nam M6 / A2 (Định biên nhân sự → Nam tối thiểu / mục tiêu). Không tính cấp quản lý.
         'male_staff_positions' => ['Waiter'],
-        // Điều chuyển giữa outlet nhà hàng (quản lý 23/10/2026): "flex_only" = thuật toán không tự lấy người outlet khác để bù thiếu;
-        // ngoài outlet chính chỉ xếp Night (luân phiên), Lobby, khu trực thuộc; riêng Night đa năng theo năng lực đã khai.
-        // "skills" = theo năng lực đã khai như trước.
-        'cross_outlet_transfer' => 'flex_only',
-        // Số nam waiter luân phiên Night mỗi tuần (Nhân sự Night → đề xuất / duyệt theo tuần).
-        'night_rotation_per_week' => 2,
+        // Điều chuyển giữa outlet nhà hàng (quản lý 23/10/2026: ưu tiên xếp đủ người các outlet, quản lý chỉnh sau):
+        // "auto" = waiter / hostess (transfer_positions) và Night đa năng tự đủ điều kiện thay thế ở các outlet transfer_outlets;
+        //          người outlet chính vẫn được ưu tiên, không rút người làm outlet nguồn dưới tối thiểu.
+        // "skills" = chỉ theo năng lực đã khai; "flex_only" = không tự lấy người outlet nhà hàng khác (trừ Night đa năng).
+        'cross_outlet_transfer' => 'auto',
+        'transfer_outlets' => ['GUSTO', 'VILLA'],
+        'transfer_positions' => ['Waiter', 'Hostess'],
+        // Night (quản lý 23/10/2026): đúng 3 người / ngày (Định biên nhân sự), ≥ 1 Night cứng (ca cứng ca đêm) mỗi ngày;
+        // mỗi tuần chọn bấy nhiêu nam waiter luân phiên từ các outlet dưới, mỗi người 2 đêm liền nhau (3 khi cần), hôm sau OFF.
+        'night_rotation_per_week' => 4,
+        'night_rotation_outlets' => ['GUSTO', 'VILLA', 'NIGHT'],
+        // Outlet Room Service (mã outlet) – người chuyên trách / dự phòng / thay thế quản lý ở trang Nhân sự Room Service.
+        'room_service_codes' => ['ROOM', 'RS', 'ROOMSERVICE'],
         // Định biên phủ Lobby = số người CÓ MẶT CÙNG LÚC (quản lý chốt 22/10/2026): khung được chia tại các mốc vào / ra Lobby
         // của ca, một người chỉ được tính ở đoạn mà họ có mặt trọn đoạn (không còn "phủ ≥ 50% khung").
         // Ngày OFF: "weekly" = mỗi tuần đúng số ngày OFF cấu hình của nhân viên (quản lý 19/10/2026: bắt buộc).

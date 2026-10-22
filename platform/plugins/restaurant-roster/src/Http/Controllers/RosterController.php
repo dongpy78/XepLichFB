@@ -770,6 +770,9 @@ class RosterController extends BaseController
                 $employee->schedule_order ?? 99999, $employee->position->order ?? 99999, $employee->code))
             ->values();
 
+        // Room Service chuyên trách trong tuần (đánh dấu trên bảng).
+        $roomLeads = app(\Botble\RestaurantRoster\Services\RoomServiceStaffService::class)->leadIds($weekStart, $weekEnd);
+
         // Night luân phiên đã duyệt của tuần (để đánh dấu trên bảng).
         $nightRotation = \Botble\RestaurantRoster\Models\NightRotation::query()->whereDate('week_start', $weekStart->toDateString())
             ->where('status', '!=', \Botble\RestaurantRoster\Models\NightRotation::STATUS_PROPOSED)->pluck('employee_id')->map(fn ($id) => (int) $id)->all();
@@ -848,6 +851,7 @@ class RosterController extends BaseController
                 'check' => $check,
                 'section' => $section($employee),
                 'night_rotation' => in_array((int) $employee->getKey(), $nightRotation, true),
+                'room_lead' => in_array((int) $employee->getKey(), $roomLeads, true),
             ];
         }
 

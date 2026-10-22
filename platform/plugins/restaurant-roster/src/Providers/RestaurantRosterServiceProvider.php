@@ -97,6 +97,15 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'permissions' => ['roster.index'],
                 ])
                 ->registerItem([
+                    'id' => 'cms-plugins-restaurant-roster-room-service',
+                    'priority' => 4,
+                    'parent_id' => 'cms-plugins-restaurant-roster',
+                    'name' => 'Nhân sự Room Service',
+                    'icon' => 'ti ti-bell-ringing',
+                    'route' => 'roster.room-service.index',
+                    'permissions' => ['roster.index'],
+                ])
+                ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster-schedule-groups',
                     'priority' => 5,
                     'parent_id' => 'cms-plugins-restaurant-roster',

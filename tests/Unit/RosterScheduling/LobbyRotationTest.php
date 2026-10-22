@@ -77,7 +77,7 @@ class LobbyRotationTest extends TestCase
             ...array_map(fn ($d) => new Requirement($d, self::GUSTO, self::A2, 2, 2, 3), $days),
         ];
 
-        $result = $this->solve($this->problem($team, $requirements, ['coverage' => $coverage, 'time_limit' => 3]));
+        $result = $this->solve($this->problem($team, $requirements, ['coverage' => $coverage, 'time_limit' => 60, 'max_iterations' => 30000]));
         $turns = $this->lobbyTurns($result, range(1, 8));
 
         $this->assertSame([], $result->unfilledRequirements);
@@ -85,7 +85,7 @@ class LobbyRotationTest extends TestCase
         $this->assertLessThanOrEqual(1, max($turns) - min($turns), 'Lượt Lobby lệch tối đa 1 giữa các nhân viên: ' . json_encode($turns));
 
         // Người đã đi Lobby nhiều ở các tuần trước được để ở nhà hàng tuần này.
-        $rotated = $this->solve($this->problem($team, $requirements, ['coverage' => $coverage, 'time_limit' => 3, 'lobby_history' => [1 => 2.0, 2 => 2.0]]));
+        $rotated = $this->solve($this->problem($team, $requirements, ['coverage' => $coverage, 'time_limit' => 60, 'max_iterations' => 30000, 'lobby_history' => [1 => 2.0, 2 => 2.0]]));
         $turns = $this->lobbyTurns($rotated, range(1, 8));
         // 7 lượt / 8 người: 6 người chưa đi Lobby mỗi người 1 lượt, lượt thứ 7 cho 1 trong 2 người đã đi nhiều (không ai 2 lượt).
         $this->assertSame([1, 1, 1, 1, 1, 1], array_values(array_slice($turns, 2, null, true)), 'Người chưa đi Lobby các tuần trước được ưu tiên: ' . json_encode($turns));

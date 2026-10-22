@@ -125,7 +125,7 @@
                                     @endif
                                 </div>
                                 @php $nightRole = $employee->isNightCore() ? 'core' : $employee->night_role; @endphp
-                                @if ($employee->position->name || $nightRole || $row['night_rotation'] || $employee->is_trainee)
+                                @if ($employee->position->name || $nightRole || $row['night_rotation'] || $row['room_lead'] || $employee->is_trainee)
                                     <div class="roster-staff__meta">
                                         {{ $employee->position->name }}
                                         @if ($row['section']['key'] !== 'o' . $employee->outlet_id && $employee->outlet->code)
@@ -133,6 +133,9 @@
                                         @endif
                                         @if ($role = $nightRoles[$nightRole] ?? null)
                                             <span class="badge bg-dark-lt" title="{{ $role[1] }}">{{ $role[0] }}</span>
+                                        @endif
+                                        @if ($row['room_lead'])
+                                            <span class="badge bg-orange-lt" title="Room Service chuyên trách (Nhân sự Room Service) – không luân phiên Night">RS cứng</span>
                                         @endif
                                         @if ($row['night_rotation'])
                                             <span class="badge bg-indigo-lt" title="Được chọn luân phiên Night tuần này (vẫn thuộc nhóm hiển thị hiện tại)">N luân phiên</span>

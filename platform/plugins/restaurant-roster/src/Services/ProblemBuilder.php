@@ -70,16 +70,27 @@ class ProblemBuilder
         $employees = Employee::query()
             ->where('status', BaseStatusEnum::PUBLISHED)
             ->where('is_trainee', false)
-            ->with('skills')
+            ->with(['skills', 'fixedShift:id,start_time'])
             ->get();
 
-        // Điều chuyển giữa các outlet (quản lý 23/10/2026): thuật toán không tự lấy người outlet nhà hàng khác để bù thiếu.
-        // Ngoài outlet chính chỉ còn: Night (luân phiên), trạm Lobby, khu trực thuộc (Kid-Deline); Night đa năng thì theo năng lực đã khai.
+        // Điều chuyển giữa các outlet (quản lý 23/10/2026, cấu hình cross_outlet_transfer):
+        // "auto" (mặc định) = ưu tiên đủ người mọi outlet: waiter / hostess (và Night đa năng) tự đủ điều kiện thay thế ở các outlet
+        //   transfer_outlets (Gusto ↔ Villa); người outlet chính vẫn được ưu tiên, không rút làm outlet nguồn dưới tối thiểu;
+        // "skills" = chỉ theo năng lực đã khai; "flex_only" = không tự lấy người outlet nhà hàng khác (trừ Night đa năng).
         $nightStaff = new NightStaffService($this);
         $nightOutletIds = $nightStaff->nightOutletIds();
         $parents = $this->outletParents($outlets);
         $stationId = $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY'))?->getKey();
-        $transferPolicy = config('plugins.restaurant-roster.general.scheduling.cross_outlet_transfer', 'flex_only');
+        $transferPolicy = config('plugins.restaurant-roster.general.scheduling.cross_outlet_transfer', 'auto');
+        $transferOutletIds = $outlets->whereIn('code', (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']))
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $transferPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.transfer_positions', ['Waiter', 'Hostess']));
+        // Room Service: chuyên trách theo ca, dự phòng, người đã xác nhận kỹ năng thay thế (Nhân sự Room Service).
+        $roomService = app(RoomServiceStaffService::class);
+        $roomOutletId = $roomService->outletId();
+        $roomStaff = $roomOutletId ? $roomService->effectiveRows($from, $to)->groupBy('employee_id') : collect();
+        // Nam waiter đủ điều kiện luân phiên Night (hồ sơ): Villa / Gusto / Night, không Night cứng, không Room Service cứng, đang bật.
+        $rotationIds = array_flip($nightStaff->groups($from)['rotation']->modelKeys());
         $maleStaffPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.male_staff_positions', ['Waiter']));
 
         // Cấp quản lý: theo cờ "Cấp quản lý" của vị trí (không so tên chức vụ); chỉ tự xếp các ca manager_shift_codes.
@@ -128,12 +139,42 @@ class ProblemBuilder
                 }
             }
 
+            // Room Service: chuyên trách ca → chỉ làm ca đó ở Room Service (hoặc OFF) khi hiệu lực trọn kỳ; dự phòng → ưu tiên thay;
+            // đã xác nhận kỹ năng → đủ điều kiện thay thế. Không ai khác được tự coi là làm được Room Service.
+            $isRoomLead = false;
+
+            foreach ($roomStaff[$employee->getKey()] ?? [] as $row) {
+                if ($row->role === \Botble\RestaurantRoster\Models\RoomServiceStaff::ROLE_LEAD && $row->shift_template_id) {
+                    $isRoomLead = true;
+                    $skills["{$roomOutletId}:{$row->shift_template_id}"] = EmployeeSpec::PRIMARY;
+
+                    if ((! $row->effective_from || $row->effective_from->lte($from)) && (! $row->effective_to || $row->effective_to->gte($to))) {
+                        $fixed = ["{$roomOutletId}:{$row->shift_template_id}"];
+                    }
+                } elseif ($row->role === \Botble\RestaurantRoster\Models\RoomServiceStaff::ROLE_BACKUP) {
+                    $skills["{$roomOutletId}:0"] = EmployeeSpec::PRIMARY;
+                } else {
+                    $skills["{$roomOutletId}:0"] ??= EmployeeSpec::ELIGIBLE;
+                }
+            }
+
             // Khu trực thuộc theo quy tắc chung (vd Kid-Deline: bất kỳ nữ Waiter của Gusto) – không cần khai báo từng người.
             foreach ($childStaff as $childId => $rule) {
                 if ((int) $employee->outlet_id === $rule['parent_id']
                     && ($rule['gender'] === null || $employee->gender === $rule['gender'])
                     && (! $rule['positions'] || in_array($positionNames[(int) $employee->position_id] ?? '', $rule['positions'], true))) {
                     $skills["{$childId}:0"] ??= EmployeeSpec::PRIMARY;
+                }
+            }
+
+            $canTransfer = ! isset($managerPositions[(int) $employee->position_id]) && ! $employee->fixed_shift_template_id && ! $isRoomLead
+                && ($employee->night_role === EmployeeSpec::NIGHT_FLEX || in_array($positionNames[(int) $employee->position_id] ?? '', $transferPositions, true));
+
+            if ($transferPolicy === 'auto' && $canTransfer) {
+                foreach ($transferOutletIds as $o) {
+                    if ($o !== (int) $employee->outlet_id) {
+                        $skills["{$o}:0"] ??= EmployeeSpec::ELIGIBLE;
+                    }
                 }
             }
 
@@ -175,8 +216,12 @@ class ProblemBuilder
                 // Định biên nam = nam waiter: không tính cấp quản lý, chỉ vị trí trong male_staff_positions.
                 isMaleStaff: $employee->gender === 'male' && ! isset($managerPositions[(int) $employee->position_id])
                     && (! $maleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $maleStaffPositions, true)),
-                // Night cố định đã được ca cứng giữ ở Night; chỉ Night đa năng cần đánh dấu cho bộ giải.
-                nightRole: $employee->night_role === EmployeeSpec::NIGHT_FLEX ? EmployeeSpec::NIGHT_FLEX : null,
+                // Night cứng = ca cứng ca đêm (bắt buộc ≥ 1 người / ngày); luân phiên = nam waiter đủ điều kiện (hồ sơ).
+                nightRole: match (true) {
+                    $employee->isNightCore() => EmployeeSpec::NIGHT_CORE,
+                    isset($rotationIds[$employee->getKey()]) => EmployeeSpec::NIGHT_ROTATION,
+                    default => null,
+                },
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {

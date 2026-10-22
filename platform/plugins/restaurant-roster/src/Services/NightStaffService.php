@@ -20,10 +20,11 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
- * Nhân sự Night: Night cố định (core), Night đa năng (flex) và nam waiter luân phiên Night theo tuần.
+ * Nhân sự Night: Night cứng (ca cứng ca đêm, ≥ 1 người / ngày) và nam waiter luân phiên Night theo tuần.
  *
- * Luân phiên: mỗi tuần chọn N người (cấu hình night_rotation_per_week, mặc định 2) trong các nam waiter có năng lực Night
- * (khai báo ở Năng lực nhân viên), không phải Night cố định / đa năng, outlet chính không phải outlet Night.
+ * Luân phiên (quản lý 23/10/2026): mỗi tuần chọn N người (night_rotation_per_week, mặc định 4) trong các nam waiter của
+ * Villa / Gusto / Night (night_rotation_outlets) có năng lực Night, không phải Night cứng (ca cứng ca đêm), không phải Room Service
+ * chuyên trách, đang bật "tham gia luân phiên". Mỗi người 2 đêm liền nhau (3 khi cần đủ 3 người / ngày), hôm sau OFF.
  * Xếp hạng: ít tuần Night trong khoảng lịch sử → không làm tuần liền trước → tránh dồn cùng một outlet;
  * loại người có ca khóa trùng tuần, nghỉ nhiều ngày, hoặc rút đi làm outlet chính thiếu ngày công nam / tổng tối thiểu.
  * Quản lý duyệt danh sách (có thể sửa, chọn ngoài đề xuất phải ghi lý do) – mọi thay đổi ghi nhật ký.
@@ -38,7 +39,7 @@ class NightStaffService
 
     public function perWeek(): int
     {
-        return max(0, (int) config('plugins.restaurant-roster.general.scheduling.night_rotation_per_week', 2));
+        return max(0, (int) config('plugins.restaurant-roster.general.scheduling.night_rotation_per_week', 4));
     }
 
     /** @return Collection<int, ShiftTemplate> */
@@ -87,28 +88,54 @@ class NightStaffService
             ->pluck('employee_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
     }
 
-    /**
-     * Ba nhóm nhân sự Night.
-     *
-     * @return array{core: Collection, flex: Collection, rotation: Collection, not_skilled: Collection}
-     */
-    public function groups(): array
+    /** @return int[] outlet nguồn của người luân phiên Night (Villa, Gusto, Night) */
+    public function rotationOutletIds(): array
     {
-        $nightOutlets = $this->nightOutletIds();
+        return Outlet::query()->whereIn('code', (array) config('plugins.restaurant-roster.general.scheduling.night_rotation_outlets', ['GUSTO', 'VILLA', 'NIGHT']))
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Nhóm nhân sự Night (đọc từ database mỗi lần – đổi outlet / ca cứng / Room Service / bật tắt không cần sửa code).
+     *
+     * @return array{core: Collection, room_service: Collection, rotation: Collection, disabled: Collection, not_skilled: Collection}
+     */
+    public function groups(?CarbonInterface $week = null): array
+    {
+        $weekStart = CarbonImmutable::parse($week ?? CarbonImmutable::today())->startOfWeek();
         $skilled = array_flip($this->nightSkilledIds());
+        $sources = $this->rotationOutletIds();
+        $roomLeads = app(RoomServiceStaffService::class)->leadIds($weekStart, $weekStart->addDays(6));
         $employees = Employee::query()->where('status', BaseStatusEnum::PUBLISHED)->with(['outlet', 'position', 'scheduleGroup', 'fixedShift'])->orderBy('code')->get();
-        // Luân phiên: nam waiter không có ca cứng, không phải Night đa năng, không thuộc outlet Night, không phải thực tập sinh.
-        $rotationPool = $employees->filter(fn (Employee $e) => ! $e->night_role && ! $e->fixed_shift_template_id && ! $e->is_trainee
-            && ! in_array((int) $e->outlet_id, $nightOutlets, true) && $this->isMaleWaiter($e));
+        // Hồ sơ đủ điều kiện: nam waiter outlet nguồn, không có ca cứng (gồm Night cứng), không Room Service chuyên trách, không thực tập.
+        $profile = $employees->filter(fn (Employee $e) => ! $e->fixed_shift_template_id && ! $e->is_trainee && ! in_array((int) $e->getKey(), $roomLeads, true)
+            && in_array((int) $e->outlet_id, $sources, true) && $this->isMaleWaiter($e));
 
         return [
-            // Night cố định = ca cứng là ca đêm (quản lý chọn ở mục Ca cứng của nhân viên).
+            // Night cứng = ca cứng là ca đêm (quản lý chọn ở mục Ca cứng của nhân viên).
             'core' => $employees->filter(fn (Employee $e) => $e->isNightCore())->values(),
-            'flex' => $employees->filter(fn (Employee $e) => $e->night_role === Employee::NIGHT_FLEX && ! $e->isNightCore())->values(),
-            'rotation' => $rotationPool->filter(fn (Employee $e) => isset($skilled[$e->getKey()]))->values(),
+            'room_service' => $employees->filter(fn (Employee $e) => in_array((int) $e->getKey(), $roomLeads, true))->values(),
+            'rotation' => $profile->filter(fn (Employee $e) => isset($skilled[$e->getKey()]) && $e->night_rotation_enabled !== false)->values(),
+            // Đã tắt "tham gia luân phiên Night" trong hồ sơ / trang Nhân sự Night.
+            'disabled' => $profile->filter(fn (Employee $e) => isset($skilled[$e->getKey()]) && $e->night_rotation_enabled === false)->values(),
             // Nam waiter chưa khai báo năng lực Night: không được chọn luân phiên (không tự gán năng lực).
-            'not_skilled' => $rotationPool->reject(fn (Employee $e) => isset($skilled[$e->getKey()]))->values(),
+            'not_skilled' => $profile->reject(fn (Employee $e) => isset($skilled[$e->getKey()]))->values(),
         ];
+    }
+
+    /** Bật / tắt tư cách luân phiên Night của một người (ghi nhật ký). */
+    public function setRotationEnabled(Employee $employee, bool $enabled, ?int $userId, ?string $reason = null): void
+    {
+        $before = (bool) ($employee->night_rotation_enabled ?? true);
+
+        if ($before === $enabled) {
+            return;
+        }
+
+        $employee->update(['night_rotation_enabled' => $enabled]);
+        ChangeLog::query()->create(['employee_id' => $employee->getKey(), 'date' => now()->toDateString(), 'action' => 'night_rotation',
+            'before' => ['night_rotation_enabled' => $before], 'after' => ['night_rotation_enabled' => $enabled],
+            'reason' => mb_substr(($enabled ? 'Bật' : 'Tắt') . ' tham gia luân phiên Night' . ($reason ? ': ' . $reason : ''), 0, 500), 'user_id' => $userId]);
     }
 
     /**
@@ -151,16 +178,23 @@ class NightStaffService
     /**
      * Đề xuất người luân phiên cho một tuần: ứng viên (điểm, lịch sử), người bị loại + lý do, người được chọn, cảnh báo.
      *
-     * @param int[] $exclude không xét những người này (vd đã được chọn ở tuần khác của cùng lần đề xuất)
+     * @param array<int, int> $planned số tuần đã được xếp (đề xuất / duyệt) ở các tuần trước trong cùng lần lập lịch nhiều tuần,
+     *                              người có trong tuần liền trước nằm trong $lastWeek – được tính như lịch sử (xếp sau, không bị loại)
+     * @param int[] $lastWeek
      */
-    public function propose(CarbonInterface $week, array $exclude = []): array
+    public function propose(CarbonInterface $week, array $planned = [], array $lastWeek = []): array
     {
         $weekStart = CarbonImmutable::parse($week)->startOfWeek();
         $weekEnd = $weekStart->addDays(6);
-        $groups = $this->groups();
-        $pool = $groups['rotation']->reject(fn (Employee $e) => in_array($e->getKey(), $exclude, true));
+        $groups = $this->groups($weekStart);
+        $pool = $groups['rotation'];
         $ids = $pool->modelKeys();
         $history = $this->history($ids, $weekStart);
+
+        foreach ($history as $id => $row) {
+            $history[$id]['weeks'] += $planned[$id] ?? 0;
+            $history[$id]['last_week'] = $row['last_week'] || in_array($id, $lastWeek, true);
+        }
         [$hard] = $this->builder->availability($ids, $weekStart, $weekEnd);
         $cells = Shift::query()->whereIn('employee_id', $ids)->whereDate('date', '>=', $weekStart->toDateString())->whereDate('date', '<=', $weekEnd->toDateString())
             ->with('template:id,code')->get()->groupBy('employee_id');
@@ -174,14 +208,43 @@ class NightStaffService
             $own = $cells[$id] ?? collect();
             $offDays = collect(array_keys($hard[$id] ?? []))
                 ->merge($own->where('kind', '!=', Shift::KIND_SHIFT)->map(fn (Shift $s) => $s->date->toDateString()))->unique()->count();
-            $lockedDay = $own->first(fn (Shift $s) => $s->kind === Shift::KIND_SHIFT && $s->is_locked && ! in_array((int) $s->shift_template_id, $nightIds, true));
-            $nights = max(0, 7 - max((int) $employee->days_off_per_week, $offDays));
+            // Ngày không làm Night được: OFF / nghỉ đã duyệt, ô khóa ca ngày. Cần 2 đêm liền nhau và hôm sau không phải ca khóa.
+            $blocked = [];
+            $lockedWork = [];
+
+            foreach ($own as $s) {
+                $d = $s->date->toDateString();
+
+                if ($s->kind !== Shift::KIND_SHIFT || ($s->is_locked && ! in_array((int) $s->shift_template_id, $nightIds, true))) {
+                    $blocked[$d] = true;
+                }
+
+                if ($s->kind === Shift::KIND_SHIFT && $s->is_locked && ! in_array((int) $s->shift_template_id, $nightIds, true)) {
+                    $lockedWork[$d] = $s;
+                }
+            }
+
+            foreach (array_keys($hard[$id] ?? []) as $d) {
+                $blocked[$d] = true;
+            }
+
+            $nights = 0;
+            $pairs = 0;
+
+            for ($k = 0; $k < 7; $k++) {
+                $d = $weekStart->addDays($k)->toDateString();
+                $nights += isset($blocked[$d]) ? 0 : 1;
+                $next = $weekStart->addDays($k + 1)->toDateString();
+                $after = $weekStart->addDays($k + 2)->toDateString();
+                $pairs += ($k < 6 && ! isset($blocked[$d]) && ! isset($blocked[$next]) && ! isset($lockedWork[$after])) ? 1 : 0;
+            }
+
             $row = ['employee' => $employee, 'outlet_id' => (int) $employee->outlet_id, 'history' => $history[$id], 'nights' => $nights, 'off_days' => $offDays];
 
-            if ($lockedDay) {
-                $excluded[] = $row + ['reason' => "Có ca khóa {$lockedDay->template?->code} ngày {$lockedDay->date->format('d/m')} trong tuần"];
-            } elseif ($nights < 3) {
-                $excluded[] = $row + ['reason' => "Nghỉ / OFF {$offDays} ngày trong tuần – chỉ còn {$nights} đêm làm được"];
+            if (! $pairs) {
+                $first = collect($lockedWork)->first();
+                $excluded[] = $row + ['reason' => 'Không có 2 đêm liền nhau làm được trong tuần'
+                    . ($first ? " (ca khóa {$first->template?->code} ngày {$first->date->format('d/m')})" : " (OFF / nghỉ {$offDays} ngày)")];
             } else {
                 // Ít tuần Night trước → ưu tiên; vừa làm tuần trước → tránh lặp; nghỉ nhiều ngày → xếp sau.
                 $row['score'] = $history[$id]['weeks'] * 10 + ($history[$id]['last_week'] ? 25 : 0) + (5 - min(5, $nights));
@@ -246,6 +309,11 @@ class NightStaffService
         return function (Employee $employee) use ($dates, $resolver, $templates, &$cache): ?string {
             $outletId = (int) $employee->outlet_id;
 
+            // Người của outlet Night: không rút người khỏi nhà hàng nào.
+            if (in_array($outletId, $this->nightOutletIds(), true)) {
+                return null;
+            }
+
             if (! isset($cache[$outletId])) {
                 $need = ['total' => 0, 'male' => 0];
 
@@ -271,7 +339,8 @@ class NightStaffService
             }
 
             $c = &$cache[$outletId];
-            $taken = 7 - (int) $employee->days_off_per_week;
+            // Đi Night 2 đêm liền nhau (OFF sau đêm là một trong các ngày OFF tuần): outlet nguồn mất 2 ngày công.
+            $taken = 2;
             $removed = array_sum($c['days']) + $taken;
 
             if ($c['male'] - $removed < $c['need']['male']) {
@@ -295,7 +364,7 @@ class NightStaffService
      */
     public function planFor(CarbonInterface $from, CarbonInterface $to): array
     {
-        if (! $this->groups()['rotation']->count() && ! NightRotation::query()->exists()) {
+        if (! $this->groups($from)['rotation']->count() && ! NightRotation::query()->exists()) {
             return ['plan' => [], 'weeks' => []];
         }
 
@@ -303,6 +372,7 @@ class NightStaffService
         $weeks = [];
         $start = CarbonImmutable::parse($from)->startOfWeek();
         $taken = [];
+        $counts = [];
 
         for ($week = $start; $week->lte(CarbonImmutable::parse($to)); $week = $week->addWeek()) {
             $rows = NightRotation::query()->whereDate('week_start', $week->toDateString())->where('status', '!=', NightRotation::STATUS_PROPOSED)->pluck('employee_id');
@@ -311,12 +381,18 @@ class NightStaffService
                 $ids = $rows->map(fn ($id) => (int) $id)->all();
                 $weeks[$week->toDateString()] = ['source' => 'approved', 'ids' => $ids, 'warnings' => []];
             } else {
-                $proposal = $this->propose($week, $taken);
+                // Tuần chưa duyệt: đề xuất có tính cả các tuần trước trong cùng lần lập lịch (luân phiên công bằng nhiều tuần).
+                $proposal = $this->propose($week, $counts, $taken);
                 $ids = array_map(fn ($row) => $row['employee']->getKey(), $proposal['selected']);
                 $weeks[$week->toDateString()] = ['source' => 'proposed', 'ids' => $ids, 'warnings' => $proposal['warnings']];
             }
 
             $taken = $ids;
+
+            // Tuần đã duyệt đã nằm trong lịch sử (database); tuần chỉ đề xuất thì cộng tạm cho các tuần sau.
+            foreach ($rows->isEmpty() ? $ids : [] as $id) {
+                $counts[$id] = ($counts[$id] ?? 0) + 1;
+            }
 
             foreach (CarbonPeriod::create($week, $week->addDays(6)) as $day) {
                 $plan[$day->toDateString()] = $ids;
@@ -324,6 +400,55 @@ class NightStaffService
         }
 
         return ['plan' => $plan, 'weeks' => $weeks];
+    }
+
+    /**
+     * Xem trước ảnh hưởng của một danh sách luân phiên (chưa lưu): người bị loại và lý do, outlet nguồn, số lượt Night cần so với
+     * số lượt 4 người × 2–3 đêm làm được (theo ngày làm tối đa của Night cứng).
+     *
+     * @param int[] $employeeIds
+     * @return string[] cảnh báo dễ hiểu (rỗng = hợp lệ)
+     */
+    public function check(CarbonInterface $week, array $employeeIds): array
+    {
+        $weekStart = CarbonImmutable::parse($week)->startOfWeek();
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+        $proposal = $this->propose($weekStart);
+        $excluded = collect($proposal['excluded'])->keyBy(fn ($row) => $row['employee']->getKey());
+        $pool = $this->groups($weekStart)['rotation']->keyBy('id');
+        $warnings = [];
+
+        if (count($employeeIds) !== $this->perWeek()) {
+            $warnings[] = sprintf('Đang chọn %d người – quy tắc là %d người luân phiên mỗi tuần.', count($employeeIds), $this->perWeek());
+        }
+
+        $check = $this->sourceChecker($weekStart);
+
+        foreach ($employeeIds as $id) {
+            $employee = $pool[$id] ?? Employee::query()->find($id);
+
+            if (! isset($pool[$id])) {
+                $warnings[] = 'Không thể chọn ' . ($employee?->name ?? "#{$id}") . ': không đủ điều kiện luân phiên (Night cứng / Room Service chuyên trách / chưa có năng lực Night / đã tắt luân phiên).';
+            } elseif ($row = $excluded[$id] ?? null) {
+                $warnings[] = "Không thể chọn {$employee->name} vì {$row['reason']} (cần lý do ngoại lệ để duyệt).";
+            } elseif ($problem = $check($employee)) {
+                $warnings[] = "Không thể chọn {$employee->name} vì {$problem}.";
+            }
+        }
+
+        // Lượt Night cần cho người luân phiên: 3 người × 7 ngày − số đêm tối đa của Night cứng.
+        $daily = $this->dailyStaffing($weekStart)['days'];
+        $need = array_sum(array_column($daily, 'min'));
+        $coreNights = $this->groups($weekStart)['core']->sum(fn (Employee $e) => max(0, 7 - (int) $e->days_off_per_week));
+        $slots = max(0, $need - $coreNights);
+        [$low, $high] = [count($employeeIds) * 2, count($employeeIds) * 3];
+
+        if ($need && ($slots < $low || $slots > $high)) {
+            $warnings[] = sprintf('Night cần khoảng %d lượt luân phiên trong tuần (%d − %d đêm của Night cứng), %d người làm được %d–%d lượt.',
+                $slots, $need, $coreNights, count($employeeIds), $low, $high);
+        }
+
+        return $warnings;
     }
 
     /**
@@ -347,12 +472,12 @@ class NightStaffService
 
         $proposal = $this->propose($weekStart);
         $valid = collect([...$proposal['selected'], ...$proposal['candidates']])->map(fn ($row) => $row['employee']->getKey())->all();
-        $rotationIds = $this->groups()['rotation']->modelKeys();
+        $rotationIds = $this->groups($weekStart)['rotation']->modelKeys();
         $exceptions = [];
 
         foreach ($employeeIds as $id) {
             if (! in_array($id, $rotationIds, true)) {
-                throw new InvalidArgumentException('Nhân viên #' . $id . ' không đủ điều kiện luân phiên Night (cần nam waiter có năng lực Night, không phải Night cố định / đa năng).');
+                throw new InvalidArgumentException('Nhân viên #' . $id . ' không đủ điều kiện luân phiên Night (cần nam waiter Villa / Gusto / Night có năng lực Night, không phải Night cứng / Room Service chuyên trách, đang bật luân phiên).');
             }
 
             if (! in_array($id, $valid, true)) {
@@ -405,6 +530,7 @@ class NightStaffService
             ->whereDate('date', '>=', $weekStart->toDateString())->whereDate('date', '<=', $weekStart->addDays(6)->toDateString())
             ->with('employee:id,name,night_role,fixed_shift_template_id', 'employee.fixedShift:id,start_time')->get()->groupBy(fn (Shift $s) => $s->date->toDateString());
         $days = [];
+        $perPerson = array_fill_keys($planned, 0);
 
         foreach (CarbonPeriod::create($weekStart, $weekStart->addDays(6)) as $day) {
             $date = $day->toDateString();
@@ -419,23 +545,26 @@ class NightStaffService
                 }
             }
 
-            $people = ['core' => [], 'flex' => [], 'rotation' => [], 'other' => []];
+            $people = ['core' => [], 'rotation' => [], 'other' => []];
 
             foreach ($shifts[$date] ?? [] as $shift) {
                 $role = match (true) {
                     (bool) $shift->employee?->isNightCore() => 'core',
-                    $shift->employee?->night_role === Employee::NIGHT_FLEX => 'flex',
                     in_array((int) $shift->employee_id, $planned, true) => 'rotation',
                     default => 'other',
                 };
                 $people[$role][] = (string) $shift->employee?->name;
+
+                if ($role === 'rotation') {
+                    $perPerson[(int) $shift->employee_id] = ($perPerson[(int) $shift->employee_id] ?? 0) + 1;
+                }
             }
 
             $actual = array_sum(array_map('count', $people));
             $days[$date] = ['date' => $day, 'min' => $min, 'target' => $target, 'people' => $people, 'actual' => $actual,
-                'short' => max(0, $min - $actual), 'over' => max(0, $actual - max($target, $min))];
+                'short' => max(0, $min - $actual), 'over' => max(0, $actual - max($target, $min)), 'has_core' => (bool) $people['core']];
         }
 
-        return $days;
+        return ['days' => $days, 'per_person' => $perPerson];
     }
 }

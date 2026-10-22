@@ -338,10 +338,268 @@ final class HeuristicSolver implements SolverInterface
         };
     }
 
+    /**
+     * Khung Night cả tuần, giải cùng lúc (quản lý 23/10/2026): Night đúng N người / ngày (định biên), ≥ 1 Night cứng / ngày,
+     * mỗi người luân phiên đã duyệt một cụm 2–3 đêm liền nhau (ưu tiên 2), hôm sau OFF.
+     * Thử mọi cách chọn ngày OFF của Night cứng (không trùng nhau quá mức), rồi ghép cụm đêm của người luân phiên cho vừa đủ
+     * số người còn thiếu từng ngày (tìm kiếm có cắt nhánh). Có lời giải thì đặt sẵn làm khung ban đầu; không có thì để bộ giải
+     * tìm phương án tốt nhất và báo thiếu.
+     */
+    private function seedNightWeeks(ScheduleState $state): void
+    {
+        $problem = $state->problem;
+
+        if (! $problem->nightPlan) {
+            return;
+        }
+
+        $cores = array_keys(array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isNightCore()));
+        $weeks = [];
+
+        foreach ($state->scopeIndexes() as $i) {
+            $weeks[$state->weekKey($i)][] = $i;
+        }
+
+        foreach ($weeks as $days) {
+            // Ngày có định biên ca đêm: [i => [outlet, ca, số người]].
+            $need = [];
+
+            foreach ($days as $i) {
+                foreach ($state->requirements[$i] ?? [] as $r) {
+                    if ($r->min > 0 && $problem->shifts[$r->shiftId]->category() === 'night') {
+                        $need[$i] = [$r->outletId, $r->shiftId, $r->min];
+
+                        break;
+                    }
+                }
+            }
+
+            if (! $need) {
+                continue;
+            }
+
+            $nightDays = array_keys($need);
+            $rotation = [];
+
+            foreach ($nightDays as $i) {
+                foreach ($problem->nightPlan[$state->dates[$i]] ?? [] as $id) {
+                    if (isset($state->nightRotation[$id])) {
+                        $rotation[$id] = true;
+                    }
+                }
+            }
+
+            $rotation = array_keys($rotation);
+            // Ngày người này làm ca đêm được: không nghỉ đã duyệt, không có ô cố định khác ca đêm.
+            $free = function (int $e, int $i) use ($state, $problem, $need): ?bool {
+                if (isset($problem->hardUnavailable[$e][$state->dates[$i]])) {
+                    return false;
+                }
+
+                $fixed = $state->fixed[$e][$i] ?? null;
+
+                if ($fixed) {
+                    return $fixed->isWorking() && $fixed->outletId === $need[$i][0] && $fixed->shiftId === $need[$i][1] ? null : false;
+                }
+
+                return true;
+            };
+
+            // Phương án ngày làm của từng Night cứng: bỏ đúng số ngày OFF tuần trong các ngày rảnh (ngày cố định đêm luôn làm).
+            $coreOptions = [];
+
+            foreach ($cores as $e) {
+                $forced = array_values(array_filter($nightDays, fn ($i) => $free($e, $i) === null));
+                $open = array_values(array_filter($nightDays, fn ($i) => $free($e, $i) === true));
+                $slots = max(0, min(count($nightDays), $problem->employees[$e]->maxWorkDaysPerWeek()) - count($forced));
+                $coreOptions[$e] = array_map(fn ($combo) => [...$forced, ...$combo], $this->combinations($open, min($slots, count($open))));
+            }
+
+            $best = null;
+            $budget = 300000;
+
+            foreach ($this->product($coreOptions) as $choice) {
+                $remaining = [];
+                $ok = true;
+
+                foreach ($nightDays as $i) {
+                    $cover = 0;
+
+                    foreach ($choice as $workDays) {
+                        $cover += in_array($i, $workDays, true) ? 1 : 0;
+                    }
+
+                    $remaining[$i] = $need[$i][2] - $cover;
+
+                    if (($cores && $cover < 1) || $remaining[$i] < 0) {
+                        $ok = false;
+
+                        break;
+                    }
+                }
+
+                if (! $ok || array_sum($remaining) > 3 * count($rotation)) {
+                    continue;
+                }
+
+                $blocks = $this->tileRotation($state, $rotation, $nightDays, $remaining, $free, $budget);
+
+                if ($blocks !== null) {
+                    $threes = count(array_filter($blocks, fn ($b) => count($b) === 3));
+
+                    if ($best === null || $threes < $best[2]) {
+                        $best = [$choice, $blocks, $threes];
+                    }
+
+                    if ($threes === max(0, array_sum($remaining) - 2 * count($rotation))) {
+                        break;
+                    }
+                }
+
+                if ($budget <= 0) {
+                    break;
+                }
+            }
+
+            if (! $best) {
+                continue;
+            }
+
+            [$choice, $blocks] = $best;
+
+            // Nối theo khóa (mã nhân viên) – không dùng [...] vì sẽ đánh số lại khóa.
+            foreach ($choice + $blocks as $e => $workDays) {
+                unset($this->plannedOff[$e]);
+
+                foreach ($days as $i) {
+                    if (! in_array($i, $workDays, true)) {
+                        continue;
+                    }
+
+                    [$o, $s] = $need[$i];
+
+                    if (! $state->isOccupied($e, $i) && ! $state->violation($e, $i, $o, $s)) {
+                        $state->place($e, $i, $o, $s);
+                    }
+                }
+
+                // Hôm sau đêm cuối: OFF (người luân phiên); Night cứng: ngày không làm là ngày OFF tuần.
+                if (isset($blocks[$e]) && ($after = max($workDays) + 1) <= max($days)) {
+                    $this->plannedOff[$e][$after] = true;
+                } elseif (! isset($blocks[$e])) {
+                    foreach (array_diff($nightDays, $workDays) as $i) {
+                        $this->plannedOff[$e][$i] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Ghép cho mỗi người luân phiên một cụm 2–3 đêm liền nhau sao cho từng ngày vừa đủ số người còn thiếu.
+     *
+     * @return array<int, int[]>|null [employeeId => ngày làm đêm]
+     */
+    private function tileRotation(ScheduleState $state, array $people, array $nightDays, array $remaining, callable $free, int &$budget): ?array
+    {
+        if (! $people) {
+            return array_sum($remaining) === 0 ? [] : null;
+        }
+
+        $e = array_shift($people);
+        $feasible = false;
+
+        foreach ([2, 3] as $length) {
+            foreach ($nightDays as $start) {
+                if (--$budget <= 0) {
+                    return null;
+                }
+
+                $block = [];
+
+                for ($k = 0; $k < $length; $k++) {
+                    $block[] = $start + $k;
+                }
+
+                if (array_diff($block, $nightDays) || array_filter($block, fn ($i) => ($remaining[$i] ?? 0) < 1 || $free($e, $i) === false)) {
+                    continue;
+                }
+
+                // Hôm sau cụm phải OFF được: không có ô cố định đang làm.
+                $after = $state->fixed[$e][$start + $length] ?? null;
+
+                if ($after && $after->isWorking()) {
+                    continue;
+                }
+
+                $left = $remaining;
+
+                foreach ($block as $i) {
+                    $left[$i]--;
+                }
+
+                // Cắt nhánh: những người còn lại (mỗi người tối đa 3 đêm) phải gánh đủ phần còn thiếu.
+                if (array_sum($left) > 3 * count($people)) {
+                    continue;
+                }
+
+                $feasible = true;
+
+                $rest = $this->tileRotation($state, $people, $nightDays, $left, $free, $budget);
+
+                if ($rest !== null) {
+                    return [$e => $block] + $rest;
+                }
+            }
+        }
+
+        // Người không có cụm đêm nào làm được (OFF / ca khóa): bỏ qua người này.
+        return $feasible ? null : $this->tileRotation($state, $people, $nightDays, $remaining, $free, $budget);
+    }
+
+    /** @return array<int, int[]> mọi tổ hợp $k phần tử */
+    private function combinations(array $items, int $k): array
+    {
+        if ($k === 0) {
+            return [[]];
+        }
+
+        $result = [];
+
+        foreach ($items as $index => $item) {
+            foreach ($this->combinations(array_slice($items, $index + 1), $k - 1) as $tail) {
+                $result[] = [$item, ...$tail];
+            }
+        }
+
+        return $result;
+    }
+
+    /** @return \Generator<array<int, int[]>> tích Descartes các phương án của từng người */
+    private function product(array $options): \Generator
+    {
+        if (! $options) {
+            yield [];
+
+            return;
+        }
+
+        $key = array_key_first($options);
+        $first = $options[$key];
+        unset($options[$key]);
+
+        foreach ($first as $choice) {
+            foreach ($this->product($options) as $rest) {
+                yield [$key => $choice] + $rest;
+            }
+        }
+    }
+
     private function construct(ScheduleState $state, float $deadline): bool
     {
         $this->planOffPairs($state);
         $this->planNightDuty($state);
+        $this->seedNightWeeks($state);
 
         // Thứ tự: nam tối thiểu → nữ waiter tối thiểu → vị trí (Hostess, quản lý) → người tối thiểu → phủ Lobby tối thiểu → ...
         // Nữ waiter trực tiếp được lấp TRƯỚC bước giao (L): giao (L) chỉ lấy người dư so với tối thiểu của outlet (tổng, nam, nữ, vị trí).

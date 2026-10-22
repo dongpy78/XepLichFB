@@ -107,7 +107,7 @@ class NightAndScheduleGroupTest extends TestCase
     }
 
     /**
-     * Gusto, Villa: mỗi outlet 5 nam waiter (2 người đầu có năng lực Night) + 3 nữ – đủ ngày công khi rút 1–2 người đi Night.
+     * Gusto, Villa: mỗi outlet 5 nam waiter (3 người đầu có năng lực Night) + 3 nữ – đủ ngày công khi rút người đi Night 2 đêm.
      *
      * @return array<string, Employee>
      */
@@ -124,8 +124,11 @@ class NightAndScheduleGroupTest extends TestCase
                 $this->employee($outlet[0] . 'F' . $k, $outlet, 'female');
             }
 
-            $this->nightSkill($people[$outlet[0] . '1']);
-            $this->nightSkill($people[$outlet[0] . '2']);
+            foreach ([1, 2, 3] as $k) {
+                if (isset($people[$outlet[0] . $k])) {
+                    $this->nightSkill($people[$outlet[0] . $k]);
+                }
+            }
         }
 
         return $people;
@@ -148,26 +151,139 @@ class NightAndScheduleGroupTest extends TestCase
         return $codes;
     }
 
-    /** 9.3: thuật toán không tự lấy người outlet nhà hàng khác; Night (luân phiên) vẫn được; Night đa năng giữ năng lực điều chuyển. */
-    public function test_builder_blocks_cross_outlet_transfer_except_night_and_flex(): void
+    /**
+     * Điều chuyển (quản lý 23/10/2026: ưu tiên đủ người các outlet): waiter / hostess tự đủ điều kiện thay thế
+     * ở Gusto ↔ Villa mà không cần khai năng lực; cấp quản lý, người có ca cứng, vị trí khác thì không.
+     */
+    public function test_waiters_and_hostess_may_transfer_between_restaurants(): void
     {
-        $gustoMale = $this->employee('G1', 'GUSTO');
-        EmployeeSkill::query()->create(['employee_id' => $gustoMale->getKey(), 'outlet_id' => $this->outlets['VILLA']->getKey(), 'level' => 'eligible']);
-        $this->nightSkill($gustoMale);
-        $flex = $this->employee('N1', 'NIGHT', extra: ['night_role' => 'flex']);
-        EmployeeSkill::query()->create(['employee_id' => $flex->getKey(), 'outlet_id' => $this->outlets['VILLA']->getKey(), 'level' => 'eligible']);
+        $gustoWaiter = $this->employee('G1', 'GUSTO');
+        $this->nightSkill($gustoWaiter);
+        $hostess = $this->employee('GH', 'GUSTO', 'female', ['position_id' => Position::query()->create(['name' => 'Hostess', 'status' => 'published'])->getKey()]);
+        $captain = $this->employee('GC', 'GUSTO', extra: ['position_id' => Position::query()->create(['name' => 'Captain', 'is_manager' => true, 'status' => 'published'])->getKey()]);
+        $bartender = $this->employee('GB', 'GUSTO', extra: ['position_id' => Position::query()->create(['name' => 'Bartender', 'status' => 'published'])->getKey()]);
 
         $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
-        [$villa, $night, $m6, $n] = [$this->outlets['VILLA']->getKey(), $this->outlets['NIGHT']->getKey(), $this->templates['M6']->getKey(), $this->templates['N']->getKey()];
+        [$villa, $gusto, $night, $m6, $n] = [$this->outlets['VILLA']->getKey(), $this->outlets['GUSTO']->getKey(), $this->outlets['NIGHT']->getKey(), $this->templates['M6']->getKey(), $this->templates['N']->getKey()];
+        $level = fn (Employee $e, int $outlet, int $shift) => $problem->employees[$e->getKey()]->skillLevel($outlet, $shift);
 
-        $this->assertNull($problem->employees[$gustoMale->getKey()]->skillLevel($villa, $m6), 'Không tự điều chuyển nam Gusto sang Villa');
-        $this->assertNotNull($problem->employees[$gustoMale->getKey()]->skillLevel($night, $n), 'Vẫn luân phiên Night được');
-        $this->assertNotNull($problem->employees[$flex->getKey()]->skillLevel($villa, $m6), 'Night đa năng được điều chuyển bù nhà hàng');
-        $this->assertTrue($problem->employees[$flex->getKey()]->isNightFlex());
-        $this->assertTrue($problem->employees[$gustoMale->getKey()]->countsAsMale(), 'Nam waiter');
+        $this->assertSame('eligible', $level($gustoWaiter, $villa, $m6), 'Waiter Gusto được điều chuyển sang Villa');
+        $this->assertSame('primary', $level($gustoWaiter, $gusto, $m6), 'Outlet chính vẫn là chuyên trách (ưu tiên)');
+        $this->assertSame('eligible', $level($hostess, $villa, $m6), 'Hostess được điều chuyển');
+        $this->assertNull($level($captain, $villa, $m6), 'Cấp quản lý không tự điều chuyển');
+        $this->assertNull($level($bartender, $villa, $m6), 'Vị trí khác chỉ theo năng lực đã khai');
+        $this->assertNotNull($level($gustoWaiter, $night, $n), 'Vẫn luân phiên Night được');
+        $this->assertTrue($problem->employees[$gustoWaiter->getKey()]->countsAsMale(), 'Nam waiter');
     }
 
-    /** 9.9: đề xuất 2 người ít tuần Night nhất, chia giữa các outlet. */
+    /**
+     * Quy tắc Night (23/10/2026) đi qua đường dữ liệu thật (database → ProblemBuilder → bộ giải): 2 Night cứng + 4 người luân phiên
+     * đã duyệt; Night đúng 3 người / ngày, ≥ 1 Night cứng / ngày, mỗi người luân phiên 2–3 đêm liền nhau rồi OFF;
+     * người luân phiên từ outlet Night cũng được chọn; Room Service chuyên trách không làm Night.
+     */
+    public function test_night_rules_end_to_end(): void
+    {
+        $people = $this->restaurants();
+
+        foreach (['NC1', 'NC2'] as $code) {
+            $this->nightSkill($this->employee($code, 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]));
+        }
+
+        $nightWaiter = $this->employee('NW1', 'NIGHT');
+        $this->nightSkill($nightWaiter);
+        $planned = [$people['G1'], $people['G2'], $people['V1'], $nightWaiter];
+        app(NightStaffService::class)->save(Carbon::parse(self::WEEK), array_map(fn ($e) => $e->getKey(), $planned), NightRotation::STATUS_APPROVED, 1);
+
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, ['time_limit_seconds' => 90, 'max_iterations' => 200000]);
+        $result = (new \Botble\RestaurantRoster\Scheduling\HeuristicSolver())->solve($problem);
+        $n = $this->templates['N']->getKey();
+        $core = Employee::query()->whereIn('code', ['NC1', 'NC2'])->pluck('id')->all();
+        $at = fn (int $id, string $date) => collect($result->assignments)->first(fn ($r) => $r['employee_id'] === $id && $r['date'] === $date && $r['kind'] === 'shift');
+
+        foreach (\Carbon\CarbonPeriod::create(self::WEEK, Carbon::parse(self::WEEK)->addDays(6)) as $day) {
+            $night = array_filter($result->assignments, fn ($r) => $r['date'] === $day->toDateString() && $r['shift_id'] === $n);
+            $this->assertCount(3, $night, $day->format('d/m') . ': Night đúng 3 người');
+            $this->assertNotEmpty(array_filter($night, fn ($r) => in_array($r['employee_id'], $core, true)), $day->format('d/m') . ': có Night cứng');
+        }
+
+        foreach ($planned as $employee) {
+            $dates = collect($result->assignments)->filter(fn ($r) => $r['employee_id'] === $employee->getKey() && $r['shift_id'] === $n)->pluck('date')->sort()->values();
+            $this->assertContains($dates->count(), [2, 3], "{$employee->code}: 2–3 đêm");
+            $this->assertSame($dates->count() - 1, (int) Carbon::parse($dates->first())->diffInDays(Carbon::parse($dates->last())), "{$employee->code}: các đêm liền nhau");
+            $after = Carbon::parse($dates->last())->addDay()->toDateString();
+            $this->assertTrue($after > Carbon::parse(self::WEEK)->addDays(6)->toDateString() || $at($employee->getKey(), $after) === null, "{$employee->code}: hôm sau đêm cuối OFF");
+        }
+
+        $this->assertSame(0, (int) ($result->solverMetadata['objective']['hard'] ?? 0));
+    }
+
+    /** 9.1: danh sách luân phiên loại Night cứng, Room Service chuyên trách, người đã tắt luân phiên; nhận cả nam waiter outlet Night. */
+    public function test_rotation_pool_excludes_core_room_service_and_disabled(): void
+    {
+        $people = $this->restaurants();
+        $this->nightSkill($this->employee('NC1', 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]));
+        $this->nightSkill($this->employee('NW1', 'NIGHT'));
+        app(\Botble\RestaurantRoster\Services\RoomServiceStaffService::class)->save(['employee_id' => $people['G3']->getKey(), 'role' => 'lead',
+            'shift_template_id' => $this->templates['M6']->getKey(), 'effective_from' => '2030-01-01'], 1);
+        $service = app(NightStaffService::class);
+        $service->setRotationEnabled($people['V3'], false, 1, 'Xin tạm nghỉ luân phiên');
+
+        $groups = $service->groups(Carbon::parse(self::WEEK));
+        $codes = fn ($list) => $list->pluck('code')->sort()->values()->all();
+
+        $this->assertSame(['G1', 'G2', 'NW1', 'V1', 'V2'], $codes($groups['rotation']));
+        $this->assertSame(['NC1'], $codes($groups['core']));
+        $this->assertSame(['G3'], $codes($groups['room_service']));
+        $this->assertSame(['V3'], $codes($groups['disabled']));
+        $this->assertNotNull(ChangeLog::query()->where('employee_id', $people['V3']->getKey())->where('action', 'night_rotation')->first(), 'Bật / tắt có nhật ký');
+    }
+
+    /** 9.14 + 9.15: đổi người chuyên trách Room Service – giữ lịch sử, liệt kê ca cần xem lại, không tự sửa lịch đã công bố. */
+    public function test_changing_room_service_lead_keeps_history_and_schedule(): void
+    {
+        $service = app(\Botble\RestaurantRoster\Services\RoomServiceStaffService::class);
+        $old = $this->employee('R1', 'ROOM');
+        $new = $this->employee('R2', 'ROOM');
+        $m6 = $this->templates['M6']->getKey();
+        $service->save(['employee_id' => $old->getKey(), 'role' => 'lead', 'shift_template_id' => $m6, 'effective_from' => '2030-03-01'], 1);
+        $published = Shift::query()->create(['employee_id' => $old->getKey(), 'date' => '2030-03-10', 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $m6,
+            'outlet_id' => $this->outlets['ROOM']->getKey(), 'status' => 'published', 'start_at' => '2030-03-10 06:00:00', 'end_at' => '2030-03-10 14:00:00', 'hours' => 8]);
+
+        $result = $service->save(['employee_id' => $new->getKey(), 'role' => 'lead', 'shift_template_id' => $m6, 'effective_from' => '2030-03-08', 'note' => 'Đổi người'], 1);
+
+        $this->assertSame('2030-03-07', $result['closed']->effective_to->toDateString(), 'Người cũ kết thúc hôm trước ngày đổi');
+        $this->assertSame(2, \Botble\RestaurantRoster\Models\RoomServiceStaff::query()->count(), 'Không xóa dòng cũ');
+        $this->assertNotEmpty(array_filter($result['affected'], fn ($a) => $a['date'] === '2030-03-10' && $a['published']), 'Liệt kê ca đã công bố cần xem lại');
+        $this->assertSame($old->getKey(), (int) $published->fresh()->employee_id, 'Lịch đã công bố không bị tự sửa');
+        $this->assertSame(2, ChangeLog::query()->where('action', 'room_service')->where('employee_id', $old->getKey())->count());
+
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse('2030-03-11'), Carbon::parse('2030-03-17'));
+        $room = $this->outlets['ROOM']->getKey();
+        $this->assertSame([$room . ':' . $m6], $problem->employees[$new->getKey()]->fixed, 'Người mới chỉ làm Room Service M6');
+        $this->assertSame([], $problem->employees[$old->getKey()]->fixed, 'Người cũ hết chuyên trách: không còn bị giới hạn ca Room Service');
+    }
+
+    /** 9.17: đề xuất nhiều tuần liền (chưa duyệt) chia đều lượt Night cho mọi người đủ điều kiện. */
+    public function test_rotation_is_fair_over_several_weeks(): void
+    {
+        $this->restaurants();
+        $plan = app(NightStaffService::class)->planFor(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addWeeks(3)->subDay());
+        $counts = [];
+
+        foreach ($plan['weeks'] as $week => $info) {
+            $this->assertCount(4, $info['ids'], "Tuần {$week}: đủ 4 người");
+            $this->assertSame([], $info['warnings']);
+
+            foreach ($info['ids'] as $id) {
+                $counts[$id] = ($counts[$id] ?? 0) + 1;
+            }
+        }
+
+        $this->assertCount(6, $counts, 'Cả 6 người đủ điều kiện đều được luân phiên');
+        $this->assertLessThanOrEqual(1, max($counts) - min($counts), '3 tuần × 4 người chia đều cho 6 người');
+    }
+
+    /** 9.9: đề xuất 4 người ít tuần Night nhất, chia giữa các outlet. */
     public function test_rotation_prefers_least_history_and_balances_outlets(): void
     {
         $people = $this->restaurants();
@@ -176,7 +292,7 @@ class NightAndScheduleGroupTest extends TestCase
 
         $proposal = app(NightStaffService::class)->propose(Carbon::parse(self::WEEK));
 
-        $this->assertSame(['G2', 'V2'], $this->selectedCodes($proposal));
+        $this->assertSame(['G2', 'G3', 'V2', 'V3'], $this->selectedCodes($proposal), 'G1 vừa làm tuần trước, V1 đã làm 3 tuần trước');
         $this->assertSame([], $proposal['warnings']);
     }
 
@@ -185,15 +301,18 @@ class NightAndScheduleGroupTest extends TestCase
     {
         $people = $this->restaurants();
         $service = app(NightStaffService::class);
-        $service->save(Carbon::parse(self::WEEK), [$people['G2']->getKey(), $people['V2']->getKey()], NightRotation::STATUS_APPROVED, 1);
+        $first = ['G2', 'G3', 'V2', 'V3'];
+        $service->save(Carbon::parse(self::WEEK), array_map(fn ($c) => $people[$c]->getKey(), $first), NightRotation::STATUS_APPROVED, 1);
 
-        $next = $service->propose(Carbon::parse(self::WEEK)->addWeek());
+        $next = $this->selectedCodes($service->propose(Carbon::parse(self::WEEK)->addWeek()));
 
-        $this->assertSame(['G1', 'V1'], $this->selectedCodes($next));
+        $this->assertContains('G1', $next, 'Người chưa làm tuần trước được ưu tiên');
+        $this->assertContains('V1', $next);
+        $this->assertLessThanOrEqual(2, count(array_intersect($next, $first)), 'Chỉ lặp lại người tuần trước khi thiếu người hợp lệ khác');
         $plan = $service->planFor(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(13));
         $this->assertSame('approved', $plan['weeks'][self::WEEK]['source']);
         $this->assertSame('proposed', $plan['weeks']['2030-03-11']['source']);
-        $this->assertEqualsCanonicalizing([$people['G1']->getKey(), $people['V1']->getKey()], $plan['plan']['2030-03-12']);
+        $this->assertContains($people['G1']->getKey(), $plan['plan']['2030-03-12']);
     }
 
     /** 9.11: không chọn người mà outlet nguồn sẽ thiếu nam waiter tối thiểu – nêu rõ lý do. */
@@ -202,7 +321,9 @@ class NightAndScheduleGroupTest extends TestCase
         $this->restaurants(villaMales: 3);
         $proposal = app(NightStaffService::class)->propose(Carbon::parse(self::WEEK));
 
-        $this->assertSame(['G1', 'G2'], $this->selectedCodes($proposal), 'Villa chỉ 3 nam waiter: không rút ai');
+        $this->assertSame(['G1', 'G2', 'G3'], $this->selectedCodes($proposal), 'Villa chỉ 3 nam waiter: không rút ai');
+        $this->assertNotEmpty($proposal['warnings'], 'Không đủ 4 người hợp lệ → cảnh báo');
+        $this->assertStringContainsString('3 / 4', $proposal['warnings'][0]);
         $reasons = collect($proposal['excluded'])->mapWithKeys(fn ($row) => [$row['employee']->code => $row['reason']]);
         $this->assertStringContainsString('VILLA sẽ thiếu nam waiter', $reasons['V1']);
     }
@@ -279,20 +400,24 @@ class NightAndScheduleGroupTest extends TestCase
     public function test_management_pages_render(): void
     {
         $people = $this->restaurants();
-        // Night cố định = ca cứng ca đêm (không cần chọn vai trò).
+        // Night cứng = ca cứng ca đêm (không cần chọn vai trò).
         $this->employee('NC1', 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]);
         $this->assertSame(['NC1'], app(NightStaffService::class)->groups()['core']->pluck('code')->all());
         $user = $this->user();
 
         $this->actingAs($user)->get(route('roster.night.index', ['week' => self::WEEK]))->assertOk()
-            ->assertSee('Night cố định')->assertSee('Synthetic NC1')->assertSee('Đề xuất')->assertSee('Định biên Night từng ngày');
+            ->assertSee('Night cứng')->assertSee('Synthetic NC1')->assertSee('Đề xuất')->assertSee('Night từng ngày');
+        $this->actingAs($user)->post(route('roster.night.save'), ['week' => self::WEEK, 'employee_ids' => [$people['G2']->getKey()], 'status' => 'preview'])
+            ->assertOk()->assertSee('Xem trước ảnh hưởng')->assertSee('quy tắc là 4 người');
+        $this->assertSame(0, NightRotation::query()->count(), 'Xem trước không lưu');
         $this->actingAs($user)->post(route('roster.night.save'), ['week' => self::WEEK, 'employee_ids' => [$people['G2']->getKey()], 'status' => 'approved'])->assertRedirect();
         $this->assertSame(1, NightRotation::query()->where('status', 'approved')->count());
         $this->actingAs($user)->get(route('roster.schedule-groups.index'))->assertOk();
         $this->actingAs($user)->get(route('roster.schedule-groups.create'))->assertOk();
+        $this->actingAs($user)->get(route('roster.room-service.index'))->assertOk()->assertSee('Thêm / đổi người');
         // Botble mã hóa chữ có dấu trong nhãn form (ò → &ograve;): so khớp sau khi giải mã.
         $html = html_entity_decode($this->actingAs($user)->get(route('roster.employees.edit', $people['G1']->getKey()))->assertOk()->getContent());
-        $this->assertStringContainsString('Vai trò Night', $html);
+        $this->assertStringContainsString('Tham gia luân phiên Night', $html);
         $this->assertStringContainsString('Thực tập sinh', $html);
         $this->assertStringContainsString('Nhóm hiển thị trên Bảng xếp ca', $html);
     }
@@ -325,12 +450,12 @@ class NightAndScheduleGroupTest extends TestCase
 
         $this->actingAs($this->user())->post(route('roster.employees.edit.update', $employee->getKey()), [
             'code' => 'N2', 'name' => 'Synthetic N2', 'outlet_id' => $this->outlets['NIGHT']->getKey(), 'employment_type' => 'FT',
-            'weekly_hours' => 48, 'days_off_per_week' => 2, 'night_role' => 'flex', 'status' => 'published',
+            'weekly_hours' => 48, 'days_off_per_week' => 2, 'night_rotation_enabled' => 0, 'status' => 'published',
         ])->assertSessionHasNoErrors();
 
-        $this->assertSame('flex', $employee->fresh()->night_role);
+        $this->assertFalse($employee->fresh()->night_rotation_enabled);
         $log = ChangeLog::query()->where('employee_id', $employee->getKey())->where('action', 'profile')->first();
         $this->assertNotNull($log);
-        $this->assertSame('flex', $log->after['night_role']);
+        $this->assertSame(0, (int) $log->after['night_rotation_enabled']);
     }
 }

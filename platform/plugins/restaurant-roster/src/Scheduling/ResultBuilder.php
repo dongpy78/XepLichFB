@@ -26,7 +26,7 @@ final class ResultBuilder
             ];
         }
 
-        $unfilled = [...$this->unfilled($state), ...$this->uncoveredWindows($state)];
+        $unfilled = [...$this->unfilled($state), ...$this->uncoveredWindows($state), ...$this->coreGaps($state)];
         usort($unfilled, fn ($a, $b) => [$a['level'] === 'min' ? 0 : 1, $a['date'], $a['outlet_name'], $a['shift_code']] <=> [$b['level'] === 'min' ? 0 : 1, $b['date'], $b['outlet_name'], $b['shift_code']]);
         $objective = $state->objective();
 
@@ -287,6 +287,52 @@ final class ResultBuilder
                     'proposals' => $proposals,
                 ];
             }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Ngày Night không có nhân viên Night cứng nào để điều phối (bắt buộc ≥ 1 / ngày), kèm lý do từng người Night cứng.
+     */
+    private function coreGaps(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $result = [];
+
+        foreach ($state->coreShortDays() as [$i, $outletId]) {
+            $date = $state->dates[$i];
+            $reasons = ['approved_off' => [], 'locked' => [], 'busy_elsewhere' => [], 'blocked' => []];
+            $movable = 0;
+
+            foreach ($problem->employees as $employeeId => $employee) {
+                if (! $employee->isNightCore()) {
+                    continue;
+                }
+
+                $fixed = $state->fixed[$employeeId][$i] ?? null;
+
+                if ($reason = $problem->hardUnavailable[$employeeId][$date] ?? null) {
+                    $reasons['approved_off'][] = "{$employee->name} ({$reason})";
+                } elseif ($fixed && ! $fixed->isWorking()) {
+                    $reasons['locked'][] = "{$employee->name} (ô đã khóa: OFF)";
+                } elseif ($state->shiftAt($employeeId, $i) === null) {
+                    $reasons['blocked'][] = "{$employee->name} (OFF theo lịch – đủ số ngày làm trong tuần; đổi ngày OFF với người Night cứng còn lại)";
+                    $movable++;
+                } else {
+                    $reasons['busy_elsewhere'][] = "{$employee->name} (đang làm ca khác)";
+                    $movable++;
+                }
+            }
+
+            $result[] = [
+                'date' => $date, 'outlet_id' => $outletId, 'outlet_name' => $problem->outletName($outletId), 'shift_id' => null,
+                'shift_code' => 'Night cứng', 'level' => 'min', 'min' => 1, 'target' => 1, 'min_male' => 0, 'target_male' => 0,
+                'assigned' => 0, 'assigned_male' => 0, 'missing' => 1, 'eligible_total' => count(array_filter($problem->employees, fn ($e) => $e->isNightCore())),
+                'reasons' => $reasons, 'provably_impossible' => $movable === 0,
+                'proposals' => [['date' => $date, 'type' => 'keep_warning', 'label' => 'D',
+                    'text' => 'Night ngày ' . date('d/m', strtotime($date)) . ' không có nhân viên Night cứng điều phối – đổi ngày OFF của một người Night cứng hoặc duyệt ngoại lệ (ghi lý do).']],
+            ];
         }
 
         return $result;
