@@ -235,6 +235,42 @@ class CellLockHttpTest extends TestCase
         $this->assertStringContainsString('quản lý lệch: sáng 3 / chiều 0', $response->json('data.html'), 'Bảng xếp ca báo lệch');
     }
 
+    /** 8. Nữ waiter trực tiếp: cờ theo vị trí, sửa tay trên bảng tính lại cảnh báo thiếu ngay; form định biên có ô nữ waiter. */
+    public function test_female_waiter_minimum_on_grid_is_recomputed_after_manual_edits(): void
+    {
+        $outlet = Outlet::query()->firstOrFail();
+        $m6 = ShiftTemplate::query()->where('code', 'M6')->firstOrFail();
+        $waiter = \Botble\RestaurantRoster\Models\Position::query()->create(['name' => 'Waiter', 'status' => 'published']);
+        $hostess = \Botble\RestaurantRoster\Models\Position::query()->create(['name' => 'Hostess', 'status' => 'published']);
+        $make = fn (string $code, $position) => Employee::query()->create(['code' => $code, 'name' => "Synthetic {$code}", 'gender' => 'female', 'outlet_id' => $outlet->getKey(),
+            'position_id' => $position->getKey(), 'weekly_hours' => 48, 'days_off_per_week' => 2, 'auto_schedule' => true, 'status' => 'published']);
+        [$a, $b, $h] = [$make('W1', $waiter), $make('W2', $waiter), $make('H1', $hostess)];
+        \Botble\RestaurantRoster\Models\StaffingRequirement::query()->create(['outlet_id' => $outlet->getKey(), 'shift_template_id' => $m6->getKey(),
+            'min_staff' => 1, 'target_staff' => 3, 'min_female' => 2, 'target_female' => 2, 'is_confirmed' => true]);
+
+        $problem = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->build(\Carbon\Carbon::parse('2030-01-07'), \Carbon\Carbon::parse('2030-01-13'));
+        $this->assertTrue($problem->employees[$a->getKey()]->isFemaleStaff);
+        $this->assertFalse($problem->employees[$h->getKey()]->isFemaleStaff, 'Hostess không tính là nữ waiter');
+        $requirement = array_values(array_filter($problem->requirements, fn ($r) => $r->date === '2030-01-09' && $r->shiftId === (int) $m6->getKey()))[0];
+        $this->assertSame([2, 2], [$requirement->minFemale, $requirement->targetFemale]);
+
+        $manager = $this->user([], true);
+        $assign = fn (Employee $e) => $this->actingAs($manager)->postJson(route('roster.assign'), [
+            'employee_id' => $e->getKey(), 'date' => '2030-01-09', 'action' => 'notation', 'notation' => 'M6', 'week' => '2030-01-07',
+        ])->json('data.html');
+
+        $assign($h);
+        $html = $assign($a);
+        $this->assertStringContainsString('thiếu nữ waiter: 1/2 tối thiểu', $html, 'Hostess không được đếm; 1 nữ waiter → thiếu');
+        $this->assertStringContainsString('NW1/2', $html);
+        $html = $assign($b);
+        // Ngày 09/01 đủ 2 nữ waiter → hết cảnh báo (các ngày khác chưa xếp ai vẫn báo thiếu 0/2).
+        $this->assertStringNotContainsString('thiếu nữ waiter: 1/2', $html, 'Đủ 2 nữ waiter → hết cảnh báo');
+        $this->assertStringContainsString('NW2/2', $html);
+
+        $this->actingAs($manager)->get(route('roster.requirements.create'))->assertOk()->assertSee('Định biên theo nhóm nhân sự')->assertSee('Nữ waiter');
+    }
+
     public function test_removing_recorded_off_requires_permission(): void
     {
         $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.lock'), [

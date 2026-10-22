@@ -15,7 +15,7 @@
     $objective = $run->metrics['objective'] ?? [];
     $fairness = $run->metrics['fairness'] ?? [];
     $reasonLabels = [
-        'approved_off' => 'Nghỉ đã duyệt', 'locked' => 'Ô đã khóa', 'busy_elsewhere' => 'Đang làm nơi khác',
+        'approved_off' => 'Nghỉ đã duyệt', 'locked' => 'Ô đã khóa', 'supporting' => 'Đang hỗ trợ Lobby trong ca', 'busy_elsewhere' => 'Đang làm nơi khác',
         'blocked' => 'Vướng quy tắc', 'gender_missing' => 'Chưa khai báo giới tính',
     ];
 @endphp
@@ -214,6 +214,58 @@
                     Người ít lượt tích lũy (kỳ này + {{ $report['history_weeks'] }} tuần trước) của từng loại ca được ưu tiên khi đủ điều kiện và đi làm được.
                     OFF đã cho và việc không đủ điều kiện không làm giảm ưu tiên. Lịch sử lấy từ lịch thực tế các tuần trước (ô đã xóa / đổi không được tính).
                 </div>
+            </div>
+        </div>
+    @endif
+
+    @php
+        $femaleRows = $report['female_staffing'] ?? [];
+        $femaleIssues = array_filter($femaleRows, fn ($r) => $r['status'] !== 'ok');
+        $femaleStatus = ['short_min' => ['Thiếu tối thiểu', 'danger'], 'short_target' => ['Dưới mục tiêu', 'warning'], 'over' => ['Vượt mục tiêu', 'info'], 'ok' => ['Đủ', 'success']];
+    @endphp
+    @if ($femaleRows)
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Nữ waiter trực tiếp tại outlet (sau khi xếp Lobby và Kid-Deline)</h3>
+                <span class="card-subtitle ms-2">{{ count($femaleIssues) }} ca cần chú ý</span>
+            </div>
+            <details @if ($femaleIssues && count($femaleIssues) <= 20) open @endif>
+                <summary class="px-3 py-2 small text-muted">{{ $femaleIssues ? 'Các ca thiếu / vượt (bấm để xem toàn bộ bên dưới)' : 'Mọi ca đều đủ – bấm để xem chi tiết' }}</summary>
+                <div class="table-responsive" style="max-height: 480px">
+                    <table class="table table-sm table-vcenter card-table">
+                        <thead>
+                            <tr>
+                                <th>Ngày</th><th>Outlet</th><th>Ca</th>
+                                <th class="text-center" title="Nữ waiter làm trực tiếp tại outlet trong ca">Trực tiếp</th>
+                                <th class="text-center">Tối thiểu / mục tiêu</th>
+                                <th class="text-center" title="Đang hỗ trợ Lobby (L) trong ca – không tính vào outlet">Lobby (L)</th>
+                                <th class="text-center" title="Đứng Kid-Deline cả ca">Kid</th>
+                                <th class="text-center" title="Điều sang outlet khác trong ca">Điều đi</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($femaleRows as $row)
+                                @php [$label, $color] = $femaleStatus[$row['status']]; @endphp
+                                <tr class="{{ $row['status'] === 'ok' ? 'roster-female-ok' : '' }}">
+                                    <td>{{ \Carbon\Carbon::parse($row['date'])->format('d/m') }}</td>
+                                    <td>{{ $row['outlet_name'] }}</td>
+                                    <td>{{ $row['shift_code'] }}</td>
+                                    <td class="text-center font-monospace fw-bold">{{ $row['direct'] }}</td>
+                                    <td class="text-center font-monospace">{{ $row['min'] ?: '—' }} / {{ $row['target'] ?: '—' }}</td>
+                                    <td class="text-center font-monospace">{{ $row['lobby'] ?: '' }}</td>
+                                    <td class="text-center font-monospace">{{ $row['kid'] ?: '' }}</td>
+                                    <td class="text-center font-monospace">{{ $row['away'] ?: '' }}</td>
+                                    <td><span class="badge bg-{{ $color }}-lt">{{ $label }}</span></td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            <div class="card-footer small text-muted">
+                Người hỗ trợ Lobby (L) và đứng Kid-Deline không được tính là nữ waiter trực tiếp của outlet trong ca đó.
+                Tối thiểu / mục tiêu nhập ở "Định biên nhân sự" (cột Nữ waiter); để 0 là không áp dụng. Nguyên nhân từng ca thiếu xem ở mục "Thiếu nhân sự".
             </div>
         </div>
     @endif

@@ -36,6 +36,9 @@
                         @if ($checked)
                             <span class="roster-stat__roles">QL{{ $cell['leaders'] }} · H{{ $cell['hostess'] }}</span>
                         @endif
+                        @if ($femaleRule = $onDuty['female_rules'][$key][$statOutlet->id][$shiftCode] ?? null)
+                            <span class="roster-stat__roles" title="Nữ waiter trực tiếp (không tính người hỗ trợ Lobby / Kid) – tối thiểu {{ $femaleRule[0] }}, mục tiêu {{ $femaleRule[1] }}">NW{{ $cell['female_staff'] ?? 0 }}/{{ $femaleRule[0] }}</span>
+                        @endif
                         @if ($cell['lobby'])
                             <span class="roster-stat__lobby">+{{ $cell['lobby'] }}L</span>
                         @endif

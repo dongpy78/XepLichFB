@@ -70,6 +70,9 @@ final class ScheduleState
     /** @var array<string, int> "i|o|s" => số nam */
     private array $maleCount = [];
 
+    /** @var array<string, int> "i|o|s" => số nữ waiter thông thường làm trực tiếp tại outlet (không tính người hỗ trợ (L) / đứng Kid-Deline) */
+    private array $femaleCount = [];
+
     /** @var array<string, array<string, int>> "i|o|s" => [nhóm vị trí => số người] */
     private array $positionCount = [];
 
@@ -146,17 +149,18 @@ final class ScheduleState
                 $this->requirements[$i]["{$requirement->outletId}|{$requirement->shiftId}"] = $requirement;
 
                 $slot = "{$requirement->outletId}|{$requirement->shiftId}";
-                $belowMin = $requirement->min > 0 || $requirement->minMale > 0 || array_filter($requirement->positionMins);
+                $belowMin = $requirement->min > 0 || $requirement->minMale > 0 || $requirement->minFemale > 0 || array_filter($requirement->positionMins);
 
                 if ($belowMin) {
                     $this->minShortSlots[$i][$slot] = true;
                 }
 
-                if ($belowMin || $requirement->target > 0 || $requirement->targetMale > 0) {
+                if ($belowMin || $requirement->target > 0 || $requirement->targetMale > 0 || $requirement->targetFemale > 0 || array_filter($requirement->positionTargets)) {
                     $this->shortSlots["{$i}|{$slot}"] = [$i, $requirement, (bool) $belowMin];
                 }
-                $this->minShort += $requirement->min + $requirement->minMale + array_sum($requirement->positionMins);
-                $this->targetShort += $requirement->target + $requirement->targetMale + array_sum($requirement->positionMins);
+                $this->minShort += $requirement->min + $requirement->minMale + $requirement->minFemale + array_sum($requirement->positionMins);
+                $this->targetShort += $requirement->target + $requirement->targetMale + $requirement->targetFemale
+                    + array_sum(array_map(fn ($group) => $requirement->positionTarget($group), array_keys($requirement->positionMins + $requirement->positionTargets)));
             }
         }
 
@@ -444,6 +448,14 @@ final class ScheduleState
         return $this->maleCount["{$i}|{$outletId}|{$shiftId}"] ?? 0;
     }
 
+    /**
+     * Số nữ waiter thông thường làm trực tiếp tại outlet trong ca (người hỗ trợ Lobby (L) và người đứng Kid-Deline không được tính).
+     */
+    public function femaleCount(int $i, int $outletId, int $shiftId): int
+    {
+        return $this->femaleCount["{$i}|{$outletId}|{$shiftId}"] ?? 0;
+    }
+
     public function positionCount(int $i, int $outletId, int $shiftId, int|string|null $group): int
     {
         return $group === null ? 0 : ($this->positionCount["{$i}|{$outletId}|{$shiftId}"][(string) $group] ?? 0);
@@ -480,6 +492,7 @@ final class ScheduleState
 
         return $this->count($i, $outletId, $shiftId) - 1 < $requirement->min
             || ($employee->isMale() && $this->maleCount($i, $outletId, $shiftId) - 1 < $requirement->minMale)
+            || ($employee->isFemaleStaff && $this->femaleCount($i, $outletId, $shiftId) - 1 < $requirement->minFemale)
             || $this->positionShort($employeeId, $i, $requirement, -1);
     }
 
@@ -1004,7 +1017,10 @@ final class ScheduleState
                     $count = $this->count($i, $requirement->outletId, $requirement->shiftId);
                     $male = $this->maleCount($i, $requirement->outletId, $requirement->shiftId);
 
-                    if ($count < $requirement->min || ($employee->isMale() && $male < $requirement->minMale) || $this->positionShort($employeeId, $i, $requirement, 0)) {
+                    $female = $this->femaleCount($i, $requirement->outletId, $requirement->shiftId);
+
+                    if ($count < $requirement->min || ($employee->isMale() && $male < $requirement->minMale)
+                        || ($employee->isFemaleStaff && $female < $requirement->minFemale) || $this->positionShort($employeeId, $i, $requirement, 0)) {
                         $result[] = ['employee_id' => $employeeId, 'date' => $this->dates[$i], 'outlet_id' => $outletId, 'home_outlet_id' => $employee->homeOutletId, 'home_shift_id' => $requirement->shiftId];
 
                         break;
@@ -1434,13 +1450,15 @@ final class ScheduleState
 
         $key = "{$i}|{$outletId}|{$shiftId}";
 
-        // Người đi hỗ trợ Lobby rời nhà hàng: không tính vào định biên outlet × ca (đã đếm ở supportFrom).
-        if ($support && $outletId !== $this->problem->stationOutletId) {
+        $requirement = $this->requirements[$i]["{$outletId}|{$shiftId}"] ?? null;
+
+        // Người đi hỗ trợ Lobby rời nhà hàng: không tính vào định biên outlet × ca (đã đếm ở supportFrom) –
+        // trừ khi dòng định biên có khung đếm và giờ ở Lobby không chạm khung đó (vd M6(L) 09–12h, khung đếm 06–09h).
+        if ($support && $outletId !== $this->problem->stationOutletId && ! $this->supportCountsAtOutlet($requirement, $shiftId)) {
             return;
         }
-
-        $requirement = $this->requirements[$i]["{$outletId}|{$shiftId}"] ?? null;
         $isMale = $this->problem->employees[$employeeId]?->isMale() ?? false;
+        $isFemaleStaff = $this->problem->employees[$employeeId]?->isFemaleStaff ?? false;
 
         // Quản lý ca sáng / chiều theo outlet × ngày (cân bằng M6 / A2 của cấp quản lý).
         if (($this->problem->employees[$employeeId] ?? null)?->isManager
@@ -1454,8 +1472,10 @@ final class ScheduleState
 
         $before = $this->count[$key] ?? 0;
         $beforeMale = $this->maleCount[$key] ?? 0;
+        $beforeFemale = $this->femaleCount[$key] ?? 0;
         $this->count[$key] = $before + $delta;
         $this->maleCount[$key] = $beforeMale + ($isMale ? $delta : 0);
+        $this->femaleCount[$key] = $beforeFemale + ($isFemaleStaff ? $delta : 0);
 
         $groups = $this->problem->groupsOfPosition($this->problem->employees[$employeeId]?->positionId);
         $beforeGroups = [];
@@ -1473,20 +1493,24 @@ final class ScheduleState
         $this->overTarget += max(0, $this->count[$key] - $requirement->target) ** 2 - max(0, $before - $requirement->target) ** 2;
 
         $this->minShort += $short($requirement->min, $this->count[$key]) - $short($requirement->min, $before)
-            + $short($requirement->minMale, $this->maleCount[$key]) - $short($requirement->minMale, $beforeMale);
+            + $short($requirement->minMale, $this->maleCount[$key]) - $short($requirement->minMale, $beforeMale)
+            + $short($requirement->minFemale, $this->femaleCount[$key]) - $short($requirement->minFemale, $beforeFemale);
         $this->targetShort += $short($requirement->target, $this->count[$key]) - $short($requirement->target, $before)
-            + $short($requirement->targetMale, $this->maleCount[$key]) - $short($requirement->targetMale, $beforeMale);
+            + $short($requirement->targetMale, $this->maleCount[$key]) - $short($requirement->targetMale, $beforeMale)
+            + $short($requirement->targetFemale, $this->femaleCount[$key]) - $short($requirement->targetFemale, $beforeFemale);
 
         // Tối thiểu theo nhóm vị trí (vd mỗi ca M6/A2 có ít nhất 1 Hostess, 1 quản lý): tính ở cả mức tối thiểu và mục tiêu.
         foreach ($beforeGroups as $group => $before) {
             if (($need = $requirement->positionMins[$group] ?? 0) > 0) {
-                $diff = $short($need, $before + $delta) - $short($need, $before);
-                $this->minShort += $diff;
-                $this->targetShort += $diff;
+                $this->minShort += $short($need, $before + $delta) - $short($need, $before);
+            }
+
+            if (($goal = $requirement->positionTarget($group)) > 0) {
+                $this->targetShort += $short($goal, $before + $delta) - $short($goal, $before);
             }
         }
 
-        $short = $this->count[$key] < $requirement->min || $this->maleCount[$key] < $requirement->minMale;
+        $short = $this->count[$key] < $requirement->min || $this->maleCount[$key] < $requirement->minMale || $this->femaleCount[$key] < $requirement->minFemale;
 
         foreach ($requirement->positionMins as $group => $need) {
             if ($short) {
@@ -1508,11 +1532,35 @@ final class ScheduleState
             }
         }
 
-        if ($short || $this->count[$key] < $requirement->target || $this->maleCount[$key] < $requirement->targetMale) {
+        $targetShort = $short || $this->count[$key] < $requirement->target || $this->maleCount[$key] < $requirement->targetMale || $this->femaleCount[$key] < $requirement->targetFemale;
+
+        foreach ($requirement->positionTargets as $group => $goal) {
+            $targetShort = $targetShort || ($this->positionCount[$key][(string) $group] ?? 0) < $goal;
+        }
+
+        if ($targetShort) {
             $this->shortSlots["{$i}|{$slot}"] = [$i, $requirement, $short];
         } else {
             unset($this->shortSlots["{$i}|{$slot}"]);
         }
+    }
+
+    /**
+     * Người hỗ trợ Lobby (L) của ca này vẫn được tính cho outlet: dòng định biên có khung đếm, ca phủ trọn khung đếm
+     * và thời gian ở Lobby (khung (L) của ca) không chạm khung đếm.
+     */
+    public function supportCountsAtOutlet(?Requirement $requirement, int $shiftId): bool
+    {
+        $window = $requirement?->countWindow;
+        $shift = $this->problem->shifts[$shiftId] ?? null;
+
+        if (! $window || ! $shift?->lobbyWindow) {
+            return false;
+        }
+
+        [$lobbyStart, $lobbyEnd] = $shift->lobbyWindow;
+
+        return $shift->start() <= $window[0] && $shift->end() >= $window[1] && ($lobbyEnd <= $window[0] || $lobbyStart >= $window[1]);
     }
 
     /** @var array<string, array{0: int, 1: Requirement, 2: bool}> "i|o|s" => [ngày, định biên, thiếu tối thiểu?] ô đang thiếu so với mục tiêu */

@@ -27,6 +27,8 @@ final class EmployeeSpec
         public readonly bool $isManager = false,
         /** @var int[]|null Ca quản lý được tự xếp (M6, A2); null = không giới hạn ca */
         public readonly ?array $managerShiftIds = null,
+        // Nữ waiter thông thường (không thuộc cấp quản lý): tính vào định biên "nữ waiter trực tiếp tại outlet".
+        public readonly bool $isFemaleStaff = false,
     ) {
     }
 

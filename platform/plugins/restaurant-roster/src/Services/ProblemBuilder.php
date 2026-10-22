@@ -22,6 +22,7 @@ use Botble\RestaurantRoster\Scheduling\Problem;
 use Botble\RestaurantRoster\Scheduling\RequirementResolver;
 use Botble\RestaurantRoster\Scheduling\Rules;
 use Botble\RestaurantRoster\Scheduling\ShiftSpec;
+use Botble\RestaurantRoster\Services\StaffingRequirementService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
@@ -51,6 +52,8 @@ class ProblemBuilder
     {
         $from = CarbonImmutable::parse($from)->startOfDay();
         $to = CarbonImmutable::parse($to)->startOfDay();
+        $this->conflicts = [];
+        $this->usedRequirementIds = [];
         $days = array_map(fn ($d) => $d->toDateString(), iterator_to_array(CarbonPeriod::create($from, $to)));
 
         $outlets = Outlet::query()->wherePublished()->get(['id', 'name', 'code']);
@@ -75,6 +78,8 @@ class ProblemBuilder
             ->pluck('id')->map(fn ($id) => (int) $id)->values()->all() ?: null;
 
         $childStaff = $this->childOutletStaffRules($outlets);
+        // Vị trí được tính là "nữ waiter" cho định biên nữ trực tiếp tại outlet (trống = mọi vị trí không thuộc cấp quản lý).
+        $femaleStaffPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.female_staff_positions', ['Waiter']));
         $positionNames = Position::query()->pluck('name', 'id')->map(fn ($name) => mb_strtolower(trim((string) $name)))->all();
 
         $specs = [];
@@ -142,6 +147,8 @@ class ProblemBuilder
                 positionId: $employee->position_id ? (int) $employee->position_id : null,
                 isManager: isset($managerPositions[(int) $employee->position_id]),
                 managerShiftIds: $managerShiftIds,
+                isFemaleStaff: $employee->gender === 'female' && ! isset($managerPositions[(int) $employee->position_id])
+                    && (! $femaleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $femaleStaffPositions, true)),
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {
@@ -242,45 +249,14 @@ class ProblemBuilder
     }
 
     /**
-     * Nhóm vị trí trong cấu hình staffing_rules: "position" (một vị trí) hoặc "positions" (nhiều vị trí, có "label").
+     * Nhóm vị trí dùng trong định biên: "cấp quản lý" (mọi vị trí bật cờ Cấp quản lý). Một vị trí đơn lẻ dùng khóa = position_id,
+     * không cần khai báo nhóm.
      *
      * @return array<string, array{ids: int[], label: string}>
      */
     private function positionGroups(): array
     {
-        $ids = Position::query()->pluck('id', 'name')->all();
-        $groups = [];
-
-        foreach (config('plugins.restaurant-roster.general.scheduling.staffing_rules', []) as $rule) {
-            $names = (array) ($rule['positions'] ?? $rule['position'] ?? []);
-
-            // "managers" => true: nhóm các vị trí bật "Cấp quản lý".
-            if (! empty($rule['managers']) && ($key = $this->positionGroupKey($rule))) {
-                $groups[$key] = ['ids' => $this->managerPositionIds(), 'label' => (string) ($rule['label'] ?? 'Quản lý')];
-
-                continue;
-            }
-
-            if ($names && ($key = $this->positionGroupKey($rule))) {
-                $groups[$key] = [
-                    'ids' => array_values(array_map('intval', array_filter(array_map(fn ($name) => $ids[$name] ?? null, $names)))),
-                    'label' => (string) ($rule['label'] ?? implode(' / ', $names)),
-                ];
-            }
-        }
-
-        return $groups;
-    }
-
-    private function positionGroupKey(array $rule): ?string
-    {
-        if (! empty($rule['managers'])) {
-            return 'grp:' . ($rule['label'] ?? 'Quản lý');
-        }
-
-        $names = (array) ($rule['positions'] ?? $rule['position'] ?? []);
-
-        return $names ? 'grp:' . ($rule['label'] ?? implode('|', $names)) : null;
+        return [RequirementResolver::MANAGER_GROUP => ['ids' => $this->managerPositionIds(), 'label' => 'Cấp quản lý (Junior Captain trở lên)']];
     }
 
     /**
@@ -715,41 +691,18 @@ class ProblemBuilder
      */
     private function requirements(array $days, array $outletIds, array $templateIds): array
     {
-        $resolver = new RequirementResolver(
-            StaffingRequirement::query()->whereIn('outlet_id', $outletIds)->get()->map(fn ($r) => [
-                ...$r->getAttributes(),
-                'date' => $r->date?->toDateString(),
-            ])->all()
-        );
+        // Định biên đọc trực tiếp từ database (Định biên nhân sự): chỉ dòng đang áp dụng, còn hiệu lực, kèm nhóm theo vị trí.
+        $resolver = new RequirementResolver(StaffingRequirementService::resolverRows(
+            StaffingRequirement::query()->whereIn('outlet_id', $outletIds)->where('status', StaffingRequirement::STATUS_ACTIVE)
+        ));
 
         $flags = OutletDay::query()
             ->whereIn('outlet_id', $outletIds)
-            ->whereBetween('date', [reset($days), end($days)])
+            ->whereDate('date', '>=', reset($days))->whereDate('date', '<=', end($days))
             ->get()
             ->keyBy(fn ($d) => $d->outlet_id . '|' . $d->date->toDateString());
 
         $requirements = [];
-        $outletCodes = Outlet::query()->pluck('code', 'id')->all();
-        $templateCodes = ShiftTemplate::query()->pluck('code', 'id')->all();
-        $maleMinimums = [];
-        $positionMinimums = [];
-
-        foreach (config('plugins.restaurant-roster.general.scheduling.staffing_rules', []) as $rule) {
-            foreach ($rule['outlets'] ?? [] as $outlet) {
-                foreach ($rule['shifts'] ?? [] as $shift) {
-                    $slot = "{$outlet}|{$shift}";
-
-                    if (isset($rule['min_male'])) {
-                        $maleMinimums[$slot] = max($maleMinimums[$slot] ?? 0, (int) $rule['min_male']);
-                    }
-
-                    if ($group = $this->positionGroupKey($rule)) {
-                        $positionMinimums[$slot][$group] = max($positionMinimums[$slot][$group] ?? 0, (int) $rule['min']);
-                    }
-                }
-            }
-        }
-
         $busyWeekdays = array_map('intval', config('plugins.restaurant-roster.general.scheduling.busy_weekdays', [6]));
         $busyExtra = (int) config('plugins.restaurant-roster.general.scheduling.busy_day_extra_capacity', 1);
         $flex = (int) config('plugins.restaurant-roster.general.scheduling.flex_capacity', 2);
@@ -763,9 +716,7 @@ class ProblemBuilder
                 foreach ($templateIds as $templateId) {
                     $requirement = $resolver->resolve($date, $outletId, $templateId, (bool) $flag?->upper_floor_open, (bool) $flag?->is_closed);
 
-                    if ($requirement && ($requirement->min > 0 || $requirement->target > 0 || $requirement->minMale > 0)) {
-                        $slot = ($outletCodes[$outletId] ?? '') . '|' . ($templateCodes[$templateId] ?? '');
-
+                    if ($requirement && ($requirement->min > 0 || $requirement->target > 0 || $requirement->minMale > 0 || $requirement->minFemale > 0 || $requirement->positionMins)) {
                         // Ngày đông khách: mỗi outlet × ca nhận thêm tối đa N người trên mục tiêu để bớt người OFF hôm đó.
                         // (không áp cho ô đã đặt sức chứa tối đa riêng, vd Kid-Deline đúng 1 người).
                         // Ô không đặt sức chứa riêng: nhận thêm người trên mục tiêu để ai cũng đủ ngày làm (thứ Bảy thêm nữa).
@@ -773,20 +724,24 @@ class ProblemBuilder
                             ? $requirement->target + max($flex, $busy ? $busyExtra : 0)
                             : null;
 
-                        // Bắt buộc theo quy định: tối thiểu số nam / số người theo vị trí (vd Hostess) cho outlet × ca.
-                        $minMale = max($requirement->minMale, $maleMinimums[$slot] ?? 0);
-                        $positionMins = $requirement->positionMins;
+                        $requirements[] = $requirement->adjusted($max);
 
-                        foreach ($positionMinimums[$slot] ?? [] as $group => $need) {
-                            $positionMins[$group] = max($positionMins[$group] ?? 0, $need);
+                        if ($requirement->sourceId) {
+                            $this->usedRequirementIds[$requirement->sourceId] = true;
                         }
-
-                        $requirements[] = $requirement->adjusted($max, $minMale, $positionMins);
                     }
                 }
             }
         }
 
+        $this->conflicts = array_values($resolver->conflicts());
+
         return $requirements;
     }
+
+    /** @var array<int, array{date: string, outlet_id: int, shift_id: int, ids: int[]}> Xung đột định biên của lần dựng gần nhất */
+    public array $conflicts = [];
+
+    /** @var array<int, true> Dòng định biên đã dùng trong lần dựng gần nhất (để lưu kèm lần chạy) */
+    public array $usedRequirementIds = [];
 }

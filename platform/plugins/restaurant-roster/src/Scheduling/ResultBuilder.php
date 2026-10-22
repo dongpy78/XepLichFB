@@ -40,7 +40,8 @@ final class ResultBuilder
             default => SolveResult::FEASIBLE,
         };
 
-        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state)];
+        $femaleStaffing = $this->femaleStaffing($state);
+        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing)];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
         if ($warnings) {
@@ -64,7 +65,7 @@ final class ResultBuilder
             explanation: $explanation,
             solverMetadata: $metadata,
             warnings: $warnings,
-            supportReport: $this->supportReport($state),
+            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing],
         );
     }
 
@@ -110,6 +111,7 @@ final class ResultBuilder
             foreach ($requirements as $requirement) {
                 $have = $state->count($i, $requirement->outletId, $requirement->shiftId);
                 $haveMale = $state->maleCount($i, $requirement->outletId, $requirement->shiftId);
+                $haveFemale = $state->femaleCount($i, $requirement->outletId, $requirement->shiftId);
                 $positionGaps = [];
 
                 foreach ($requirement->positionMins as $group => $need) {
@@ -118,8 +120,14 @@ final class ResultBuilder
                     }
                 }
 
-                $minGap = max(0, $requirement->min - $have) + max(0, $requirement->minMale - $haveMale) + array_sum($positionGaps);
-                $targetGap = max(0, $requirement->target - $have) + max(0, $requirement->targetMale - $haveMale) + array_sum($positionGaps);
+                $minGap = max(0, $requirement->min - $have) + max(0, $requirement->minMale - $haveMale) + max(0, $requirement->minFemale - $haveFemale) + array_sum($positionGaps);
+                $positionTargetGaps = 0;
+
+                foreach (array_keys($requirement->positionMins + $requirement->positionTargets) as $group) {
+                    $positionTargetGaps += max(0, $requirement->positionTarget($group) - $state->positionCount($i, $requirement->outletId, $requirement->shiftId, $group));
+                }
+
+                $targetGap = max(0, $requirement->target - $have) + max(0, $requirement->targetMale - $haveMale) + max(0, $requirement->targetFemale - $haveFemale) + $positionTargetGaps;
 
                 if (! $minGap && ! $targetGap) {
                     continue;
@@ -127,7 +135,8 @@ final class ResultBuilder
 
                 $level = $minGap ? 'min' : 'target';
                 $maleNeeded = $haveMale < ($level === 'min' ? $requirement->minMale : $requirement->targetMale);
-                $analysis = $this->analyse($state, $i, $requirement, $maleNeeded);
+                $femaleNeeded = ! $maleNeeded && $haveFemale < ($level === 'min' ? $requirement->minFemale : $requirement->targetFemale);
+                $analysis = $this->analyse($state, $i, $requirement, $maleNeeded, $femaleNeeded);
                 $shift = $problem->shifts[$requirement->shiftId];
 
                 $result[] = [
@@ -143,11 +152,14 @@ final class ResultBuilder
                     'target_male' => $requirement->targetMale,
                     'assigned' => $have,
                     'assigned_male' => $haveMale,
+                    'min_female' => $requirement->minFemale,
+                    'target_female' => $requirement->targetFemale,
+                    'assigned_female' => $haveFemale,
                     'missing_positions' => $positionGaps,
                     'missing' => $level === 'min' ? $minGap : $targetGap,
                     'eligible_total' => $analysis['eligible_total'],
                     'reasons' => $analysis['reasons'],
-                    'provably_impossible' => $analysis['possible'] < ($maleNeeded ? $requirement->minMale : $requirement->min) && $level === 'min',
+                    'provably_impossible' => $analysis['possible'] < ($maleNeeded ? $requirement->minMale : ($femaleNeeded ? $requirement->minFemale : $requirement->min)) && $level === 'min',
                     'proposals' => $this->proposals($state, $requirement, $level, $have, $analysis),
                 ];
             }
@@ -231,16 +243,21 @@ final class ResultBuilder
         return $result;
     }
 
-    private function analyse(ScheduleState $state, int $i, Requirement $requirement, bool $maleNeeded): array
+    private function analyse(ScheduleState $state, int $i, Requirement $requirement, bool $maleNeeded, bool $femaleNeeded = false): array
     {
         $problem = $state->problem;
         $date = $state->dates[$i];
-        $reasons = ['approved_off' => [], 'locked' => [], 'busy_elsewhere' => [], 'blocked' => [], 'gender_missing' => [], 'overtime_possible' => [], 'transferable' => []];
+        $reasons = ['approved_off' => [], 'locked' => [], 'supporting' => [], 'busy_elsewhere' => [], 'blocked' => [], 'gender_missing' => [], 'overtime_possible' => [], 'transferable' => []];
         $eligible = 0;
         $possible = 0;
 
         foreach ($problem->employees as $employeeId => $employee) {
             if ($employee->skillLevel($requirement->outletId, $requirement->shiftId) === null) {
+                continue;
+            }
+
+            // Thiếu nữ waiter: chỉ xét nữ waiter thông thường (không tính cấp quản lý, vị trí khác).
+            if ($femaleNeeded && ! $employee->isFemaleStaff) {
                 continue;
             }
 
@@ -276,6 +293,14 @@ final class ResultBuilder
                 [$o, $s] = $current;
 
                 if ($o === $requirement->outletId && $s === $requirement->shiftId) {
+                    // Cùng ca, cùng outlet nhưng đang hỗ trợ Lobby (L): không tính vào outlet trong ca này.
+                    if ($current[3] && ($window = $problem->shifts[$s]->lobbyWindow)) {
+                        $lobbyShort = array_filter($state->supportWindows($i, $o, $s, true), fn ($k) => $state->coverageCount($i, $k) - 1 < $state->coverage[$i][$k][2]);
+                        $reasons['supporting'][] = sprintf('%s đang %s(L) – ở Lobby %02d:%02d–%02d:%02d%s', $name, $problem->shifts[$s]->code,
+                            intdiv($window[0], 60) % 24, $window[0] % 60, intdiv($window[1], 60) % 24, $window[1] % 60,
+                            $lobbyShort ? ', không rút về được vì Lobby sẽ thiếu tối thiểu' . ($fixed ? ' (ô đã khóa)' : '') : ($fixed ? ' (ô đã khóa)' : ', có thể đổi người hỗ trợ'));
+                    }
+
                     continue;
                 }
 
@@ -290,7 +315,9 @@ final class ResultBuilder
 
                 $sourceCount = $state->count($i, (int) $o, $s);
                 $sourceMale = $state->maleCount($i, (int) $o, $s);
-                $keepsSourceMin = ! $source || ($sourceCount - 1 >= $source->min && $sourceMale - ($employee->isMale() ? 1 : 0) >= $source->minMale);
+                $sourceFemale = $state->femaleCount($i, (int) $o, $s);
+                $keepsSourceMin = ! $source || ($sourceCount - 1 >= $source->min && $sourceMale - ($employee->isMale() ? 1 : 0) >= $source->minMale
+                    && $sourceFemale - ($employee->isFemaleStaff ? 1 : 0) >= $source->minFemale);
 
                 if ($keepsSourceMin) {
                     $state->remove($employeeId, $i);
@@ -628,6 +655,116 @@ final class ResultBuilder
                             $problem->outletName($current[0]), date('d/m', strtotime($state->dates[$i])), $problem->shifts[$current[1]]->code,
                             $employee->name, $problem->outletName($employee->homeOutletId), $problem->outletName($problem->outletParents[$current[0]]),
                             $problem->outletName($employee->homeOutletId))];
+                }
+            }
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * Nữ waiter làm trực tiếp tại outlet theo ngày × outlet × ca (sau khi đã xếp Lobby và Kid-Deline):
+     * số người trực tiếp, tối thiểu / mục tiêu (cấu hình định biên), số người đang hỗ trợ Lobby (L), đứng Kid-Deline,
+     * điều sang outlet khác trong ca, tình trạng thiếu / vượt và nguyên nhân.
+     */
+    private function femaleStaffing(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $rows = [];
+        $staff = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isFemaleStaff);
+
+        foreach ($state->requirements as $i => $requirements) {
+            foreach ($requirements as $requirement) {
+                $o = $requirement->outletId;
+                $s = $requirement->shiftId;
+
+                if ($o === $problem->stationOutletId || isset($problem->outletParents[$o])
+                    || ! in_array($problem->shifts[$s]->category(), ['morning', 'afternoon'], true)) {
+                    continue;
+                }
+
+                $support = 0;
+                $kid = 0;
+                $away = 0;
+                $home = 0;
+
+                foreach ($staff as $employee) {
+                    if ($employee->homeOutletId !== $o) {
+                        continue;
+                    }
+
+                    $home++;
+                    $current = $state->shiftAt($employee->id, $i);
+
+                    if (! $current || $current[1] !== $s) {
+                        continue;
+                    }
+
+                    match (true) {
+                        $current[0] === $o && $current[3] => $support++,
+                        $current[0] !== null && isset($problem->outletParents[$current[0]]) => $kid++,
+                        $current[0] !== $o => $away++,
+                        default => null,
+                    };
+                }
+
+                if (! $home && ! $requirement->minFemale && ! $requirement->targetFemale) {
+                    continue;
+                }
+
+                $direct = $state->femaleCount($i, $o, $s);
+                $rows[] = [
+                    'date' => $state->dates[$i],
+                    'outlet_id' => $o,
+                    'outlet_name' => $problem->outletName($o),
+                    'shift_code' => $problem->shifts[$s]->code,
+                    'direct' => $direct,
+                    'min' => $requirement->minFemale,
+                    'target' => $requirement->targetFemale,
+                    'lobby' => $support,
+                    'kid' => $kid,
+                    'away' => $away,
+                    'status' => match (true) {
+                        $direct < $requirement->minFemale => 'short_min',
+                        $direct < $requirement->targetFemale => 'short_target',
+                        $requirement->targetFemale > 0 && $direct > $requirement->targetFemale => 'over',
+                        default => 'ok',
+                    },
+                ];
+            }
+        }
+
+        usort($rows, fn ($a, $b) => [$a['date'], $a['outlet_name'], $a['shift_code']] <=> [$b['date'], $b['outlet_name'], $b['shift_code']]);
+
+        return $rows;
+    }
+
+    /**
+     * Cảnh báo: ca vượt mục tiêu nữ waiter trong khi ca kia của cùng outlet hôm đó còn thiếu – người dư không chuyển được
+     * (giờ nghỉ, ca khóa, OFF) hoặc nên được quản lý cân nhắc chuyển.
+     */
+    private function femaleWarnings(array $rows): array
+    {
+        $warnings = [];
+        $byDay = [];
+
+        foreach ($rows as $row) {
+            $byDay[$row['date'] . '|' . $row['outlet_id']][] = $row;
+        }
+
+        foreach ($byDay as $pair) {
+            foreach ($pair as $over) {
+                if ($over['status'] !== 'over') {
+                    continue;
+                }
+
+                foreach ($pair as $short) {
+                    if (in_array($short['status'], ['short_min', 'short_target'], true)) {
+                        $warnings[] = ['code' => 'female_unbalanced', 'date' => $over['date'], 'outlet_id' => $over['outlet_id'], 'outlet_name' => $over['outlet_name'],
+                            'message' => sprintf('%s %s: %s có %d nữ waiter trực tiếp (mục tiêu %d) trong khi %s chỉ %d (tối thiểu %d, mục tiêu %d) – người dư không chuyển được do giờ nghỉ, ca đã khóa hoặc định biên khác; quản lý cân nhắc đổi ca.',
+                                $over['outlet_name'], date('d/m', strtotime($over['date'])), $over['shift_code'], $over['direct'], $over['target'],
+                                $short['shift_code'], $short['direct'], $short['min'], $short['target'])];
+                    }
                 }
             }
         }

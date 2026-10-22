@@ -31,7 +31,7 @@ class CoverageRequirementForm extends FormAbstract
             ->add('min_staff', NumberField::class, NumberFieldOption::make()->label('Tối thiểu (người)')->min(0)->max(20)->defaultValue(0)->required()->colspan(1))
             ->add('target_staff', NumberField::class, NumberFieldOption::make()->label('Mục tiêu (người)')->min(0)->max(20)->defaultValue(0)->required()->colspan(1))
             ->add('weekday', SelectField::class, SelectFieldOption::make()->label('Áp dụng cho thứ')->colspan(2)
-                ->choices(['' => 'Mọi ngày'] + StaffingRequirementForm::WEEKDAYS))
+                ->choices(['' => 'Mọi ngày'] + \Botble\RestaurantRoster\Models\StaffingRequirement::WEEKDAYS))
             ->add('date', TextField::class, TextFieldOption::make()->label('Hoặc ngày cụ thể')->placeholder('YYYY-MM-DD')->colspan(2)
                 ->helperText('Ngày cụ thể ưu tiên hơn "theo thứ" (vd ngày có tiệc, khám sức khỏe).')
                 ->value($model instanceof CoverageRequirement ? $model->date?->toDateString() : null))

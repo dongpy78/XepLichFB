@@ -36,6 +36,7 @@ class OffReadinessService
     public function summary(CarbonInterface $from, CarbonInterface $to): array
     {
         $problem = $this->builder->build($from, $to);
+        $templateCodes = \Botble\RestaurantRoster\Models\ShiftTemplate::query()->pluck('code', 'id');
         $names = $problem->outletNames;
         $off = $this->offDays($problem);
         $days = [];
@@ -88,6 +89,11 @@ class OffReadinessService
             }
 
             $days[] = $row;
+        }
+
+        foreach ($this->builder->conflicts as $conflict) {
+            $alerts[] = ['level' => 'high', 'date' => $conflict['date'], 'message' => sprintf('%s %s: định biên mâu thuẫn (dòng #%s cùng mức ưu tiên, giá trị khác nhau) – sửa ở Định biên nhân sự trước khi xếp lịch',
+                $names[$conflict['outlet_id']] ?? $conflict['outlet_id'], $templateCodes[$conflict['shift_id']] ?? '', implode(', #', $conflict['ids']))];
         }
 
         return [

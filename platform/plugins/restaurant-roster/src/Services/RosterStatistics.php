@@ -18,7 +18,7 @@ class RosterStatistics
     private ?array $rules = null;
 
     /**
-     * @return array{leaderIds: int[], hostessIds: int[], checks: array<string, bool>}
+     * @return array{leaderIds: int[], hostessIds: int[], femaleStaffIds: int[], checks: array<string, bool>}
      */
     public function rules(): array
     {
@@ -26,28 +26,40 @@ class RosterStatistics
             return $this->rules;
         }
 
-        $ids = Position::query()->pluck('id', 'name');
         // Cấp quản lý theo cờ "Cấp quản lý" của vị trí (Junior Restaurant Captain trở lên).
         $leaderIds = Position::query()->where('is_manager', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
         $hostessIds = [];
         $checks = [];
 
-        foreach (config('plugins.restaurant-roster.general.scheduling.staffing_rules', []) as $rule) {
-            $names = (array) ($rule['positions'] ?? $rule['position'] ?? []);
-            $groupIds = $names ? $ids->only($names)->values()->map(fn ($id) => (int) $id)->all() : [];
+        // Ca được kiểm tra "có nam / Hostess / quản lý": outlet × ca có dòng định biên đang áp dụng đặt nam hoặc nhóm vị trí.
+        $outletCodes = \Botble\RestaurantRoster\Models\Outlet::query()->pluck('code', 'id');
+        $templateCodes = \Botble\RestaurantRoster\Models\ShiftTemplate::query()->pluck('code', 'id');
 
-            if ($names && empty($rule['managers'])) {
-                $hostessIds = $groupIds;
-            }
-
-            foreach ($rule['outlets'] ?? [] as $outlet) {
-                foreach ($rule['shifts'] ?? [] as $shift) {
-                    $checks["{$outlet}|{$shift}"] = true;
+        \Botble\RestaurantRoster\Models\StaffingRequirement::query()
+            ->with('positions')
+            ->where('status', \Botble\RestaurantRoster\Models\StaffingRequirement::STATUS_ACTIVE)
+            ->get()
+            ->each(function ($row) use (&$checks, &$hostessIds, $outletCodes, $templateCodes): void {
+                if ((int) $row->min_male > 0 || $row->positions->isNotEmpty()) {
+                    $checks[($outletCodes[$row->outlet_id] ?? '') . '|' . ($templateCodes[$row->shift_template_id] ?? '')] = true;
                 }
-            }
-        }
 
-        return $this->rules = ['leaderIds' => $leaderIds, 'hostessIds' => $hostessIds, 'checks' => $checks];
+                foreach ($row->positions as $position) {
+                    if ($position->kind === 'position' && $position->position_id) {
+                        $hostessIds[] = (int) $position->position_id;
+                    }
+                }
+            });
+
+        $hostessIds = array_values(array_unique($hostessIds));
+
+        // Nữ waiter thông thường (định biên nữ waiter trực tiếp): vị trí trong scheduling.female_staff_positions, không thuộc cấp quản lý.
+        $femaleNames = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.female_staff_positions', ['Waiter']));
+        $femaleStaffIds = Position::query()->get(['id', 'name'])
+            ->filter(fn ($p) => ! in_array((int) $p->id, $leaderIds, true) && (! $femaleNames || in_array(mb_strtolower(trim((string) $p->name)), $femaleNames, true)))
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        return $this->rules = ['leaderIds' => $leaderIds, 'hostessIds' => $hostessIds, 'femaleStaffIds' => $femaleStaffIds, 'checks' => $checks];
     }
 
     public function summarize(Collection $employees): array
@@ -69,6 +81,48 @@ class RosterStatistics
             'days_off' => $employees->groupBy('days_off_per_week')->map->count()->sortKeys()->all(),
             'manual' => $employees->where('auto_schedule', false)->count(),
         ];
+    }
+
+    /**
+     * Định biên nữ waiter trực tiếp theo ngày × outlet × mã ca – chọn dòng định biên như bộ giải (ngày cụ thể > thứ > chung, tầng trên).
+     *
+     * @param string[] $dates
+     * @return array<string, array<int, array<string, array{0: int, 1: int}>>>
+     */
+    private function femaleMinimums(array $dates, Collection $outlets): array
+    {
+        $rows = \Botble\RestaurantRoster\Models\StaffingRequirement::query()
+            ->where('status', \Botble\RestaurantRoster\Models\StaffingRequirement::STATUS_ACTIVE)
+            ->whereIn('outlet_id', $outlets->pluck('id'))
+            ->where(fn ($q) => $q->where('min_female', '>', 0)->orWhere('target_female', '>', 0))
+            ->get();
+
+        if ($rows->isEmpty() || ! $dates) {
+            return [];
+        }
+
+        $resolver = new \Botble\RestaurantRoster\Scheduling\RequirementResolver(StaffingRequirementService::resolverRows(\Botble\RestaurantRoster\Models\StaffingRequirement::query()
+            ->where('status', \Botble\RestaurantRoster\Models\StaffingRequirement::STATUS_ACTIVE)
+            ->whereIn('outlet_id', $rows->pluck('outlet_id')->unique())));
+        $flags = \Botble\RestaurantRoster\Models\OutletDay::query()
+            ->whereIn('outlet_id', $rows->pluck('outlet_id')->unique())
+            ->whereDate('date', '>=', min($dates))->whereDate('date', '<=', max($dates))
+            ->get()->keyBy(fn ($d) => $d->outlet_id . '|' . $d->date->toDateString());
+        $codes = \Botble\RestaurantRoster\Models\ShiftTemplate::query()->pluck('code', 'id');
+        $result = [];
+
+        foreach ($dates as $date) {
+            foreach ($rows->map(fn ($r) => [(int) $r->outlet_id, (int) $r->shift_template_id])->unique(fn ($p) => implode('|', $p)) as [$outletId, $templateId]) {
+                $flag = $flags[$outletId . '|' . $date] ?? null;
+                $requirement = $resolver->resolve($date, $outletId, $templateId, (bool) $flag?->upper_floor_open, (bool) $flag?->is_closed);
+
+                if ($requirement && ($requirement->minFemale > 0 || $requirement->targetFemale > 0)) {
+                    $result[$date][$outletId][(string) ($codes[$templateId] ?? '')] = [$requirement->minFemale, $requirement->targetFemale];
+                }
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -114,7 +168,7 @@ class RosterStatistics
             $codes[$shift->outlet_id][$code] = $shift->template?->start_time ?? '99';
             $support = in_array('L', $shift->tags ?: [], true) && ! $shift->template?->support_station;
             $cell = &$cells[$date][$shift->outlet_id][$code];
-            $cell ??= ['total' => 0, 'male' => 0, 'female' => 0, 'leaders' => 0, 'hostess' => 0, 'lobby' => 0];
+            $cell ??= ['total' => 0, 'male' => 0, 'female' => 0, 'female_staff' => 0, 'leaders' => 0, 'hostess' => 0, 'lobby' => 0];
 
             if ($support) {
                 $cell['lobby']++;
@@ -132,6 +186,7 @@ class RosterStatistics
                     }
                 }
                 $cell['hostess'] += in_array((int) $employee->position_id, $rules['hostessIds'], true) ? 1 : 0;
+                $cell['female_staff'] += $employee->gender === 'female' && in_array((int) $employee->position_id, $rules['femaleStaffIds'], true) ? 1 : 0;
             }
 
             unset($cell);
@@ -155,6 +210,25 @@ class RosterStatistics
         }, $codes);
 
         $problems = [];
+
+        // Nữ waiter trực tiếp dưới định biên tối thiểu (Định biên nhân sự → Nữ waiter tối thiểu) – người hỗ trợ Lobby (L) / Kid không tính.
+        foreach ($this->femaleMinimums(array_keys($days), $outlets) as $date => $byOutlet) {
+            foreach ($byOutlet as $outletId => $byCode) {
+                foreach ($byCode as $code => [$min, $target]) {
+                    $have = $cells[$date][$outletId][$code]['female_staff'] ?? 0;
+
+                    if ($have < $min) {
+                        $problems[$date][$outletId][$code][] = "thiếu nữ waiter: {$have}/{$min} tối thiểu";
+                    }
+
+                    $femaleRules[$date][$outletId][$code] = [$min, $target];
+
+                    if (! in_array($code, $codes[$outletId] ?? [], true)) {
+                        $codes[$outletId][] = $code;
+                    }
+                }
+            }
+        }
 
         // Cấp quản lý: số quản lý ca sáng / chiều lệch quá mức không tránh được (vd 4 sáng / 1 chiều) → báo ở các ca của outlet hôm đó.
         foreach ($managerSplit as $date => $byOutlet) {
@@ -196,6 +270,8 @@ class RosterStatistics
             'cells' => $cells,
             'absent' => $absent,
             'problems' => $problems,
+            // [date][outletId][mã ca] => [nữ waiter tối thiểu, mục tiêu] – ô có cấu hình thì hiện số nữ waiter trực tiếp.
+            'female_rules' => $femaleRules ?? [],
             'outlets' => $outlets->filter(fn ($o) => ! empty($codes[$o->id]) || collect($absent)->contains(fn ($day) => isset($day[$o->id])))->values(),
             'empty' => $shifts->isEmpty(),
         ];

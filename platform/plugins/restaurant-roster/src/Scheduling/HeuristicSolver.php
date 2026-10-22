@@ -51,6 +51,8 @@ final class HeuristicSolver implements SolverInterface
             if ($constructed) {
                 // Sửa OFF lẻ còn sót (thêm tối đa 3 giây).
                 $stats['off_repaired'] = $this->repairOffSplits($state, microtime(true) + 3);
+                // Đánh bóng có hệ thống: đổi ca trong ngày cho người còn ca nặng / lệch sáng–chiều (thêm tối đa 2 giây).
+                $stats['polished'] = $this->polishSwaps($state, microtime(true) + min(2, max(0.5, $problem->rules->timeLimitSeconds * 0.15)));
             }
 
             return (new ResultBuilder())->build($state, $constructed, [
@@ -322,12 +324,16 @@ final class HeuristicSolver implements SolverInterface
         $this->planOffPairs($state);
         $this->planNightDuty($state);
 
+        // Thứ tự: nam tối thiểu → nữ waiter tối thiểu → vị trí (Hostess, quản lý) → người tối thiểu → phủ Lobby tối thiểu → ...
+        // Nữ waiter trực tiếp được lấp TRƯỚC bước giao (L): giao (L) chỉ lấy người dư so với tối thiểu của outlet (tổng, nam, nữ, vị trí).
         $passes = [
             [fn (Requirement $r) => $r->minMale, true, true],
+            [fn (Requirement $r) => $r->minFemale, 'female', true],
             'position-min',
             [fn (Requirement $r) => $r->min, false, true],
             'coverage-min',
             [fn (Requirement $r) => $r->targetMale, true, false],
+            [fn (Requirement $r) => $r->targetFemale, 'female', false],
             [fn (Requirement $r) => $r->target, false, false],
             'coverage-target',
         ];
@@ -370,9 +376,11 @@ final class HeuristicSolver implements SolverInterface
                     return false;
                 }
 
-                $have = fn () => $maleOnly
-                    ? $state->maleCount($i, $requirement->outletId, $requirement->shiftId)
-                    : $state->count($i, $requirement->outletId, $requirement->shiftId);
+                $have = fn () => match ($maleOnly) {
+                    true => $state->maleCount($i, $requirement->outletId, $requirement->shiftId),
+                    'female' => $state->femaleCount($i, $requirement->outletId, $requirement->shiftId),
+                    default => $state->count($i, $requirement->outletId, $requirement->shiftId),
+                };
 
                 while ($have() < $quota && $state->count($i, $requirement->outletId, $requirement->shiftId) < $requirement->capacity()) {
                     $employeeId = $this->bestCandidate($state, $i, $requirement, $maleOnly, $allowOverNorm);
@@ -514,7 +522,7 @@ final class HeuristicSolver implements SolverInterface
             // Người đi Lobby rời nhà hàng: chỉ lấy người DƯ so với định biên tối thiểu của outlet × ca (tổng, nam, vị trí).
             $requirement = $state->requirements[$i]["{$o}|{$s}"] ?? null;
 
-            if ($state->removalBreaksMinimum($employeeId, $i, $o, $s)) {
+            if ($state->removalBreaksMinimum($employeeId, $i, $o, $s) && ! $state->supportCountsAtOutlet($requirement, $s)) {
                 continue;
             }
 
@@ -531,6 +539,7 @@ final class HeuristicSolver implements SolverInterface
                 + $state->lobbyLoad($employeeId) * 20
                 + $state->supportTurns($employeeId, Problem::supportTypeKey($state->problem->shifts[$s]->code, 'lobby')) * 25
                 + ($requirement && $state->count($i, $o, $s) - 1 < $requirement->target ? 50 : 0)
+                + ($requirement && $employee->isFemaleStaff && $state->femaleCount($i, $o, $s) - 1 < $requirement->targetFemale ? 80 : 0)
                 + mt_rand(0, 9);
 
             if ($score < $bestScore) {
@@ -618,7 +627,19 @@ final class HeuristicSolver implements SolverInterface
         return true;
     }
 
-    private function candidateCount(ScheduleState $state, int $i, Requirement $requirement, bool $maleOnly): int
+    /**
+     * Người thuộc nhóm cần lấp: true = nam, 'female' = nữ waiter thông thường, false = mọi người.
+     */
+    private function inGroup(EmployeeSpec $employee, bool|string $group): bool
+    {
+        return match ($group) {
+            true => $employee->isMale(),
+            'female' => $employee->isFemaleStaff,
+            default => true,
+        };
+    }
+
+    private function candidateCount(ScheduleState $state, int $i, Requirement $requirement, bool|string $maleOnly): int
     {
         $count = 0;
 
@@ -628,7 +649,7 @@ final class HeuristicSolver implements SolverInterface
                 continue;
             }
 
-            if ((! $maleOnly || $employee->isMale())
+            if ($this->inGroup($employee, $maleOnly)
                 && ! $state->isOccupied($employeeId, $i)
                 && $employee->skillLevel($requirement->outletId, $requirement->shiftId) !== null
                 && ! isset($state->problem->hardUnavailable[$employeeId][$state->dates[$i]])) {
@@ -639,14 +660,14 @@ final class HeuristicSolver implements SolverInterface
         return $count;
     }
 
-    private function bestCandidate(ScheduleState $state, int $i, Requirement $requirement, bool $maleOnly, bool $allowOverNorm = false, ?string $positionGroup = null): ?int
+    private function bestCandidate(ScheduleState $state, int $i, Requirement $requirement, bool|string $maleOnly, bool $allowOverNorm = false, ?string $positionGroup = null): ?int
     {
         $best = null;
         $bestScore = PHP_FLOAT_MAX;
         $date = $state->dates[$i];
 
         foreach ($state->problem->employees as $employeeId => $employee) {
-            if (($maleOnly && ! $employee->isMale()) || $state->isOccupied($employeeId, $i)
+            if (! $this->inGroup($employee, $maleOnly) || $state->isOccupied($employeeId, $i)
                 || ($positionGroup !== null && ! in_array($positionGroup, $state->problem->groupsOfPosition($employee->positionId), true))) {
                 continue;
             }
@@ -703,7 +724,9 @@ final class HeuristicSolver implements SolverInterface
                 + (isset($state->problem->softUnavailable[$employeeId][$date]) ? 400 : 0)
                 + ($this->wouldBeHeavy($state, $employeeId, $i, $requirement) ? 150 : 0)
                 // Người không phải nam dành chỗ nam cho ô cần nam khác.
-                + (! $maleOnly && $employee->isMale() && $requirement->minMale === 0 ? 5 : 0)
+                + ($maleOnly === false && $employee->isMale() && $requirement->minMale === 0 ? 5 : 0)
+                // Nữ waiter dành cho ô còn thiếu nữ waiter khác.
+                + ($maleOnly === false && $employee->isFemaleStaff && $requirement->minFemale === 0 ? 5 : 0)
                 + ($baseline && $baseline[0] === $requirement->outletId && $baseline[1] === $requirement->shiftId ? -500 : 0)
                 + mt_rand(0, 100) / 1000;
 
@@ -770,6 +793,10 @@ final class HeuristicSolver implements SolverInterface
         $t1 = max(1e-6, min($t0, $rules->annealEndTemperature));
         $temperature = $t0;
         $moves = [];
+        // Hâm nóng lại: lâu không có phương án tốt nhất mới → quay về phương án tốt nhất, tăng nhiệt độ để thoát chỗ kẹt.
+        $reheatAt = null;
+        $lastBest = 0;
+        $stats['reheats'] = 0;
 
         while ($stats['iterations'] < $rules->maxIterations) {
             if (($stats['iterations'] & 31) === 0) {
@@ -782,7 +809,22 @@ final class HeuristicSolver implements SolverInterface
                 }
 
                 $progress = max($stats['iterations'] / $rules->maxIterations, ($now - $startedAt) / $span);
-                $temperature = $t0 * ($t1 / $t0) ** min(1, $progress);
+
+                if (! $frame && $progress < 0.85 && $stats['iterations'] - $lastBest > self::REHEAT_STALL) {
+                    if ($best < $state->cost()) {
+                        $this->restorePlan($state, $bestPlan);
+                    }
+
+                    $current = $state->cost();
+                    $reheatAt = $progress;
+                    $lastBest = $stats['iterations'];
+                    $stats['reheats']++;
+                }
+
+                // Nhiệt độ giảm dần theo tiến độ; sau mỗi lần hâm nóng: từ một nửa nhiệt độ đầu giảm dần trên phần thời gian còn lại.
+                $temperature = $reheatAt === null
+                    ? $t0 * ($t1 / $t0) ** min(1, $progress)
+                    : ($t0 / 2) * ($t1 / ($t0 / 2)) ** min(1, ($progress - $reheatAt) / max(1e-6, 1 - $reheatAt));
 
                 if ($frame && $progress >= Rules::FRAME_PHASE_SHARE) {
                     // Hết pha dựng khung: tiếp tục từ phương án tốt nhất theo trọng số thật.
@@ -826,6 +868,7 @@ final class HeuristicSolver implements SolverInterface
                     $moves[$name]['improved']++;
                     $best = $real;
                     $bestPlan = $state->plan;
+                    $lastBest = $stats['iterations'];
                 }
             } else {
                 $undo();
@@ -865,6 +908,9 @@ final class HeuristicSolver implements SolverInterface
             }
         }
     }
+
+    /** Số bước liên tiếp không có phương án tốt nhất mới thì hâm nóng lại. */
+    private const REHEAT_STALL = 15000;
 
     /** Tên loại bước vừa thử (thống kê hiệu quả từng loại bước). */
     private string $lastMove = '';
@@ -1220,6 +1266,15 @@ final class HeuristicSolver implements SolverInterface
         $o = $requirement->outletId;
         $s = $requirement->shiftId;
         $candidates = $this->eligibleFor($state, $o, $s);
+        $group = match (true) {
+            $state->femaleCount($i, $o, $s) < $requirement->targetFemale && (mt_rand(0, 1) || $state->maleCount($i, $o, $s) >= $requirement->targetMale) => 'female',
+            $state->maleCount($i, $o, $s) < $requirement->targetMale => true,
+            default => false,
+        };
+
+        if ($group !== false) {
+            $candidates = array_values(array_filter($candidates, fn ($e) => $this->inGroup($state->problem->employees[$e], $group)));
+        }
 
         if (! $candidates) {
             return null;
@@ -1647,6 +1702,72 @@ final class HeuristicSolver implements SolverInterface
      * sang ngày làm sát một ngày OFF khác cùng tuần (tự làm nếu ô còn chỗ, hoặc đổi ngày với người đang làm ô đó);
      * chỉ giữ thay đổi làm vector mục tiêu tốt hơn.
      */
+    /**
+     * Đánh bóng sau tìm kiếm ngẫu nhiên: với người còn ca nặng, lệch sáng / chiều trong tuần hoặc qua nhiều tuần, thử MỌI cách
+     * đổi ca cùng ngày với từng người khác (ô không khóa) và giữ thay đổi làm điểm phạt tốt hơn – lặp tới khi không còn cải thiện.
+     * Số người mỗi ô không đổi khi hai người đổi ô cho nhau, nên không làm thiếu người.
+     */
+    private function polishSwaps(ScheduleState $state, float $deadline): int
+    {
+        $improved = 0;
+        $current = $state->cost();
+        $employeeIds = array_keys($state->problem->employees);
+
+        do {
+            $changed = false;
+
+            foreach ($employeeIds as $a) {
+                $m = $state->metricsFor($a);
+
+                if ($m['heavy'] + $m['shift_mix'] + $m['shift_history'] === 0) {
+                    continue;
+                }
+
+                foreach ($state->scopeIndexes() as $i) {
+                    $slotA = $state->plan[$a][$i] ?? null;
+
+                    if ($slotA === null || $state->isFixed($a, $i)) {
+                        continue;
+                    }
+
+                    foreach ($employeeIds as $b) {
+                        if (microtime(true) > $deadline) {
+                            return $improved;
+                        }
+
+                        $slotB = $state->plan[$b][$i] ?? null;
+
+                        if ($b === $a || $slotB === null || $slotB === $slotA || $state->isFixed($b, $i)) {
+                            continue;
+                        }
+
+                        $metrics = $state->metricsSnapshot();
+                        $state->remove($a, $i);
+                        $state->remove($b, $i);
+                        $journal = [[$a, $i, $slotA], [$b, $i, $slotB]];
+
+                        if ($this->put($state, $a, $i, $slotB) && $this->put($state, $b, $i, $slotA) && ($candidate = $state->cost()) < $current) {
+                            $current = $candidate;
+                            $improved++;
+                            $changed = true;
+                            $slotA = $slotB;
+
+                            continue;
+                        }
+
+                        foreach ($journal as [$e, $d, $slot]) {
+                            $this->restore($state, $e, $d, $slot);
+                        }
+
+                        $state->restoreMetrics($metrics);
+                    }
+                }
+            }
+        } while ($changed && microtime(true) < $deadline);
+
+        return $improved;
+    }
+
     private function repairOffSplits(ScheduleState $state, float $deadline): int
     {
         $repaired = 0;

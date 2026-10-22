@@ -108,6 +108,9 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 });
 
                 Route::group(['prefix' => 'requirements', 'as' => 'requirements.'], function (): void {
+                    Route::post('preview', 'StaffingRequirementController@preview')->name('preview');
+                    Route::post('{requirement}/status', 'StaffingRequirementController@status')->name('status')->wherePrimaryKey('requirement');
+                    Route::get('{requirement}/history', 'StaffingRequirementController@history')->name('history')->wherePrimaryKey('requirement');
                     Route::resource('', 'StaffingRequirementController')->parameters(['' => 'requirement'])->except('show');
                 });
 

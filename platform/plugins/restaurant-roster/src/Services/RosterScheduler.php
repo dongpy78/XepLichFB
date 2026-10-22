@@ -59,10 +59,19 @@ class RosterScheduler
 
         try {
             $problem = $this->builder->build($from, $to, $outletIds, ['stability_first' => $type === 'reoptimize', ...$overrides]);
+
+            // Định biên mâu thuẫn (hai dòng cùng mức ưu tiên, giá trị khác nhau): không chạy, không tự chọn một dòng.
+            if ($this->builder->conflicts) {
+                $run->update(['status' => SolveResult::ERROR, 'explanation' => $this->conflictMessage($this->builder->conflicts)]);
+
+                return $run->refresh();
+            }
+
             @set_time_limit((int) ceil($problem->rules->timeLimitSeconds) + 60);
 
             $result = $this->solver->solve($problem);
             $this->store($run, $result, $problem->rules->toArray(), $problem->hash());
+            $this->rememberStaffing($run);
         } catch (Throwable $exception) {
             Log::error('Roster scheduling run failed', ['run_id' => $run->getKey(), 'exception' => $exception]);
             $run->update(['status' => SolveResult::ERROR, 'explanation' => 'Lỗi hệ thống: ' . $exception->getMessage()]);
@@ -91,6 +100,13 @@ class RosterScheduler
 
         try {
             $problem = $this->builder->build($from, $to, $outletIds, freezeCurrent: true);
+
+            if ($this->builder->conflicts) {
+                $run->update(['status' => SolveResult::ERROR, 'explanation' => $this->conflictMessage($this->builder->conflicts)]);
+
+                return $run->refresh();
+            }
+
             $state = new ScheduleState($problem);
             $result = (new ResultBuilder())->build($state, true, ['solver' => 'validator', 'duration_ms' => 0]);
             $this->store($run, $result, $problem->rules->toArray(), $problem->hash());
@@ -284,7 +300,8 @@ class RosterScheduler
                 $rows[] = ['run_id' => $run->getKey(), 'date' => $u['date'], 'outlet_id' => $u['outlet_id'], 'shift_template_id' => $u['shift_id'], 'employee_id' => null,
                     'category' => 'shortage', 'severity' => $u['level'] === 'min' ? 'high' : 'medium', 'code' => $u['level'] === 'min' ? 'below_min' : 'below_target',
                     'message' => mb_substr(sprintf('%s %s: có %d/%d người (tối thiểu %d)%s', $u['outlet_name'], $u['shift_code'], $u['assigned'], $u['target'], $u['min'],
-                        $u['min_male'] || $u['target_male'] ? sprintf(', nam %d/%d', $u['assigned_male'], $u['target_male']) : ''), 0, 500),
+                        ($u['min_male'] || $u['target_male'] ? sprintf(', nam %d/%d', $u['assigned_male'], $u['target_male']) : '')
+                        . (($u['min_female'] ?? 0) || ($u['target_female'] ?? 0) ? sprintf(', nữ waiter trực tiếp %d/%d (tối thiểu %d)', $u['assigned_female'], $u['target_female'], $u['min_female']) : '')), 0, 500),
                     'suggestions' => json_encode(array_column($u['proposals'], 'text'), JSON_UNESCAPED_UNICODE), 'created_at' => $now, 'updated_at' => $now];
             }
 
@@ -318,6 +335,40 @@ class RosterScheduler
                 Violation::query()->insert($chunk);
             }
         });
+    }
+
+    /**
+     * Lưu kèm lần chạy ảnh chụp các dòng định biên đã dùng (để giải thích kết quả về sau, kể cả khi định biên đổi).
+     */
+    protected function rememberStaffing(Run $run): void
+    {
+        $snapshot = \Botble\RestaurantRoster\Models\StaffingRequirement::query()->with('positions')
+            ->whereIn('id', array_keys($this->builder->usedRequirementIds))->get()
+            ->mapWithKeys(fn ($r) => [$r->getKey() => [...$r->snapshot(), 'updated_at' => $r->updated_at?->toDateTimeString()]])->all();
+
+        $run->update(['settings' => [...($run->settings ?? []), 'staffing_snapshot' => $snapshot]]);
+    }
+
+    /**
+     * @param array<int, array{date: string, outlet_id: int, shift_id: int, ids: int[]}> $conflicts
+     */
+    protected function conflictMessage(array $conflicts): string
+    {
+        $outlets = \Botble\RestaurantRoster\Models\Outlet::query()->pluck('code', 'id');
+        $templates = ShiftTemplate::query()->pluck('code', 'id');
+        $lines = [];
+
+        foreach ($conflicts as $c) {
+            $key = ($outlets[$c['outlet_id']] ?? $c['outlet_id']) . ' ' . ($templates[$c['shift_id']] ?? $c['shift_id']) . ': dòng #' . implode(', #', $c['ids']);
+            $lines[$key][] = date('d/m', strtotime($c['date']));
+        }
+
+        return "Không chạy được: định biên mâu thuẫn (hai dòng cùng mức ưu tiên, hiệu lực chồng nhau, giá trị khác nhau) – thuật toán không tự chọn một dòng.
+"
+            . implode("
+", array_map(fn ($key, $dates) => "• {$key} (ngày " . implode(', ', array_slice($dates, 0, 10)) . (count($dates) > 10 ? '…' : '') . ')', array_keys($lines), $lines))
+            . "
+Vào Định biên nhân sự để sửa (xem cột Xung đột).";
     }
 
     protected function snapshot(Shift $shift): array

@@ -115,7 +115,8 @@ class LobbyRotationTest extends TestCase
         }
 
         $coverage = array_map(fn ($d) => new Coverage($d, 9 * 60, 14 * 60, 2, 2, 'Lobby sáng', [self::OH, self::M9]), $days);
-        $result = $this->solve($this->problem($employees, $requirements, ['coverage' => $coverage, 'time_limit' => 4]));
+        // Giới hạn theo số bước (không theo giây) để kết quả giống nhau trên mọi máy, kể cả khi chạy chung toàn bộ test.
+        $result = $this->solve($this->problem($employees, $requirements, ['coverage' => $coverage, 'time_limit' => 60, 'max_iterations' => 40000]));
         $mixed = 0;
 
         foreach ($days as $day) {

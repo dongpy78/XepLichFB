@@ -285,7 +285,9 @@ class SchedulingEngineTest extends TestCase
         $days = $this->days();
         $problem = $this->problem(
             $this->team(1, 8, self::GUSTO),
-            [...$this->dailyRequirements($days, self::GUSTO, self::M6, 2, 2), ...$this->dailyRequirements($days, self::GUSTO, self::A2, 2, 2)]
+            [...$this->dailyRequirements($days, self::GUSTO, self::M6, 2, 2), ...$this->dailyRequirements($days, self::GUSTO, self::A2, 2, 2)],
+            // Giới hạn theo số bước (không theo giây) để kết quả giống nhau trên mọi máy, kể cả khi chạy chung toàn bộ test.
+            ['time_limit' => 60, 'max_iterations' => 80000]
         );
 
         $result = $this->solve($problem);

@@ -54,18 +54,14 @@ return [
         'flex_capacity' => 2,
         // Người không có ca cứng: số ca sáng (M6, M9, OH) và chiều (A2) trong tuần lệch nhau tối đa bấy nhiêu ca.
         'shift_mix_tolerance' => 1,
-        // Quy định bắt buộc theo outlet × ca (mã outlet / mã ca), tính ở mức tối thiểu:
-        // - min_male: số nam tối thiểu (thiếu nam thì đưa người outlet NIGHT sang bù);
-        // - position + min: số người tối thiểu của một vị trí.
-        'staffing_rules' => [
-            ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'min_male' => 1],
-            ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'position' => 'Hostess', 'min' => 1],
-            // Mỗi ca có người quản lý: các vị trí bật "Cấp quản lý" trên màn hình Vị trí (Junior Restaurant Captain trở lên).
-            ['outlets' => ['GUSTO', 'VILLA'], 'shifts' => ['M6', 'A2'], 'label' => 'Quản lý (Junior Captain trở lên)', 'min' => 1, 'managers' => true],
-        ],
+        // Quy định nam / Hostess / quản lý mỗi ca trước đây viết cứng ở đây (staffing_rules) – đã chuyển vào Định biên nhân sự
+        // (database, migration 2026_10_22_000004). Thuật toán và bảng xếp ca chỉ đọc định biên trong database.
         // Cấp quản lý (vị trí bật "Cấp quản lý"): thuật toán chỉ tự xếp các ca này, tại outlet chính, không đi Lobby;
         // số quản lý ca sáng / chiều được cân bằng theo từng outlet, từng ngày. OH / M9 / đổi outlet do quản lý xếp tay.
         'manager_shift_codes' => ['M6', 'A2'],
+        // Vị trí được tính là "nữ waiter" cho định biên nữ waiter trực tiếp tại outlet (Định biên nhân sự → Nữ waiter tối thiểu / mục tiêu).
+        // Không tính cấp quản lý, người đang hỗ trợ Lobby (L) hay đứng Kid-Deline trong ca.
+        'female_staff_positions' => ['Waiter'],
         // Một người được tính là phủ một khung giờ Lobby nếu có mặt ở Lobby ít nhất tỉ lệ này của khung.
         'coverage_overlap_ratio' => 0.5,
         // Ngày OFF: "weekly" = mỗi tuần đúng số ngày OFF cấu hình của nhân viên (quản lý 19/10/2026: bắt buộc).

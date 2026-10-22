@@ -2,7 +2,6 @@
 
 namespace Botble\RestaurantRoster\Tables;
 
-use Botble\RestaurantRoster\Forms\StaffingRequirementForm;
 use Botble\RestaurantRoster\Models\CoverageRequirement;
 use Botble\Table\Abstracts\TableAbstract;
 use Botble\Table\Actions\DeleteAction;
@@ -34,7 +33,7 @@ class CoverageRequirementTable extends TableAbstract
                 FormattedColumn::make('weekday')->title('Áp dụng')
                     ->getValueUsing(fn (FormattedColumn $c) => e($c->getItem()->date
                         ? 'Ngày ' . $c->getItem()->date->format('d/m/Y')
-                        : (StaffingRequirementForm::WEEKDAYS[$c->getItem()->weekday] ?? 'Mọi ngày'))),
+                        : (\Botble\RestaurantRoster\Models\StaffingRequirement::WEEKDAYS[$c->getItem()->weekday] ?? 'Mọi ngày'))),
                 FormattedColumn::make('min_staff')->title('Người (tối thiểu / mục tiêu)')->width(190)->alignCenter()
                     ->getValueUsing(fn (FormattedColumn $c) => "<strong>{$c->getItem()->min_staff}</strong> / {$c->getItem()->target_staff}"),
                 FormattedColumn::make('is_confirmed')->title('Trạng thái')->width(170)
