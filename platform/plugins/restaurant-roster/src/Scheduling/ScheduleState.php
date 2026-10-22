@@ -704,10 +704,8 @@ final class ScheduleState
                     return ['night_max', 'Người luân phiên Night đã đủ 3 đêm trong tuần'];
                 }
 
-                // Các đêm trong tuần phải liền nhau (một cụm): không N … OFF … N.
-                if (max($nights) - min($nights) + 1 !== count($nights)) {
-                    return ['night_block', 'Các đêm luân phiên trong tuần phải liền nhau'];
-                }
+                // Các đêm liền nhau là ưu tiên mạnh (night_plan_gap), không phải ràng buộc cứng: khi bắt buộc để Night đủ 3 người / ngày
+                // thì được tách cụm (quản lý 24/10/2026: "đủ người" trước).
             }
         }
 
@@ -718,6 +716,11 @@ final class ScheduleState
 
             if (! $shift->lobbyWindow) {
                 return ['support', "Ca {$shift->code} không có khung hỗ trợ Lobby (L)"];
+            }
+
+            // Hỗ trợ Lobby (L) chỉ đi từ outlet chính (không mượn ca của outlet khác rồi đưa đi Lobby, vd "OH(G)(L)").
+            if ($checkEligibility && $employee->homeOutletId !== null && $outletId !== $employee->homeOutletId) {
+                return ['support', 'Hỗ trợ Lobby (L) chỉ từ outlet chính của nhân viên'];
             }
 
             if ($checkEligibility && $this->problem->rules->supportGender !== null && $employee->gender !== $this->problem->rules->supportGender) {

@@ -392,7 +392,8 @@ final class HeuristicSolver implements SolverInterface
             }
 
             $rotation = array_keys($rotation);
-            // Ngày người này làm ca đêm được: không nghỉ đã duyệt, không có ô cố định khác ca đêm.
+            // Ngày người này làm ca đêm được: không nghỉ đã duyệt, không có ô cố định khác ca đêm, và đặt ca đêm không vi phạm
+            // ràng buộc với các ngày liền kề đã có (vd A2 tối Chủ nhật tuần trước → không vào N tối thứ Hai; vừa hết đêm → phải OFF).
             $free = function (int $e, int $i) use ($state, $problem, $need): ?bool {
                 if (isset($problem->hardUnavailable[$e][$state->dates[$i]])) {
                     return false;
@@ -404,7 +405,7 @@ final class HeuristicSolver implements SolverInterface
                     return $fixed->isWorking() && $fixed->outletId === $need[$i][0] && $fixed->shiftId === $need[$i][1] ? null : false;
                 }
 
-                return true;
+                return ! $state->violation($e, $i, $need[$i][0], $need[$i][1]);
             };
 
             // Phương án ngày làm của từng Night cứng: bỏ đúng số ngày OFF tuần trong các ngày rảnh (ngày cố định đêm luôn làm).
@@ -418,6 +419,7 @@ final class HeuristicSolver implements SolverInterface
             }
 
             $best = null;
+            $bestPartial = null;
             $budget = 300000;
 
             foreach ($this->product($coreOptions) as $choice) {
@@ -446,6 +448,12 @@ final class HeuristicSolver implements SolverInterface
 
                 $blocks = $this->tileRotation($state, $rotation, $nightDays, $remaining, $free, $budget);
 
+                // Không ghép vừa khít: giữ phương án phủ được nhiều đêm nhất làm khung (tìm kiếm sau đó lấp tiếp).
+                if ($blocks === null && ($partial = $this->greedyRotation($state, $rotation, $nightDays, $remaining, $free))
+                    && ($bestPartial === null || $partial[1] > $bestPartial[2])) {
+                    $bestPartial = [$choice, $partial[0], $partial[1]];
+                }
+
                 if ($blocks !== null) {
                     $threes = count(array_filter($blocks, fn ($b) => count($b) === 3));
 
@@ -463,11 +471,11 @@ final class HeuristicSolver implements SolverInterface
                 }
             }
 
-            if (! $best) {
+            if (! $best && ! $bestPartial) {
                 continue;
             }
 
-            [$choice, $blocks] = $best;
+            [$choice, $blocks] = $best ?? $bestPartial;
 
             // Nối theo khóa (mã nhân viên) – không dùng [...] vì sẽ đánh số lại khóa.
             foreach ($choice + $blocks as $e => $workDays) {
@@ -557,6 +565,49 @@ final class HeuristicSolver implements SolverInterface
 
         // Người không có cụm đêm nào làm được (OFF / ca khóa): bỏ qua người này.
         return $feasible ? null : $this->tileRotation($state, $people, $nightDays, $remaining, $free, $budget);
+    }
+
+    /**
+     * Ghép tham lam khi không có lời giải vừa khít: lần lượt mỗi người luân phiên nhận cụm 3 / 2 đêm liền nhau phủ được nhiều đêm còn thiếu nhất.
+     *
+     * @return array{0: array<int, int[]>, 1: int}|null [cụm theo người, số đêm phủ được]
+     */
+    private function greedyRotation(ScheduleState $state, array $people, array $nightDays, array $remaining, callable $free): ?array
+    {
+        $blocks = [];
+        $covered = 0;
+
+        foreach ($people as $e) {
+            $best = null;
+
+            foreach ([3, 2] as $length) {
+                foreach ($nightDays as $start) {
+                    $block = range($start, $start + $length - 1);
+                    $after = $state->fixed[$e][$start + $length] ?? null;
+
+                    if (array_diff($block, $nightDays) || array_filter($block, fn ($i) => $free($e, $i) === false) || ($after && $after->isWorking())) {
+                        continue;
+                    }
+
+                    $gain = count(array_filter($block, fn ($i) => ($remaining[$i] ?? 0) > 0));
+
+                    if ($gain > ($best[1] ?? 0)) {
+                        $best = [$block, $gain];
+                    }
+                }
+            }
+
+            if ($best) {
+                $blocks[$e] = array_values(array_filter($best[0], fn ($i) => ($remaining[$i] ?? 0) > 0));
+                $covered += $best[1];
+
+                foreach ($blocks[$e] as $i) {
+                    $remaining[$i]--;
+                }
+            }
+        }
+
+        return $blocks ? [$blocks, $covered] : null;
     }
 
     /** @return array<int, int[]> mọi tổ hợp $k phần tử */
