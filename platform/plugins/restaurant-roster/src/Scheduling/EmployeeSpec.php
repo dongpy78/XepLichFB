@@ -33,6 +33,8 @@ final class EmployeeSpec
         public readonly ?bool $isMaleStaff = null,
         // Vai trò Night: core = Night cố định, flex = Night đa năng (Night / Room Service / hỗ trợ nhà hàng), null = nhân viên thường.
         public readonly ?string $nightRole = null,
+        // Nhân viên đa năng (mọi người thuộc outlet Night trừ Night cứng và Room Service chuyên trách): được mượn trước khi outlet thiếu tối thiểu.
+        public readonly bool $isFlex = false,
     ) {
     }
 
@@ -59,7 +61,7 @@ final class EmployeeSpec
 
     public function isNightFlex(): bool
     {
-        return $this->nightRole === self::NIGHT_FLEX;
+        return $this->isFlex || $this->nightRole === self::NIGHT_FLEX;
     }
 
     /**

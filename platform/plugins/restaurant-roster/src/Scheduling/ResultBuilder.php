@@ -26,7 +26,8 @@ final class ResultBuilder
             ];
         }
 
-        $unfilled = [...$this->unfilled($state), ...$this->uncoveredWindows($state), ...$this->coreGaps($state)];
+        $unfilled = array_map(fn ($u) => $this->borrowNote($state, $u), [...$this->unfilled($state), ...$this->uncoveredWindows($state), ...$this->coreGaps($state)]);
+        $borrows = $this->borrowReport($state);
         usort($unfilled, fn ($a, $b) => [$a['level'] === 'min' ? 0 : 1, $a['date'], $a['outlet_name'], $a['shift_code']] <=> [$b['level'] === 'min' ? 0 : 1, $b['date'], $b['outlet_name'], $b['shift_code']]);
         $objective = $state->objective();
 
@@ -41,7 +42,8 @@ final class ResultBuilder
         };
 
         $femaleStaffing = $this->femaleStaffing($state);
-        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing)];
+        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing),
+            ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
         if ($warnings) {
@@ -65,7 +67,7 @@ final class ResultBuilder
             explanation: $explanation,
             solverMetadata: $metadata,
             warnings: $warnings,
-            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing],
+            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing, 'borrows' => $borrows],
         );
     }
 
@@ -290,6 +292,113 @@ final class ResultBuilder
         }
 
         return $result;
+    }
+
+    /**
+     * Ô mượn người trong lịch đề xuất (BorrowPolicy): outlet nhận, ca, người mượn, outlet gốc, lý do (thiếu tối thiểu nào),
+     * số người / định mức của outlet nhận và outlet nguồn sau điều chuyển. Lịch là bản nháp – quản lý xem rồi áp dụng.
+     */
+    private function borrowReport(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $policy = $state->borrowPolicy();
+        $result = [];
+
+        foreach ($state->scopeIndexes() as $i) {
+            foreach ($problem->employees as $employeeId => $employee) {
+                $current = $state->shiftAt($employeeId, $i);
+
+                if (! $current || $current[3] || ! $policy->isBorrowed($employee, (int) $current[0])) {
+                    continue;
+                }
+
+                [$o, $s] = [(int) $current[0], $current[1]];
+                $requirement = $state->requirements[$i]["{$o}|{$s}"] ?? null;
+                [$bTotal, $bMale, $bFemale] = $state->borrowedAt($i, $o, $s);
+                $have = [$state->count($i, $o, $s), $state->maleCount($i, $o, $s), $state->femaleCount($i, $o, $s)];
+                $needs = [];
+
+                if ($requirement) {
+                    if ($employee->countsAsMale() && $have[1] - $bMale < $requirement->minMale) {
+                        $needs[] = 'thiếu nam waiter tối thiểu';
+                    }
+
+                    if ($employee->isFemaleStaff && $have[2] - $bFemale < $requirement->minFemale) {
+                        $needs[] = 'thiếu nữ waiter tối thiểu';
+                    }
+
+                    if ($have[0] - $bTotal < $requirement->min) {
+                        $needs[] = 'thiếu người tối thiểu';
+                    }
+                }
+
+                $home = $employee->homeOutletId;
+                $source = $home !== null ? ($state->requirements[$i]["{$home}|{$s}"] ?? null) : null;
+                $sourceText = $source
+                    ? sprintf('%s %s còn %d / tối thiểu %d (nam %d / %d, nữ waiter %d / %d)', $problem->outletName($home), $problem->shifts[$s]->code,
+                        $state->count($i, $home, $s), $source->min, $state->maleCount($i, $home, $s), $source->minMale, $state->femaleCount($i, $home, $s), $source->minFemale)
+                    : $problem->outletName($home) . ' không có định biên ca ' . $problem->shifts[$s]->code;
+                $receiveText = $requirement
+                    ? sprintf('%s %s có %d / tối thiểu %d (nam %d / %d, nữ waiter %d / %d)', $problem->outletName($o), $problem->shifts[$s]->code,
+                        $have[0], $requirement->min, $have[1], $requirement->minMale, $have[2], $requirement->minFemale)
+                    : '';
+                $why = $needs ? implode(', ', $needs) : 'đủ ngày công tuần (outlet chính không còn chỗ)';
+                $flex = $employee->isNightFlex();
+
+                $result[] = [
+                    'date' => $state->dates[$i], 'outlet_id' => $o, 'outlet_name' => $problem->outletName($o), 'shift_code' => $problem->shifts[$s]->code,
+                    'employee_id' => $employeeId, 'employee_name' => $employee->name, 'from_outlet' => $problem->outletName($home),
+                    'priority' => $flex ? 'Ưu tiên 1 – nhân viên đa năng Night' : 'Ưu tiên 2 – người dư outlet khác',
+                    'reason' => $why, 'receive' => $receiveText, 'source' => $sourceText,
+                    'message' => sprintf('%s: mượn %s (%s) sang %s %s – %s; %s. Nơi nhận: %s. Sau điều chuyển: %s. Bản nháp – quản lý xem rồi áp dụng.',
+                        date('d/m', strtotime($state->dates[$i])), $employee->name, $problem->outletName($home), $problem->outletName($o), $problem->shifts[$s]->code,
+                        $flex ? 'nhân viên đa năng Night (ưu tiên 1)' : 'người dư outlet khác (ưu tiên 2)', $why, $receiveText, $sourceText),
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Ô thiếu tối thiểu: vì sao không mượn được ai (nhân viên đa năng Night trước, rồi outlet khác) và các phương án còn lại.
+     */
+    private function borrowNote(ScheduleState $state, array $gap): array
+    {
+        $i = array_search($gap['date'], $state->dates, true);
+
+        if ($gap['level'] !== 'min' || empty($gap['shift_id']) || $i === false) {
+            return $gap;
+        }
+
+        $requirement = $state->requirements[$i]["{$gap['outlet_id']}|{$gap['shift_id']}"] ?? null;
+
+        if (! $requirement) {
+            return $gap;
+        }
+
+        $need = match (true) {
+            ($gap['assigned_male'] ?? 0) < ($gap['min_male'] ?? 0) => 'male',
+            ($gap['assigned_female'] ?? 0) < ($gap['min_female'] ?? 0) => 'female',
+            default => 'total',
+        };
+        $label = ['male' => 'nhân viên nam', 'female' => 'nữ waiter', 'total' => 'người'][$need];
+        $found = $state->borrowPolicy()->candidates($state, $i, $requirement, $need);
+        $flex = $found['flex'] ? 'Nhân viên đa năng Night không thể hỗ trợ (' . implode('; ', array_slice($found['flex'], 0, 3)) . ')' : 'Không có nhân viên đa năng Night phù hợp';
+        $others = $found['others'] ? 'outlet khác không còn người dư phù hợp (' . implode('; ', array_slice($found['others'], 0, 3)) . ')' : 'outlet khác không có ai đủ điều kiện';
+
+        $gap['borrow'] = [
+            'need' => $need,
+            'message' => sprintf('%s thiếu %s ca %s. %s; %s.', $gap['outlet_name'], $label, $gap['shift_code'], $flex, $others),
+            'options' => $found['options'],
+        ];
+
+        foreach (array_slice($found['options'], 0, 3) as $option) {
+            $gap['proposals'][] = ['date' => $gap['date'], 'type' => 'borrow', 'label' => 'M',
+                'text' => sprintf('Mượn %s (%s, %s) – outlet nguồn còn %d / tối thiểu %d.', $option['name'], $option['flex'] ? 'đa năng Night' : 'outlet khác', $option['from'], $option['source_after'], $option['source_min'])];
+        }
+
+        return $gap;
     }
 
     /**

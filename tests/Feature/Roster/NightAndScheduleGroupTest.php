@@ -283,6 +283,38 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertLessThanOrEqual(1, max($counts) - min($counts), '3 tuần × 4 người chia đều cho 6 người');
     }
 
+    /** Nhân viên đa năng = người thuộc outlet Night trừ Night cứng và Room Service chuyên trách (cả nam và nữ). */
+    public function test_flex_staff_are_night_outlet_people_except_core_and_room_leads(): void
+    {
+        $core = $this->employee('NC1', 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]);
+        $male = $this->employee('NW1', 'NIGHT');
+        $female = $this->employee('NW2', 'NIGHT', 'female');
+        $lead = $this->employee('NR1', 'NIGHT');
+        $villa = $this->employee('V1', 'VILLA');
+        app(\Botble\RestaurantRoster\Services\RoomServiceStaffService::class)->save(['employee_id' => $lead->getKey(), 'role' => 'lead',
+            'shift_template_id' => $this->templates['A2']->getKey(), 'effective_from' => '2030-01-01'], 1);
+
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $flex = fn (Employee $e) => $problem->employees[$e->getKey()]->isNightFlex();
+
+        $this->assertSame([false, true, true, false, false], [$flex($core), $flex($male), $flex($female), $flex($lead), $flex($villa)]);
+    }
+
+    /** Trước khi công bố: chặn khi có người trùng giờ / thiếu giờ nghỉ (vd N rồi M6 sáng hôm sau), nêu rõ người và ngày. */
+    public function test_publish_is_blocked_when_someone_lacks_rest(): void
+    {
+        $employee = $this->employee('V1', 'VILLA');
+        $this->nightShift($employee, '2030-03-04');
+        Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => '2030-03-05', 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['M6']->getKey(),
+            'outlet_id' => $this->outlets['VILLA']->getKey(), 'status' => 'draft', 'start_at' => '2030-03-05 06:00:00', 'end_at' => '2030-03-05 14:00:00', 'hours' => 8]);
+
+        $response = $this->actingAs($this->user())->postJson(route('roster.publish'), ['week' => self::WEEK]);
+
+        $response->assertJson(['error' => true]);
+        $this->assertStringContainsString('Synthetic V1 05/03', $response->json('message'));
+        $this->assertSame('draft', Shift::query()->whereDate('date', '2030-03-05')->value('status'), 'Chưa công bố');
+    }
+
     /** 9.9: đề xuất 4 người ít tuần Night nhất, chia giữa các outlet. */
     public function test_rotation_prefers_least_history_and_balances_outlets(): void
     {

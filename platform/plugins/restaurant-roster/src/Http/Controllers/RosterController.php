@@ -239,6 +239,13 @@ class RosterController extends BaseController
             ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()])
             ->where('status', Shift::STATUS_DRAFT);
 
+        // Kiểm tra cả tuần trước khi công bố: không ai bị xếp trùng giờ / thiếu giờ nghỉ / làm vào ngày OFF đã duyệt,
+        // và không outlet nào thiếu tối thiểu vì đã cho mượn người (outlet nguồn).
+        if ((clone $drafts)->exists() && ($problems = $this->publishProblems($weekStart, $weekEnd))) {
+            return $this->gridResponse($request, 'Chưa công bố – cần sửa trước: ' . implode(' · ', array_slice($problems, 0, 6))
+                . (count($problems) > 6 ? ' … (+' . (count($problems) - 6) . ')' : ''))->setError();
+        }
+
         $count = 0;
 
         DB::transaction(function () use ($drafts, $request, &$count): void {
@@ -255,6 +262,32 @@ class RosterController extends BaseController
         });
 
         return $this->gridResponse($request, $count ? "Đã công bố {$count} ca." : 'Không có ca nháp nào cần công bố.');
+    }
+
+    /**
+     * Lỗi chặn công bố: trùng giờ / giờ nghỉ / làm ngày OFF đã duyệt, outlet nguồn dưới tối thiểu do mượn người.
+     *
+     * @return string[]
+     */
+    protected function publishProblems(Carbon $weekStart, Carbon $weekEnd): array
+    {
+        $problem = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->build($weekStart, $weekEnd, null, freezeCurrent: true);
+        $state = new \Botble\RestaurantRoster\Scheduling\ScheduleState($problem);
+        $name = fn (int $id) => $problem->employees[$id]->name ?? "#{$id}";
+        $messages = [];
+
+        foreach ($state->validate() as $v) {
+            if (in_array($v['code'], ['rest', 'unavailable', 'overlap'], true)) {
+                $messages[] = sprintf('%s %s: %s', $name($v['employee_id']), date('d/m', strtotime($v['date'])), $v['message']);
+            }
+        }
+
+        foreach ($state->sourceShortages() as $s) {
+            $messages[] = sprintf('%s %s: đang được mượn sang %s nhưng %s %s dưới tối thiểu', $name($s['employee_id']), date('d/m', strtotime($s['date'])),
+                $problem->outletName($s['outlet_id']), $problem->outletName($s['home_outlet_id']), $problem->shifts[$s['home_shift_id']]->code ?? '');
+        }
+
+        return array_values(array_unique($messages));
     }
 
     /**

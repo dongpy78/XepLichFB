@@ -115,6 +115,9 @@ class NightStaffService
             // Night cứng = ca cứng là ca đêm (quản lý chọn ở mục Ca cứng của nhân viên).
             'core' => $employees->filter(fn (Employee $e) => $e->isNightCore())->values(),
             'room_service' => $employees->filter(fn (Employee $e) => in_array((int) $e->getKey(), $roomLeads, true))->values(),
+            // Nhân viên đa năng: người thuộc outlet Night trừ Night cứng và Room Service chuyên trách – được mượn trước khi outlet thiếu tối thiểu.
+            'flex' => $employees->filter(fn (Employee $e) => in_array((int) $e->outlet_id, $this->nightOutletIds(), true) && ! $e->isNightCore()
+                && ! in_array((int) $e->getKey(), $roomLeads, true) && ! $e->is_trainee)->values(),
             'rotation' => $profile->filter(fn (Employee $e) => isset($skilled[$e->getKey()]) && $e->night_rotation_enabled !== false)->values(),
             // Đã tắt "tham gia luân phiên Night" trong hồ sơ / trang Nhân sự Night.
             'disabled' => $profile->filter(fn (Employee $e) => isset($skilled[$e->getKey()]) && $e->night_rotation_enabled === false)->values(),

@@ -167,8 +167,10 @@ class ProblemBuilder
                 }
             }
 
+            // Nhân viên đa năng: thuộc outlet Night, không phải Night cứng, không phải Room Service chuyên trách – được mượn trước tiên.
+            $isFlex = in_array((int) $employee->outlet_id, $nightOutletIds, true) && ! $employee->isNightCore() && ! $isRoomLead;
             $canTransfer = ! isset($managerPositions[(int) $employee->position_id]) && ! $employee->fixed_shift_template_id && ! $isRoomLead
-                && ($employee->night_role === EmployeeSpec::NIGHT_FLEX || in_array($positionNames[(int) $employee->position_id] ?? '', $transferPositions, true));
+                && ($isFlex || in_array($positionNames[(int) $employee->position_id] ?? '', $transferPositions, true));
 
             if ($transferPolicy === 'auto' && $canTransfer) {
                 foreach ($transferOutletIds as $o) {
@@ -222,6 +224,7 @@ class ProblemBuilder
                     isset($rotationIds[$employee->getKey()]) => EmployeeSpec::NIGHT_ROTATION,
                     default => null,
                 },
+                isFlex: $isFlex,
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {

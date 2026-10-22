@@ -178,36 +178,6 @@ class MaleWaiterAndNightTest extends TestCase
         $this->assertSame(0, $result->solverMetadata['objective']['source_shortage'] ?? 0);
     }
 
-    /**
-     * Lỗi thực tế: duyệt 2 người luân phiên nhưng chỉ 1 người được xếp Night (Night đa năng chiếm ca đêm).
-     * Nay: tuần có kế hoạch → cả 2 người luân phiên làm Night, Night đa năng chuyển sang hỗ trợ nhà hàng.
-     */
-    public function test_both_planned_rotation_staff_get_night_before_flex(): void
-    {
-        $days = $this->days();
-        $flex = array_map(fn ($id) => $this->waiter($id, self::NIGHT, [self::NIGHT . ':' . self::N => 'primary', ...$this->dayShifts(self::VILLA)], nightRole: EmployeeSpec::NIGHT_FLEX), [3, 4]);
-        $rotation = array_map(fn ($id) => $this->waiter($id, self::VILLA, [...$this->dayShifts(self::VILLA), self::NIGHT . ':' . self::N => 'eligible']), [11, 12]);
-        $villa = array_map(fn ($id) => $this->waiter($id, self::VILLA, $this->dayShifts(self::VILLA), 'female'), range(50, 55));
-        $night = [self::NIGHT . ':' . self::N => 'primary'];
-        $core = array_map(fn ($id) => $this->waiter($id, self::NIGHT, $night, fixed: [self::NIGHT . ':' . self::N]), [1, 2]);
-
-        $problem = $this->problem([...$core, ...$flex, ...$rotation, ...$villa], [
-            ...$this->dailyRequirements($days, self::NIGHT, self::N, 3, 3),
-            ...$this->dailyRequirements($days, self::VILLA, self::M6, 2, 3),
-            ...$this->dailyRequirements($days, self::VILLA, self::A2, 2, 3),
-        ], ['night_plan' => array_fill_keys($days, [11, 12]), 'time_limit' => 6, 'max_iterations' => 120000]);
-        $result = $this->solve($problem);
-
-        $nights = fn (int $id) => count(array_filter($result->assignments, fn ($r) => $r['employee_id'] === $id && $r['shift_id'] === self::N));
-        $this->assertGreaterThanOrEqual(4, $nights(11), 'Người luân phiên thứ nhất làm Night');
-        $this->assertGreaterThanOrEqual(4, $nights(12), 'Người luân phiên thứ hai cũng làm Night');
-        $this->assertLessThanOrEqual(2, $nights(3) + $nights(4), 'Night đa năng nhường ca đêm');
-
-        foreach ($days as $date) {
-            $this->assertSame(3, $this->nightCount($result, $date), "{$date}: Night đủ 3");
-        }
-    }
-
     /** Điều chuyển waiter: outlet thiếu được bù bằng người dư của outlet khác; outlet nguồn vẫn đủ tối thiểu. */
     public function test_transfer_fills_short_outlet_without_breaking_source(): void
     {

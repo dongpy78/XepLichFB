@@ -40,6 +40,10 @@ final class Rules
         'lobby_partial' => 1200,
         // Người luân phiên Night làm đêm thứ 3 trong tuần: chỉ khi cần để Night đủ 3 người / ngày (mục tiêu 2 đêm / người).
         'night_extra' => 3000,
+        // Mượn người outlet khác (BorrowPolicy): chỉ để đủ tối thiểu – mượn vượt phần thiếu tối thiểu nặng hơn thiếu mục tiêu;
+        // mượn người không phải nhân viên đa năng Night khi người đa năng làm được: phạt nhẹ (ưu tiên đa năng trước).
+        'borrow_excess' => 20000,
+        'borrow_order' => 400,
         // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử khoảng đánh giá + kỳ này) – nhẹ hơn xen kẽ ca trong tuần.
         'shift_history' => 500,
         // Nên có: công bằng → OFF liền 2–3 ngày → sở thích & ổn định.

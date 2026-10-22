@@ -975,6 +975,7 @@ final class ScheduleState
             'child_borrow' => $m['child_borrow'],
             'lobby_partial' => $m['lobby_partial'],
             'night_extra' => 0,
+            'borrow_order' => $m['borrow_nonflex'],
             // Cờ (L) không cần thiết bị phạt nhẹ để thuật toán chỉ giao hỗ trợ Lobby khi khung giờ cần người.
             'preference' => $m['support_flags'] + $m['non_home'] * 3 + $m['non_primary'] * 2 + $m['soft_conflicts'] * 6 + $m['changes'] * 4,
             'heavy' => $m['heavy'],
@@ -1104,7 +1105,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1297,7 +1298,7 @@ final class ScheduleState
         $shifts = $this->problem->shifts;
         $planned = isset($this->nightRotation[$employeeId]) && $this->problem->nightPlan;
         $flexPlanned = $employee->isNightFlex() && $this->problem->nightPlan;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'borrow_nonflex' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1343,6 +1344,11 @@ final class ScheduleState
             $shift = $shifts[$s];
             $category = $shift->category();
             $m['worked']++;
+
+            // Mượn người không phải đa năng Night (ưu tiên 2) – xếp sau nhân viên đa năng.
+            if ($o !== null && ! $employee->isNightFlex() && $this->borrowPolicy()->isBorrowed($employee, (int) $o)) {
+                $m['borrow_nonflex']++;
+            }
 
             // Tuần được chọn luân phiên Night: đếm số đêm và số cụm đêm (2 đêm liền nhau, tối đa 3 khi cần đủ 3 người / ngày).
             if ($planned && $this->problem->nightPlanned($employeeId, $date) === true) {
@@ -1638,6 +1644,44 @@ final class ScheduleState
         return null;
     }
 
+    /** @var array<string, array{0: int, 1: int, 2: int}> "i|o|s" => [tổng, nam waiter, nữ waiter] người mượn từ outlet khác */
+    private array $borrowCount = [];
+
+    /** Tổng số người mượn vượt phần thiếu tối thiểu (mượn để đạt mục tiêu / cân bằng – không được phép). */
+    private int $borrowExcess = 0;
+
+    /** @var array<string, array{0: array{0: int, 1: int, 2: int}, 1: array{0: int, 1: int, 2: int}}> "i|o" => [đang làm, trong đó người mượn] */
+    private array $borrowDay = [];
+
+    /** @var array<string, array{0: int, 1: int, 2: int}> "i|o" => tối thiểu [tổng, nam, nữ] cộng các ca có định biên */
+    private array $borrowDayMin = [];
+
+    private function dayMinimum(int $i, int $outletId): array
+    {
+        $sum = [0, 0, 0];
+
+        foreach ($this->requirements[$i] ?? [] as $requirement) {
+            if ($requirement->outletId === $outletId) {
+                $sum = [$sum[0] + $requirement->min, $sum[1] + $requirement->minMale, $sum[2] + $requirement->minFemale];
+            }
+        }
+
+        return $sum;
+    }
+
+    private ?BorrowPolicy $borrowPolicy = null;
+
+    public function borrowPolicy(): BorrowPolicy
+    {
+        return $this->borrowPolicy ??= new BorrowPolicy($this->problem);
+    }
+
+    /** Người mượn đang làm ô này. */
+    public function borrowedAt(int $i, int $outletId, int $shiftId): array
+    {
+        return $this->borrowCount["{$i}|{$outletId}|{$shiftId}"] ?? [0, 0, 0];
+    }
+
     /** @var array<int, array<int, int>> [dayIndex][outlet Night] => số nhân viên Night cứng đang làm ca đêm */
     private array $coreNeed = [];
 
@@ -1735,6 +1779,26 @@ final class ScheduleState
 
         if (! $requirement) {
             return;
+        }
+
+        // Mượn người (BorrowPolicy): theo dõi người mượn của ô và của outlet trong ngày, phần mượn vượt nhu cầu tối thiểu.
+        $employeeSpec = $this->problem->employees[$employeeId] ?? null;
+        $dayKey = "{$i}|{$outletId}";
+        $dayMin = $this->borrowDayMin[$dayKey] ??= $this->dayMinimum($i, $outletId);
+        $dayBefore = $this->borrowDay[$dayKey] ?? [[0, 0, 0], [0, 0, 0]];
+        $dayAfter = $dayBefore;
+        $dayAfter[0] = [$dayBefore[0][0] + $delta, $dayBefore[0][1] + ($isMale ? $delta : 0), $dayBefore[0][2] + ($isFemaleStaff ? $delta : 0)];
+
+        if ($employeeSpec && $this->borrowPolicy()->isBorrowed($employeeSpec, $outletId)) {
+            $borrowed = $this->borrowCount[$key] ?? [0, 0, 0];
+            $this->borrowCount[$key] = [$borrowed[0] + $delta, $borrowed[1] + ($isMale ? $delta : 0), $borrowed[2] + ($isFemaleStaff ? $delta : 0)];
+            $dayAfter[1] = [$dayBefore[1][0] + $delta, $dayBefore[1][1] + ($isMale ? $delta : 0), $dayBefore[1][2] + ($isFemaleStaff ? $delta : 0)];
+        }
+
+        $this->borrowDay[$dayKey] = $dayAfter;
+
+        if ($dayBefore[1][0] > 0 || $dayAfter[1][0] > 0) {
+            $this->borrowExcess += BorrowPolicy::excess($dayMin, $dayAfter[0], $dayAfter[1]) - BorrowPolicy::excess($dayMin, $dayBefore[0], $dayBefore[1]);
         }
 
         $short = fn (int $need, int $have) => max(0, $need - $have);

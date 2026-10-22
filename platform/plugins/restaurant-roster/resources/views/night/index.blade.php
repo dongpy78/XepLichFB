@@ -49,6 +49,8 @@
                     @empty
                         <div class="text-danger">Chưa có ai – chọn Ca cứng N cho 2 nhân viên Night cứng.</div>
                     @endforelse
+                    <div class="text-muted mt-3 mb-1">Nhân viên đa năng (outlet Night, trừ Night cứng / Room Service chuyên trách) – được mượn trước tiên khi outlet thiếu nam / nữ tối thiểu:</div>
+                    <div>{{ $groups['flex']->isNotEmpty() ? $groups['flex']->map(fn ($e) => $e->name . ($e->gender === 'female' ? ' (nữ)' : ' (nam)'))->implode(', ') : '—' }}</div>
                 </div>
             </div>
         </div>

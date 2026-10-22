@@ -115,6 +115,9 @@
                                 <span class="badge bg-danger-lt">Không thể đủ với dữ liệu hiện tại</span>
                             @endif
                         </summary>
+                        @if (! empty($u['borrow']))
+                            <div class="alert alert-warning py-2 mt-3 mb-0 small">{{ $u['borrow']['message'] }}</div>
+                        @endif
                         <div class="row mt-3">
                             <div class="col-md-6">
                                 <div class="fw-semibold mb-1">Nguyên nhân</div>
@@ -289,6 +292,31 @@
             <div class="card-footer small text-muted">
                 Người hỗ trợ Lobby (L) và đứng Kid-Deline không được tính là nữ waiter trực tiếp của outlet trong ca đó.
                 Tối thiểu / mục tiêu nhập ở "Định biên nhân sự" (cột Nữ waiter); để 0 là không áp dụng. Nguyên nhân từng ca thiếu xem ở mục "Thiếu nhân sự".
+            </div>
+        </div>
+    @endif
+
+    @if ($borrows = $proposal['support_report']['borrows'] ?? [])
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Mượn người giữa các outlet ({{ count($borrows) }} ô – bản nháp, quản lý xem rồi áp dụng)</h3></div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter table-sm">
+                    <thead><tr><th>Ngày</th><th>Outlet nhận · ca</th><th>Nhân viên</th><th>Outlet gốc</th><th>Ưu tiên</th><th>Lý do</th><th>Nơi nhận</th><th>Outlet nguồn sau điều chuyển</th></tr></thead>
+                    <tbody>
+                        @foreach ($borrows as $b)
+                            <tr>
+                                <td>{{ \Carbon\Carbon::parse($b['date'])->format('d/m') }}</td>
+                                <td>{{ $b['outlet_name'] }} · {{ $b['shift_code'] }}</td>
+                                <td>{{ $b['employee_name'] }}</td>
+                                <td>{{ $b['from_outlet'] }}</td>
+                                <td class="small">{{ $b['priority'] }}</td>
+                                <td class="small">{{ $b['reason'] }}</td>
+                                <td class="small">{{ $b['receive'] }}</td>
+                                <td class="small">{{ $b['source'] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
         </div>
     @endif
