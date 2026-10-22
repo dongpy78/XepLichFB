@@ -53,7 +53,19 @@ class EmployeeController extends BaseController
 
     public function update(Employee $employee, EmployeeRequest $request)
     {
+        $watched = ['outlet_id', 'schedule_group_id', 'night_role', 'is_trainee', 'fixed_shift_template_id', 'auto_schedule'];
+        $before = array_intersect_key($employee->getAttributes(), array_flip($watched));
         $employee->update($request->validated());
+        $after = array_intersect_key($employee->fresh()->getAttributes(), array_flip($watched));
+
+        // Nhật ký: đổi outlet / nhóm hiển thị / vai trò Night / thực tập sinh ảnh hưởng tới định biên và luân phiên.
+        if ($changed = array_values(array_filter($watched, fn ($k) => ($before[$k] ?? null) != ($after[$k] ?? null)))) {
+            \Botble\RestaurantRoster\Models\ChangeLog::query()->create([
+                'employee_id' => $employee->getKey(), 'date' => now()->toDateString(), 'action' => 'profile',
+                'before' => array_intersect_key($before, array_flip($changed)), 'after' => array_intersect_key($after, array_flip($changed)),
+                'reason' => 'Sửa hồ sơ nhân viên: ' . implode(', ', $changed), 'user_id' => auth()->id(),
+            ]);
+        }
 
         return $this
             ->httpResponse()

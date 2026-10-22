@@ -59,7 +59,12 @@ class RosterStatistics
             ->filter(fn ($p) => ! in_array((int) $p->id, $leaderIds, true) && (! $femaleNames || in_array(mb_strtolower(trim((string) $p->name)), $femaleNames, true)))
             ->pluck('id')->map(fn ($id) => (int) $id)->all();
 
-        return $this->rules = ['leaderIds' => $leaderIds, 'hostessIds' => $hostessIds, 'femaleStaffIds' => $femaleStaffIds, 'checks' => $checks];
+        $maleNames = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.male_staff_positions', ['Waiter']));
+        $maleStaffIds = Position::query()->get(['id', 'name'])
+            ->filter(fn ($p) => ! in_array((int) $p->id, $leaderIds, true) && (! $maleNames || in_array(mb_strtolower(trim((string) $p->name)), $maleNames, true)))
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        return $this->rules = ['leaderIds' => $leaderIds, 'hostessIds' => $hostessIds, 'femaleStaffIds' => $femaleStaffIds, 'maleStaffIds' => $maleStaffIds, 'checks' => $checks];
     }
 
     /**
@@ -89,12 +94,12 @@ class RosterStatistics
 
         Shift::query()
             ->whereDate('date', '>=', $days[0])->whereDate('date', '<=', $days[6])
-            ->with(['employee:id,name,gender,position_id'])
+            ->with(['employee:id,name,gender,position_id,is_trainee'])
             ->get()
             ->each(function (Shift $shift) use (&$presence, $specs, $stationOutletId, $stationCodes, $femaleStaffIds): void {
                 $spec = $specs[$shift->shift_template_id] ?? null;
 
-                if (! $spec || ! $shift->isWorking() || ! $shift->employee) {
+                if (! $spec || ! $shift->isWorking() || ! $shift->employee || $shift->employee->is_trainee) {
                     return;
                 }
 
@@ -213,7 +218,7 @@ class RosterStatistics
         $end = $weekStart->copy()->addDays(6);
         $shifts ??= Shift::query()
             ->whereBetween('date', [$weekStart->toDateString(), $end->toDateString()])
-            ->with(['employee:id,gender,position_id,outlet_id', 'template:id,code,start_time,support_station'])
+            ->with(['employee:id,gender,position_id,outlet_id,is_trainee', 'template:id,code,start_time,support_station'])
             ->get();
 
         $days = [];
@@ -231,7 +236,8 @@ class RosterStatistics
             $date = $shift->date->toDateString();
             $employee = $shift->employee;
 
-            if (! $employee || ! isset($days[$date])) {
+            // Thực tập sinh không được tính vào định biên.
+            if (! $employee || ! isset($days[$date]) || $employee->is_trainee) {
                 continue;
             }
 
@@ -246,7 +252,7 @@ class RosterStatistics
             $codes[$shift->outlet_id][$code] = $shift->template?->start_time ?? '99';
             $support = in_array('L', $shift->tags ?: [], true) && ! $shift->template?->support_station;
             $cell = &$cells[$date][$shift->outlet_id][$code];
-            $cell ??= ['total' => 0, 'male' => 0, 'female' => 0, 'female_staff' => 0, 'leaders' => 0, 'hostess' => 0, 'lobby' => 0];
+            $cell ??= ['total' => 0, 'male' => 0, 'male_staff' => 0, 'female' => 0, 'female_staff' => 0, 'leaders' => 0, 'hostess' => 0, 'lobby' => 0];
 
             if ($support) {
                 $cell['lobby']++;
@@ -265,6 +271,7 @@ class RosterStatistics
                 }
                 $cell['hostess'] += in_array((int) $employee->position_id, $rules['hostessIds'], true) ? 1 : 0;
                 $cell['female_staff'] += $employee->gender === 'female' && in_array((int) $employee->position_id, $rules['femaleStaffIds'], true) ? 1 : 0;
+                $cell['male_staff'] += $employee->gender === 'male' && in_array((int) $employee->position_id, $rules['maleStaffIds'], true) ? 1 : 0;
             }
 
             unset($cell);
@@ -330,7 +337,7 @@ class RosterStatistics
                 foreach (array_keys($days) as $date) {
                     $cell = $cells[$date][$outlet->id][$code] ?? null;
                     $list = $cell ? array_values(array_filter([
-                        $cell['male'] ? null : 'không có nam',
+                        $cell['male_staff'] ? null : 'không có nam waiter',
                         $cell['hostess'] ? null : 'không có Hostess',
                         $cell['leaders'] ? null : 'không có quản lý',
                     ])) : ['không có ai'];

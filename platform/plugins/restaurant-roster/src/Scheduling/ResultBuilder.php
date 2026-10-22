@@ -306,7 +306,7 @@ final class ResultBuilder
                 continue;
             }
 
-            if ($maleNeeded && ! $employee->isMale()) {
+            if ($maleNeeded && ! $employee->countsAsMale()) {
                 if ($employee->gender === null) {
                     $reasons['gender_missing'][] = $employee->name;
                 }
@@ -361,7 +361,7 @@ final class ResultBuilder
                 $sourceCount = $state->count($i, (int) $o, $s);
                 $sourceMale = $state->maleCount($i, (int) $o, $s);
                 $sourceFemale = $state->femaleCount($i, (int) $o, $s);
-                $keepsSourceMin = ! $source || ($sourceCount - 1 >= $source->min && $sourceMale - ($employee->isMale() ? 1 : 0) >= $source->minMale
+                $keepsSourceMin = ! $source || ($sourceCount - 1 >= $source->min && $sourceMale - ($employee->countsAsMale() ? 1 : 0) >= $source->minMale
                     && $sourceFemale - ($employee->isFemaleStaff ? 1 : 0) >= $source->minFemale);
 
                 if ($keepsSourceMin) {

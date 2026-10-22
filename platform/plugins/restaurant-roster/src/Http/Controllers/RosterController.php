@@ -752,11 +752,27 @@ class RosterController extends BaseController
     {
         [$weekStart, $weekEnd] = $this->weekRange($request);
 
+        // Khu vực trên bảng = nhóm hiển thị lịch (đang bật) của nhân viên, không có thì theo outlet chính.
+        // Trong khu vực: thứ tự quản lý đặt → vị trí → mã nhân viên. Nhóm hiển thị không đổi outlet làm việc.
+        $section = function (Employee $employee): array {
+            $group = $employee->scheduleGroup;
+
+            return $group && $group->is_active
+                ? ['key' => 'g' . $group->id, 'label' => $group->name, 'order' => $group->order, 'stat_outlet_id' => $group->outlet_id ? (int) $group->outlet_id : null]
+                : ['key' => 'o' . $employee->outlet_id, 'label' => $employee->outlet->code ?: $employee->outlet->name ?: 'Chưa có outlet', 'order' => $employee->outlet->order ?? 99999,
+                    'stat_outlet_id' => $employee->outlet_id ? (int) $employee->outlet_id : null];
+        };
+
         $employees = $this->employeeQuery($request)
-            ->with(['position:id,name,order', 'outlet:id,name,code,order', 'fixedShift:id,code'])
+            ->with(['position:id,name,order', 'outlet:id,name,code,order', 'fixedShift:id,code,start_time', 'scheduleGroup'])
             ->get()
-            ->sortBy(fn (Employee $employee) => sprintf('%05d|%05d|%s', $employee->outlet->order ?? 99999, $employee->position->order ?? 99999, $employee->code))
+            ->sortBy(fn (Employee $employee) => sprintf('%05d|%s|%05d|%05d|%s', $section($employee)['order'], $section($employee)['key'],
+                $employee->schedule_order ?? 99999, $employee->position->order ?? 99999, $employee->code))
             ->values();
+
+        // Night luân phiên đã duyệt của tuần (để đánh dấu trên bảng).
+        $nightRotation = \Botble\RestaurantRoster\Models\NightRotation::query()->whereDate('week_start', $weekStart->toDateString())
+            ->where('status', '!=', \Botble\RestaurantRoster\Models\NightRotation::STATUS_PROPOSED)->pluck('employee_id')->map(fn ($id) => (int) $id)->all();
 
         // Lấy thêm 7 ngày trước tuần đang xem để kiểm tra ngày làm liên tục và giờ nghỉ đầu tuần.
         $shifts = Shift::query()
@@ -830,6 +846,8 @@ class RosterController extends BaseController
                 'employee' => $employee,
                 'cells' => $cells,
                 'check' => $check,
+                'section' => $section($employee),
+                'night_rotation' => in_array((int) $employee->getKey(), $nightRotation, true),
             ];
         }
 

@@ -29,12 +29,30 @@ final class EmployeeSpec
         public readonly ?array $managerShiftIds = null,
         // Nữ waiter thông thường (không thuộc cấp quản lý): tính vào định biên "nữ waiter trực tiếp tại outlet".
         public readonly bool $isFemaleStaff = false,
+        // Nam waiter (không thuộc cấp quản lý): tính vào định biên nam M6 / A2. null = mọi nhân viên nam (dữ liệu cũ / giả lập).
+        public readonly ?bool $isMaleStaff = null,
+        // Vai trò Night: core = Night cố định, flex = Night đa năng (Night / Room Service / hỗ trợ nhà hàng), null = nhân viên thường.
+        public readonly ?string $nightRole = null,
     ) {
     }
+
+    public const NIGHT_CORE = 'core';
+    public const NIGHT_FLEX = 'flex';
 
     public function isMale(): bool
     {
         return $this->gender === 'male';
+    }
+
+    /** Được tính vào định biên nam waiter. */
+    public function countsAsMale(): bool
+    {
+        return $this->isMaleStaff ?? $this->isMale();
+    }
+
+    public function isNightFlex(): bool
+    {
+        return $this->nightRole === self::NIGHT_FLEX;
     }
 
     /**

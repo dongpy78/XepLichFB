@@ -88,6 +88,24 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'permissions' => ['roster.settings'],
                 ])
                 ->registerItem([
+                    'id' => 'cms-plugins-restaurant-roster-night',
+                    'priority' => 4,
+                    'parent_id' => 'cms-plugins-restaurant-roster',
+                    'name' => 'Nhân sự Night',
+                    'icon' => 'ti ti-moon',
+                    'route' => 'roster.night.index',
+                    'permissions' => ['roster.index'],
+                ])
+                ->registerItem([
+                    'id' => 'cms-plugins-restaurant-roster-schedule-groups',
+                    'priority' => 5,
+                    'parent_id' => 'cms-plugins-restaurant-roster',
+                    'name' => 'Nhóm hiển thị lịch',
+                    'icon' => 'ti ti-layout-rows',
+                    'route' => 'roster.schedule-groups.index',
+                    'permissions' => ['roster.settings'],
+                ])
+                ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster-outlets',
                     'priority' => 5,
                     'parent_id' => 'cms-plugins-restaurant-roster',

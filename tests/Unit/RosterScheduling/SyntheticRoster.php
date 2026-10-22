@@ -152,6 +152,7 @@ trait SyntheticRoster
             supportHistory: $options['support_history'] ?? [],
             shiftHistory: $options['shift_history'] ?? [],
             historyWeeks: $options['history_weeks'] ?? 4,
+            nightPlan: $options['night_plan'] ?? [],
         );
     }
 

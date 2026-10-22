@@ -66,6 +66,11 @@ final class Problem
         public readonly array $shiftHistory = [],
         // Khoảng đánh giá công bằng (số tuần lịch sử, vd 4 hoặc 8 tuần).
         public readonly int $historyWeeks = 4,
+        /**
+         * @var array<string, int[]> Kế hoạch luân phiên Night: [ngày] => nhân viên luân phiên được làm Night ngày đó (theo tuần đã chọn).
+         *      Ngày có trong mảng: nhân viên luân phiên KHÔNG có tên không được tự xếp Night; ngày không có: không giới hạn.
+         */
+        public readonly array $nightPlan = [],
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -95,6 +100,15 @@ final class Problem
         }
 
         $this->requirements = $indexed;
+    }
+
+    /**
+     * Nhân viên luân phiên Night (không phải Night cố định / đa năng, outlet chính không phải outlet Night):
+     * ngày này có kế hoạch luân phiên và người này có tên trong đó? null = ngày không có kế hoạch.
+     */
+    public function nightPlanned(int $employeeId, string $date): ?bool
+    {
+        return isset($this->nightPlan[$date]) ? in_array($employeeId, $this->nightPlan[$date], true) : null;
     }
 
     /**
@@ -154,7 +168,7 @@ final class Problem
         return hash('sha256', serialize([
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
-            $this->supportHistory, $this->shiftHistory, $this->historyWeeks,
+            $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan,
         ]));
     }
 }

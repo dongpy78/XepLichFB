@@ -346,7 +346,10 @@ class RosterScheduler
             ->whereIn('id', array_keys($this->builder->usedRequirementIds))->get()
             ->mapWithKeys(fn ($r) => [$r->getKey() => [...$r->snapshot(), 'updated_at' => $r->updated_at?->toDateTimeString()]])->all();
 
-        $run->update(['settings' => [...($run->settings ?? []), 'staffing_snapshot' => $snapshot]]);
+        $names = \Botble\RestaurantRoster\Models\Employee::query()->whereIn('id', collect($this->builder->nightWeeks)->pluck('ids')->flatten()->all())->pluck('name', 'id');
+        $nightPlan = collect($this->builder->nightWeeks)->map(fn ($week) => [...$week, 'names' => array_map(fn ($id) => (string) ($names[$id] ?? "#{$id}"), $week['ids'])])->all();
+
+        $run->update(['settings' => [...($run->settings ?? []), 'staffing_snapshot' => $snapshot, 'night_plan' => $nightPlan]]);
     }
 
     /**

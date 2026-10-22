@@ -62,6 +62,14 @@ return [
         // Vị trí được tính là "nữ waiter" cho định biên nữ waiter trực tiếp tại outlet (Định biên nhân sự → Nữ waiter tối thiểu / mục tiêu).
         // Không tính cấp quản lý, người đang hỗ trợ Lobby (L) hay đứng Kid-Deline trong ca.
         'female_staff_positions' => ['Waiter'],
+        // Vị trí được tính là "nam waiter" cho định biên nam M6 / A2 (Định biên nhân sự → Nam tối thiểu / mục tiêu). Không tính cấp quản lý.
+        'male_staff_positions' => ['Waiter'],
+        // Điều chuyển giữa outlet nhà hàng (quản lý 23/10/2026): "flex_only" = thuật toán không tự lấy người outlet khác để bù thiếu;
+        // ngoài outlet chính chỉ xếp Night (luân phiên), Lobby, khu trực thuộc; riêng Night đa năng theo năng lực đã khai.
+        // "skills" = theo năng lực đã khai như trước.
+        'cross_outlet_transfer' => 'flex_only',
+        // Số nam waiter luân phiên Night mỗi tuần (Nhân sự Night → đề xuất / duyệt theo tuần).
+        'night_rotation_per_week' => 2,
         // Định biên phủ Lobby = số người CÓ MẶT CÙNG LÚC (quản lý chốt 22/10/2026): khung được chia tại các mốc vào / ra Lobby
         // của ca, một người chỉ được tính ở đoạn mà họ có mặt trọn đoạn (không còn "phủ ≥ 50% khung").
         // Ngày OFF: "weekly" = mỗi tuần đúng số ngày OFF cấu hình của nhân viên (quản lý 19/10/2026: bắt buộc).

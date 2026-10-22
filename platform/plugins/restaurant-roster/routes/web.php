@@ -84,8 +84,16 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 });
             });
 
+            Route::get('night', ['as' => 'night.index', 'uses' => 'NightStaffController@index', 'permission' => 'roster.index']);
+
             Route::group(['permission' => 'roster.settings'], function (): void {
                 Route::post('swap-waiters', 'RosterController@swapWaiters')->name('swap-waiters');
+
+                Route::group(['prefix' => 'schedule-groups', 'as' => 'schedule-groups.'], function (): void {
+                    Route::resource('', 'ScheduleGroupController')->parameters(['' => 'group'])->except('show');
+                });
+
+                Route::post('night', 'NightStaffController@save')->name('night.save');
 
                 Route::group(['prefix' => 'outlets', 'as' => 'outlets.'], function (): void {
                     Route::resource('', 'OutletController')->parameters(['' => 'outlet']);

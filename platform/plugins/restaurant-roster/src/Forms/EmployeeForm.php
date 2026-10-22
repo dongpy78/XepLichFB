@@ -25,6 +25,11 @@ class EmployeeForm extends FormAbstract
     {
         $outlets = Outlet::query()->orderBy('order')->orderBy('name')->pluck('name', 'id')->all();
         $positions = Position::query()->orderBy('order')->orderBy('name')->pluck('name', 'id')->all();
+        $groups = \Botble\RestaurantRoster\Models\ScheduleGroup::query()->orderBy('order')->get()
+            ->mapWithKeys(fn ($g) => [$g->id => $g->name . ($g->is_active ? '' : ' (đang tắt)')])->all();
+        $model = $this->getModel();
+        $mentors = Employee::query()->where('is_trainee', false)->when($model instanceof Employee && $model->exists, fn ($q) => $q->whereKeyNot($model->getKey()))
+            ->orderBy('name')->pluck('name', 'id')->all();
 
         $this
             ->setupModel(new Employee())
@@ -40,6 +45,18 @@ class EmployeeForm extends FormAbstract
                 'outlet_id',
                 SelectField::class,
                 SelectFieldOption::make()->label('Nhà hàng')->choices($outlets)->required()->searchable()->colspan(1)
+            )
+            ->add(
+                'schedule_group_id',
+                SelectField::class,
+                SelectFieldOption::make()->label('Nhóm hiển thị trên Bảng xếp ca')->choices(['' => '— Theo outlet chính —'] + $groups)->colspan(1)
+                    ->helperText('Chỉ là khu vực hiển thị (GUS, Villa, Night, Trainer…) – không đổi outlet làm việc, không ảnh hưởng xếp lịch.')
+            )
+            ->add(
+                'schedule_order',
+                NumberField::class,
+                NumberFieldOption::make()->label('Thứ tự trong nhóm')->min(0)->max(9999)->colspan(1)
+                    ->helperText('Số nhỏ hiện trước. Để trống = theo vị trí rồi mã nhân viên.')
             )
             ->add(
                 'position_id',
@@ -97,6 +114,15 @@ class EmployeeForm extends FormAbstract
                     ->colspan(1)
             )
             ->add(
+                'night_role',
+                SelectField::class,
+                SelectFieldOption::make()
+                    ->label('Vai trò Night')
+                    ->choices(['' => '— Không (nhân viên thường / luân phiên nếu có năng lực Night) —'] + Employee::NIGHT_ROLES)
+                    ->helperText('Night cố định: chọn Ca cứng là ca đêm (N), không cần chọn ở đây. Night đa năng: làm Night, Room Service, hỗ trợ nhà hàng theo năng lực đã khai – được điều chuyển bù nam waiter.')
+                    ->colspan(1)
+            )
+            ->add(
                 'days_off_per_week',
                 NumberField::class,
                 NumberFieldOption::make()
@@ -127,6 +153,18 @@ class EmployeeForm extends FormAbstract
                 TextField::class,
                 TextFieldOption::make()->label('Sinh nhật (ngày/tháng)')->placeholder('VD: 13/12')->maxLength(5)->colspan(1)
             )
+            ->add(
+                'is_trainee',
+                SelectField::class,
+                SelectFieldOption::make()->label('Thực tập sinh')->choices([0 => 'Không – nhân viên chính thức', 1 => 'Có – không tính vào định biên, không xếp tự động'])
+                    ->defaultValue(0)->colspan(1)
+            )
+            ->add('mentor_id', SelectField::class, SelectFieldOption::make()->label('Người hướng dẫn')->choices(['' => '— Không —'] + $mentors)->searchable()->colspan(1))
+            ->add('training_from', TextField::class, TextFieldOption::make()->label('Thực tập từ ngày')->placeholder('YYYY-MM-DD')->colspan(1)
+                ->value($model instanceof Employee ? $model->training_from?->toDateString() : null))
+            ->add('training_to', TextField::class, TextFieldOption::make()->label('Thực tập đến ngày')->placeholder('YYYY-MM-DD')->colspan(1)
+                ->value($model instanceof Employee ? $model->training_to?->toDateString() : null))
+            ->add('training_note', TextField::class, TextFieldOption::make()->label('Ghi chú thực tập')->maxLength(255)->colspan(2))
             ->add('phone', TextField::class, TextFieldOption::make()->label('Số điện thoại')->maxLength(30)->colspan(1))
             ->add('email', EmailField::class, EmailFieldOption::make()->required(false)->colspan(1))
             ->add('status', SelectField::class, StatusFieldOption::make()->label('Trạng thái (Ngưng hoạt động sẽ ẩn khỏi bảng xếp ca)'))

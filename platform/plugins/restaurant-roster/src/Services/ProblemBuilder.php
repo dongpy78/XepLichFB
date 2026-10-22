@@ -66,10 +66,21 @@ class ProblemBuilder
         $templates = ShiftTemplate::query()->wherePublished()->get();
         $shifts = $templates->map(fn (ShiftTemplate $t) => $this->shiftSpec($t))->all();
 
+        // Thực tập sinh không được tính vào định biên và không được tự xếp: quản lý xếp tay, bộ giải bỏ qua.
         $employees = Employee::query()
             ->where('status', BaseStatusEnum::PUBLISHED)
+            ->where('is_trainee', false)
             ->with('skills')
             ->get();
+
+        // Điều chuyển giữa các outlet (quản lý 23/10/2026): thuật toán không tự lấy người outlet nhà hàng khác để bù thiếu.
+        // Ngoài outlet chính chỉ còn: Night (luân phiên), trạm Lobby, khu trực thuộc (Kid-Deline); Night đa năng thì theo năng lực đã khai.
+        $nightStaff = new NightStaffService($this);
+        $nightOutletIds = $nightStaff->nightOutletIds();
+        $parents = $this->outletParents($outlets);
+        $stationId = $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY'))?->getKey();
+        $transferPolicy = config('plugins.restaurant-roster.general.scheduling.cross_outlet_transfer', 'flex_only');
+        $maleStaffPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.male_staff_positions', ['Waiter']));
 
         // Cấp quản lý: theo cờ "Cấp quản lý" của vị trí (không so tên chức vụ); chỉ tự xếp các ca manager_shift_codes.
         $managerPositions = array_flip($this->managerPositionIds());
@@ -126,6 +137,18 @@ class ProblemBuilder
                 }
             }
 
+            if ($transferPolicy === 'flex_only' && $employee->night_role !== EmployeeSpec::NIGHT_FLEX) {
+                foreach (array_keys($skills) as $key) {
+                    $o = (int) explode(':', $key)[0];
+
+                    if ($o !== (int) $employee->outlet_id && $o !== (int) $stationId && ! in_array($o, $nightOutletIds, true)
+                        && ($parents[$o] ?? null) !== (int) $employee->outlet_id) {
+                        unset($skills[$key]);
+                        $this->notes['transfer_blocked'][$employee->name] = true;
+                    }
+                }
+            }
+
             if (! $skills && $employee->auto_schedule) {
                 $this->notes['no_skills'][] = $employee->name;
             }
@@ -149,6 +172,11 @@ class ProblemBuilder
                 managerShiftIds: $managerShiftIds,
                 isFemaleStaff: $employee->gender === 'female' && ! isset($managerPositions[(int) $employee->position_id])
                     && (! $femaleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $femaleStaffPositions, true)),
+                // Định biên nam = nam waiter: không tính cấp quản lý, chỉ vị trí trong male_staff_positions.
+                isMaleStaff: $employee->gender === 'male' && ! isset($managerPositions[(int) $employee->position_id])
+                    && (! $maleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $maleStaffPositions, true)),
+                // Night cố định đã được ca cứng giữ ở Night; chỉ Night đa năng cần đánh dấu cho bộ giải.
+                nightRole: $employee->night_role === EmployeeSpec::NIGHT_FLEX ? EmployeeSpec::NIGHT_FLEX : null,
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {
@@ -202,6 +230,7 @@ class ProblemBuilder
             supportHistory: $supportHistory,
             shiftHistory: $shiftHistory,
             historyWeeks: $historyWeeks,
+            nightPlan: $this->nightPlan($nightStaff, $from, $to),
         );
     }
 
@@ -234,6 +263,30 @@ class ProblemBuilder
     /**
      * @return array<int, int> [outletId khu] => outletId nhà hàng chủ quản (config scheduling.outlet_parents theo mã outlet)
      */
+    /** @var array<string, array{source: string, ids: int[], warnings: string[]}> Kế hoạch luân phiên Night đã dùng ở lần build gần nhất (theo tuần) */
+    public array $nightWeeks = [];
+
+    /**
+     * Kế hoạch luân phiên Night cho các ngày xếp lịch: tuần đã duyệt → đúng danh sách; chưa duyệt → đề xuất của thuật toán.
+     */
+    private function nightPlan(NightStaffService $nightStaff, CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        $result = $nightStaff->planFor($from, $to);
+        $this->nightWeeks = $result['weeks'];
+
+        foreach ($result['weeks'] as $week => $info) {
+            foreach ($info['warnings'] as $warning) {
+                $this->notes['night_rotation'][] = $warning;
+            }
+
+            if ($info['source'] === 'proposed') {
+                $this->notes['night_rotation_proposed'][] = $week;
+            }
+        }
+
+        return $result['plan'];
+    }
+
     private function outletParents($outlets): array
     {
         $ids = $outlets->mapWithKeys(fn ($o) => [(string) $o->code => (int) $o->getKey()])->all();
@@ -569,7 +622,7 @@ class ProblemBuilder
     /**
      * @return array{0: array<int, array<string, string>>, 1: array<int, array<string, string>>}
      */
-    private function availability(array $employeeIds, CarbonImmutable $from, CarbonImmutable $to): array
+    public function availability(array $employeeIds, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $labels = config('plugins.restaurant-roster.general.availability_types', []);
         $hard = [];

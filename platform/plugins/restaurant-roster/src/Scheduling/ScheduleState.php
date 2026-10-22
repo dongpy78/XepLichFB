@@ -571,7 +571,7 @@ final class ScheduleState
         $employee = $this->problem->employees[$employeeId];
 
         return $this->count($i, $outletId, $shiftId) - 1 < $requirement->min
-            || ($employee->isMale() && $this->maleCount($i, $outletId, $shiftId) - 1 < $requirement->minMale)
+            || ($employee->countsAsMale() && $this->maleCount($i, $outletId, $shiftId) - 1 < $requirement->minMale)
             || ($employee->isFemaleStaff && $this->femaleCount($i, $outletId, $shiftId) - 1 < $requirement->minFemale)
             || $this->positionShort($employeeId, $i, $requirement, -1);
     }
@@ -639,6 +639,12 @@ final class ScheduleState
 
         if ($checkEligibility && $shift->allowedResidence !== null && $employee->residence !== $shift->allowedResidence) {
             return ['residence', sprintf('Ca %s chỉ dành cho nhân viên ở khu vực "%s" (xe đưa đón)', $shift->code, $shift->allowedResidence)];
+        }
+
+        // Night luân phiên theo kế hoạch tuần: người luân phiên không có tên trong kế hoạch tuần này không được tự xếp ca đêm.
+        if ($checkEligibility && isset($this->nightRotation[$employeeId]) && $shift->category() === 'night'
+            && $this->problem->nightPlanned($employeeId, $date) === false) {
+            return ['night_plan', 'Chưa được chọn luân phiên Night tuần này (Quản lý nhân sự Night)'];
         }
 
         if ($support) {
@@ -958,7 +964,8 @@ final class ScheduleState
             // Luân phiên ca đêm theo tuần: tuần này một nhóm làm đêm, tuần sau tới người khác
             // (ít người có tuần đêm trong kỳ, người đã làm đêm các tuần trước được nghỉ đêm), không trộn đêm với ca ngày trong tuần.
             $history = $this->problem->nightHistory[$employeeId] ?? 0;
-            $terms['night_rotation'] = ($m['night_weeks'] + $history) ** 2 - $history ** 2 + $m['night_mixed'];
+            // + ca ngày trong tuần đã được chọn luân phiên Night (người được chọn đi Night cả tuần, không ở lại nhà hàng).
+            $terms['night_rotation'] = ($m['night_weeks'] + $history) ** 2 - $history ** 2 + $m['night_mixed'] + $m['night_plan_day'];
         } elseif (isset($this->nightPool[$employeeId])) {
             $terms['night_sq'] = $m['night'] ** 2;
             $terms['night_rotation'] = $m['night_staff_day'];
@@ -1089,20 +1096,20 @@ final class ScheduleState
             foreach ($this->crossCells[$i] ?? [] as $employeeId => $outletId) {
                 $employee = $this->problem->employees[$employeeId];
 
-                foreach ($this->homePrimaryShifts($employeeId) as $shiftId) {
-                    if (! isset($slots["{$employee->homeOutletId}|{$shiftId}"])) {
+                foreach ($this->protectedSlots($employeeId) as [$homeId, $shiftId]) {
+                    if ($homeId === $outletId || ! isset($slots["{$homeId}|{$shiftId}"])) {
                         continue;
                     }
 
-                    $requirement = $this->requirements[$i]["{$employee->homeOutletId}|{$shiftId}"];
+                    $requirement = $this->requirements[$i]["{$homeId}|{$shiftId}"];
                     $count = $this->count($i, $requirement->outletId, $requirement->shiftId);
                     $male = $this->maleCount($i, $requirement->outletId, $requirement->shiftId);
 
                     $female = $this->femaleCount($i, $requirement->outletId, $requirement->shiftId);
 
-                    if ($count < $requirement->min || ($employee->isMale() && $male < $requirement->minMale)
+                    if ($count < $requirement->min || ($employee->countsAsMale() && $male < $requirement->minMale)
                         || ($employee->isFemaleStaff && $female < $requirement->minFemale) || $this->positionShort($employeeId, $i, $requirement, 0)) {
-                        $result[] = ['employee_id' => $employeeId, 'date' => $this->dates[$i], 'outlet_id' => $outletId, 'home_outlet_id' => $employee->homeOutletId, 'home_shift_id' => $requirement->shiftId];
+                        $result[] = ['employee_id' => $employeeId, 'date' => $this->dates[$i], 'outlet_id' => $outletId, 'home_outlet_id' => $homeId, 'home_shift_id' => $requirement->shiftId];
 
                         break;
                     }
@@ -1111,6 +1118,43 @@ final class ScheduleState
         }
 
         return $result;
+    }
+
+    /** @var array<int, array<int, array{0: int, 1: int}>> */
+    private array $protectedSlots = [];
+
+    /**
+     * Ô "nơi nguồn" không được bỏ trống dưới tối thiểu khi điều chuyển người này: ca chuyên trách tại outlet chính;
+     * Night đa năng: thêm các ca chuyên trách ở outlet khác (vd Room Service) – không rút người đa năng khỏi Night / Room Service đang thiếu.
+     *
+     * @return array<int, array{0: int, 1: int}> [outletId, shiftId]
+     */
+    private function protectedSlots(int $employeeId): array
+    {
+        if (isset($this->protectedSlots[$employeeId])) {
+            return $this->protectedSlots[$employeeId];
+        }
+
+        $employee = $this->problem->employees[$employeeId];
+        $slots = array_map(fn ($shiftId) => [(int) $employee->homeOutletId, $shiftId], $employee->homeOutletId === null ? [] : $this->homePrimaryShifts($employeeId));
+
+        if ($employee->isNightFlex()) {
+            foreach ($employee->skills as $key => $level) {
+                [$o, $s] = array_map('intval', explode(':', $key));
+
+                if ($level !== EmployeeSpec::PRIMARY || $o === $employee->homeOutletId) {
+                    continue;
+                }
+
+                foreach ($s ? [$s] : array_keys($this->problem->shifts) as $shiftId) {
+                    if ($employee->skillLevel($o, $shiftId) === EmployeeSpec::PRIMARY) {
+                        $slots[] = [$o, $shiftId];
+                    }
+                }
+            }
+        }
+
+        return $this->protectedSlots[$employeeId] = $slots;
     }
 
     /** @var array<int, int[]> */
@@ -1197,7 +1241,8 @@ final class ScheduleState
 
         $employee = $this->problem->employees[$employeeId];
         $shifts = $this->problem->shifts;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
+        $planned = isset($this->nightRotation[$employeeId]) && $this->problem->nightPlan;
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1242,6 +1287,10 @@ final class ScheduleState
             $shift = $shifts[$s];
             $category = $shift->category();
             $m['worked']++;
+
+            if ($category !== 'night' && $planned && $this->problem->nightPlanned($employeeId, $this->dates[$i]) === true) {
+                $m['night_plan_day']++;
+            }
 
             // Có mặt ở Lobby: ca làm trọn ở trạm, hoặc ca có khung (L) và đang bật (L) (như supportInterval()).
             // Lượt hỗ trợ theo loại ca: có mặt ở Lobby → OH(L), M9(L), M6(L), A2(L); đứng khu trực thuộc → M6(K), A2(K).
@@ -1317,7 +1366,8 @@ final class ScheduleState
         }
 
         // Tuần có ca đêm, và số ca ngày lẫn trong tuần có ca đêm.
-        $staffDay = isset($this->nightPool[$employeeId], $this->nightOutlets[$employee->homeOutletId]) && ! $employee->fixed;
+        // Night đa năng (Room Service / hỗ trợ nhà hàng) không bị đẩy về ca đêm như nhân viên chỉ làm Night.
+        $staffDay = isset($this->nightPool[$employeeId], $this->nightOutlets[$employee->homeOutletId]) && ! $employee->fixed && ! $employee->isNightFlex();
 
         foreach ($byWeek as $counts) {
             $night = $counts['night'] ?? 0;
@@ -1546,7 +1596,7 @@ final class ScheduleState
         if ($support && $outletId !== $this->problem->stationOutletId && ! $this->supportCountsAtOutlet($requirement, $shiftId)) {
             return;
         }
-        $isMale = $this->problem->employees[$employeeId]?->isMale() ?? false;
+        $isMale = $this->problem->employees[$employeeId]?->countsAsMale() ?? false;
         $isFemaleStaff = $this->problem->employees[$employeeId]?->isFemaleStaff ?? false;
 
         // Quản lý ca sáng / chiều theo outlet × ngày (cân bằng M6 / A2 của cấp quản lý).

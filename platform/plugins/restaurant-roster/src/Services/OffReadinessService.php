@@ -159,7 +159,7 @@ class OffReadinessService
 
             if (! $isOff) {
                 $eligible++;
-                $males += $employee->isMale() ? 1 : 0;
+                $males += $employee->countsAsMale() ? 1 : 0;
             }
         }
 

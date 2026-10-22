@@ -250,6 +250,25 @@ final class HeuristicSolver implements SolverInterface
         $history = $state->problem->nightHistory;
 
         foreach ($weeks as $week => $days) {
+            // Tuần đã có kế hoạch luân phiên Night (quản lý duyệt hoặc đề xuất): đúng những người này trực đêm.
+            $planned = [];
+
+            foreach ($days as $i) {
+                foreach ($state->problem->nightPlan[$state->dates[$i]] ?? [] as $employeeId) {
+                    $planned[$employeeId] = true;
+                }
+            }
+
+            if ($planned || array_filter($days, fn ($i) => isset($state->problem->nightPlan[$state->dates[$i]]))) {
+                foreach (array_keys($planned) as $employeeId) {
+                    if (isset($state->nightRotation[$employeeId])) {
+                        $this->nightDuty[$employeeId][$week] = true;
+                    }
+                }
+
+                continue;
+            }
+
             $need = 0;
 
             foreach ($days as $i) {
@@ -638,7 +657,7 @@ final class HeuristicSolver implements SolverInterface
     private function inGroup(EmployeeSpec $employee, bool|string $group): bool
     {
         return match ($group) {
-            true => $employee->isMale(),
+            true => $employee->countsAsMale(),
             'female' => $employee->isFemaleStaff,
             default => true,
         };
@@ -729,7 +748,7 @@ final class HeuristicSolver implements SolverInterface
                 + (isset($state->problem->softUnavailable[$employeeId][$date]) ? 400 : 0)
                 + ($this->wouldBeHeavy($state, $employeeId, $i, $requirement) ? 150 : 0)
                 // Người không phải nam dành chỗ nam cho ô cần nam khác.
-                + ($maleOnly === false && $employee->isMale() && $requirement->minMale === 0 ? 5 : 0)
+                + ($maleOnly === false && $employee->countsAsMale() && $requirement->minMale === 0 ? 5 : 0)
                 // Nữ waiter dành cho ô còn thiếu nữ waiter khác.
                 + ($maleOnly === false && $employee->isFemaleStaff && $requirement->minFemale === 0 ? 5 : 0)
                 + ($baseline && $baseline[0] === $requirement->outletId && $baseline[1] === $requirement->shiftId ? -500 : 0)

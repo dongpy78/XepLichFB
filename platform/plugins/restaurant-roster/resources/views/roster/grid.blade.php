@@ -71,31 +71,36 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @php $currentOutlet = null; @endphp
+                    @php
+                        $currentSection = null;
+                        $currentStatOutlet = null;
+                        $nightRoles = ['core' => ['N cố định', 'Night cố định (ca cứng ca đêm)'], 'flex' => ['N đa năng', 'Night đa năng: Night / Room Service / hỗ trợ nhà hàng']];
+                    @endphp
                     @foreach ($grid['rows'] as $row)
                         @php
                             $employee = $row['employee'];
                             $check = $row['check'];
                         @endphp
-                        @if ($currentOutlet !== $employee->outlet_id)
-                            @if ($currentOutlet !== null)
-                                @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentOutlet])
+                        @if ($currentSection !== $row['section']['key'])
+                            @if ($currentSection !== null && $currentStatOutlet)
+                                @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentStatOutlet])
                             @endif
                             @php
-                                $currentOutlet = $employee->outlet_id;
+                                $currentSection = $row['section']['key'];
+                                $currentStatOutlet = $row['section']['stat_outlet_id'];
                             @endphp
                             <tr class="roster-section">
                                 <td class="roster-table__staff">
-                                    <span class="roster-section__name">{{ mb_strtoupper($employee->outlet->code ?: $employee->outlet->name ?: 'Chưa có outlet') }}</span>
+                                    <span class="roster-section__name">{{ mb_strtoupper($row['section']['label']) }}</span>
                                 </td>
                                 @foreach ($grid['days'] as $day)
                                     <td class="roster-section__day">
-                                        @if ($canManage)
+                                        @if ($canManage && $currentStatOutlet)
                                             <button type="button" class="roster-clear-btn"
                                                 data-roster-clear="column"
-                                                data-outlet="{{ $employee->outlet_id }}"
+                                                data-outlet="{{ $currentStatOutlet }}"
                                                 data-date="{{ $day->toDateString() }}"
-                                                title="Xóa lịch {{ $employee->outlet->code ?: $employee->outlet->name }} ngày {{ $dayNames[$day->dayOfWeekIso] }} {{ $day->format('d/m') }} để xếp lại">
+                                                title="Xóa lịch nhân viên outlet {{ $row['section']['label'] }} ngày {{ $dayNames[$day->dayOfWeekIso] }} {{ $day->format('d/m') }} để xếp lại">
                                                 <x-core::icon name="ti ti-eraser" /> <span>Xóa cột</span>
                                             </button>
                                         @endif
@@ -119,8 +124,23 @@
                                         <span class="roster-row-flag roster-row-flag--{{ $check['level'] }}"><x-core::icon name="ti ti-alert-circle" /></span>
                                     @endif
                                 </div>
-                                @if ($employee->position->name)
-                                    <div class="roster-staff__meta">{{ $employee->position->name }}</div>
+                                @php $nightRole = $employee->isNightCore() ? 'core' : $employee->night_role; @endphp
+                                @if ($employee->position->name || $nightRole || $row['night_rotation'] || $employee->is_trainee)
+                                    <div class="roster-staff__meta">
+                                        {{ $employee->position->name }}
+                                        @if ($row['section']['key'] !== 'o' . $employee->outlet_id && $employee->outlet->code)
+                                            <span title="Outlet chính">· {{ $employee->outlet->code }}</span>
+                                        @endif
+                                        @if ($role = $nightRoles[$nightRole] ?? null)
+                                            <span class="badge bg-dark-lt" title="{{ $role[1] }}">{{ $role[0] }}</span>
+                                        @endif
+                                        @if ($row['night_rotation'])
+                                            <span class="badge bg-indigo-lt" title="Được chọn luân phiên Night tuần này (vẫn thuộc nhóm hiển thị hiện tại)">N luân phiên</span>
+                                        @endif
+                                        @if ($employee->is_trainee)
+                                            <span class="badge bg-yellow-lt" title="Thực tập sinh: không tính vào định biên{{ $employee->training_to ? ', đến ' . $employee->training_to->format('d/m/Y') : '' }}">Thực tập</span>
+                                        @endif
+                                    </div>
                                 @endif
                             </td>
                             @foreach ($grid['days'] as $day)
@@ -133,6 +153,10 @@
                                     if ($shift) {
                                         if ($shift->isWorking()) {
                                             $tooltip[] = trim(($shift->template?->name ?? 'Ca') . ' ' . $shift->start_at->format('H:i') . '–' . $shift->end_at->format('H:i'));
+
+                                            if ($shift->outlet_id && (int) $shift->outlet_id !== (int) $employee->outlet_id) {
+                                                $tooltip[] = 'Làm thực tế tại ' . ($grid['stats']['outlets'][$shift->outlet_id]->code ?? 'outlet khác') . ' (outlet chính ' . ($employee->outlet->code ?: '—') . ')';
+                                            }
 
                                             foreach ($shift->tags ?: [] as $tag) {
                                                 $tooltip[] = $grid['shiftTags'][$tag]['description'] ?? $tag;
@@ -210,8 +234,8 @@
                             @endforeach
                         </tr>
                     @endforeach
-                    @if ($currentOutlet !== null)
-                        @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentOutlet])
+                    @if ($currentSection !== null && $currentStatOutlet)
+                        @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentStatOutlet])
                     @endif
                     @include('plugins/restaurant-roster::roster.partials.lobby-stats')
                 </tbody>

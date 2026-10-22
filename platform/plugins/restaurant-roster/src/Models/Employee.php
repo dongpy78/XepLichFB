@@ -19,8 +19,16 @@ class Employee extends BaseModel
         'email',
         'birthday',
         'outlet_id',
+        'schedule_group_id',
+        'schedule_order',
         'position_id',
         'fixed_shift_template_id',
+        'night_role',
+        'is_trainee',
+        'mentor_id',
+        'training_from',
+        'training_to',
+        'training_note',
         'employment_type',
         'weekly_hours',
         'gender',
@@ -37,11 +45,49 @@ class Employee extends BaseModel
         'weekly_hours' => 'float',
         'days_off_per_week' => 'int',
         'auto_schedule' => 'bool',
+        'is_trainee' => 'bool',
+        'schedule_order' => 'int',
+        'training_from' => 'date',
+        'training_to' => 'date',
     ];
 
     public function fixedShift(): BelongsTo
     {
         return $this->belongsTo(ShiftTemplate::class, 'fixed_shift_template_id');
+    }
+
+    public const NIGHT_FLEX = 'flex';
+
+    /** Night cố định không chọn ở đây: là người có ca cứng là ca đêm (quản lý chọn ở mục Ca cứng). */
+    public const NIGHT_ROLES = [
+        self::NIGHT_FLEX => 'Night đa năng (Night / Room Service / hỗ trợ nhà hàng)',
+    ];
+
+    /**
+     * Night cố định = ca cứng là ca đêm (bắt đầu từ 20:00 đến trước 04:00), ví dụ N.
+     */
+    public function isNightCore(): bool
+    {
+        $start = $this->fixedShift?->start_time;
+
+        if (! $start) {
+            return false;
+        }
+
+        $hour = (int) substr((string) $start, 0, 2);
+
+        return $hour >= 20 || $hour < 4;
+    }
+
+    /** Nhóm hiển thị trên Bảng xếp ca (không phải outlet làm việc). */
+    public function scheduleGroup(): BelongsTo
+    {
+        return $this->belongsTo(ScheduleGroup::class, 'schedule_group_id');
+    }
+
+    public function mentor(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'mentor_id');
     }
 
     public function skills(): HasMany
