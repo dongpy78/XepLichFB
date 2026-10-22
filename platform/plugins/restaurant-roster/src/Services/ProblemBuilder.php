@@ -532,7 +532,8 @@ class ProblemBuilder
         $slots = [];
 
         foreach ($coverage as $window) {
-            foreach ($window->shiftIds ?? [] as $shiftId) {
+            // Khung không giới hạn ca (trống "Chỉ tính ca" – vd quy tắc 2 nữ waiter 09:00–16:45): mọi ca có khung (L), gồm OH(L).
+            foreach ($window->shiftIds ?? array_keys($lobbyShifts) as $shiftId) {
                 if (! isset($lobbyShifts[$shiftId])) {
                     continue;
                 }

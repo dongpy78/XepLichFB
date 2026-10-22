@@ -77,6 +77,56 @@ class LobbyCoverageRuleTest extends TestCase
         $this->assertCount(2, $statistics()[$next]['short']);
     }
 
+    /**
+     * Lỗi thực tế (lần chạy #105): dòng Lobby để trống "Chỉ tính ca" → không có chỗ OH(L) ở nhà hàng → chỉ xếp M9(L).
+     * Nay: ô OH(L) được tạo cho outlet có người làm được OH, và bộ giải xếp OH(L) cho nữ waiter Nha Trang.
+     */
+    public function test_oh_l_is_scheduled_when_lobby_rule_has_no_shift_codes(): void
+    {
+        [$templates, $staff] = $this->world();
+        $lobby = Outlet::query()->where('code', 'LOBBY')->value('id');
+        $villa = Outlet::query()->where('code', 'VILLA')->value('id');
+
+        foreach ([[$staff['oh'], $villa, null], [$staff['oh'], $lobby, null], [$staff['m6'], $lobby, $templates['M9']->getKey()]] as [$employee, $outlet, $template]) {
+            \Botble\RestaurantRoster\Models\EmployeeSkill::query()->create(['employee_id' => $employee->getKey(), 'outlet_id' => $outlet, 'shift_template_id' => $template, 'level' => 'primary']);
+        }
+
+        $from = Carbon::parse(self::DATE);
+        $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['time_limit_seconds' => 4, 'max_iterations' => 60000]);
+        $this->assertArrayHasKey(self::DATE . "|{$villa}|{$templates['OH']->getKey()}", $problem->requirements, 'Có chỗ OH(L) tại Villa');
+
+        $result = (new \Botble\RestaurantRoster\Scheduling\HeuristicSolver())->solve($problem);
+        $ohL = array_filter($result->assignments, fn ($r) => $r['employee_id'] === $staff['oh']->getKey() && $r['shift_id'] === $templates['OH']->getKey() && $r['support']);
+        $m9 = array_filter($result->assignments, fn ($r) => $r['employee_id'] === $staff['m6']->getKey() && $r['shift_id'] === $templates['M9']->getKey());
+
+        $this->assertGreaterThanOrEqual(4, count($ohL), 'Nữ waiter Nha Trang được xếp OH(L)');
+        $this->assertGreaterThanOrEqual(4, count($m9), 'Nữ waiter Cam Ranh được xếp M9(L)');
+    }
+
+    /** Lưu định biên Lobby có đoạn giờ không ca nào phủ (vd 08:30–17:00: 08:30–08:45 không ai ở Lobby) → báo lỗi rõ ràng. */
+    public function test_lobby_window_that_no_shift_can_cover_is_rejected(): void
+    {
+        $this->world();
+        $validate = function (string $start, string $end): array {
+            $request = \Botble\RestaurantRoster\Http\Requests\CoverageRequirementRequest::create('/', 'POST', ['start_time' => $start, 'end_time' => $end,
+                'min_staff' => 2, 'target_staff' => 2, 'is_confirmed' => 1, 'female_only' => 1]);
+            $request->setContainer(app())->setRedirector(app('redirect'));
+
+            try {
+                $request->validateResolved();
+
+                return [];
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return $e->errors()['start_time'] ?? [];
+            }
+        };
+
+        $errors = $validate('08:30', '17:00');
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('08:30–08:45', $errors[0]);
+        $this->assertSame([], $validate('09:00', '16:45'), 'Khung chính 09:00–16:45 hợp lệ');
+    }
+
     /** @return array{0: array<string, ShiftTemplate>, 1: array<string, Employee>} */
     private function world(): array
     {

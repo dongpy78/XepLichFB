@@ -17,7 +17,7 @@
     $reasonLabels = [
         'approved_off' => 'Nghỉ đã duyệt', 'locked' => 'Ô đã khóa', 'supporting' => 'Đang hỗ trợ Lobby trong ca', 'busy_elsewhere' => 'Đang làm nơi khác',
         'blocked' => 'Vướng quy tắc', 'gender_missing' => 'Chưa khai báo giới tính',
-        'present' => 'Đang có mặt ở Lobby đoạn này', 'source_minimum' => 'Không rút được: outlet gốc sẽ dưới tối thiểu',
+        'no_shift' => 'Giờ định biên không phủ được', 'present' => 'Đang có mặt ở Lobby đoạn này', 'source_minimum' => 'Không rút được: outlet gốc sẽ dưới tối thiểu',
         'no_overlap' => 'Làm ca không có mặt ở Lobby đoạn này', 'support_candidates' => 'Có thể giao (L)', 'station_candidates' => 'Đang OFF, xếp được ca Lobby',
     ];
 @endphp

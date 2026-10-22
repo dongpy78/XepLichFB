@@ -192,12 +192,16 @@ final class ResultBuilder
                 $level = $have < $min ? 'min' : 'target';
                 $segment = LobbyCoverage::time($start) . '–' . LobbyCoverage::time($end);
                 $window = $label . ' ' . $segment . ([$start, $end] === [$windowStart, $windowEnd] ? '' : ' (khung ' . LobbyCoverage::time($windowStart) . '–' . LobbyCoverage::time($windowEnd) . ')');
-                $reasons = ['present' => [], 'support_candidates' => [], 'station_candidates' => [], 'source_minimum' => [], 'no_overlap' => [], 'approved_off' => [], 'locked' => [], 'blocked' => []];
+                $reasons = ['no_shift' => [], 'present' => [], 'support_candidates' => [], 'station_candidates' => [], 'source_minimum' => [], 'no_overlap' => [], 'approved_off' => [], 'locked' => [], 'blocked' => []];
                 $proposals = [];
                 $eligible = 0;
 
                 // Ca có thể đưa một người lên Lobby trọn đoạn này (OH(L), M9 ở Lobby, M6(L), A2(L)…).
                 $slots = array_filter($state->requirements[$i] ?? [], fn (Requirement $r) => in_array($k, $state->supportWindows($i, $r->outletId, $r->shiftId, $r->outletId !== $problem->stationOutletId), true));
+
+                if (! $slots) {
+                    $reasons['no_shift'][] = "Không ca nào có mặt ở Lobby trọn đoạn {$segment} – kiểm tra giờ ở Định biên quầy Lobby (khung chính 09:00–16:45) và khung (L) ở Mẫu ca";
+                }
 
                 foreach ($problem->employees as $employeeId => $employee) {
                     if (! $employee->canSupport($problem->stationOutletId, 0) && ! array_filter(array_keys($employee->skills), fn ($key) => str_starts_with($key, $problem->stationOutletId . ':'))) {
