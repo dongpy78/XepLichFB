@@ -38,6 +38,36 @@
         </div>
     </div>
 
+    @if ($canEdit)
+        <div class="card mb-3">
+            <div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+                <div class="small">
+                    <strong>Reset lịch Night tuần {{ $week->format('d/m') }}</strong> (để chạy lại thuật toán):
+                    xóa <strong>{{ $resetScope['engine'] }}</strong> ca đêm do thuật toán xếp (nháp, chưa khóa)
+                    và <strong>{{ $resetScope['proposed'] }}</strong> dòng luân phiên đề xuất.
+                    Giữ nguyên {{ $resetScope['kept_locked'] }} ca đã khóa, {{ $resetScope['kept_published'] }} ca đã công bố, {{ $resetScope['kept_manual'] }} ca xếp tay,
+                    {{ $resetScope['published'] }} người luân phiên đã công bố; không động tới tuần khác, outlet khác, OFF, nhân viên, cấu hình.
+                </div>
+                <form method="POST" action="{{ route('roster.night.reset') }}" class="d-flex gap-2 align-items-center"
+                    onsubmit="return confirm('Reset lịch Night tuần {{ $week->format('d/m') }}?
+
+• Xóa {{ $resetScope['engine'] }} ca đêm do thuật toán xếp (nháp, chưa khóa).
+• Xóa danh sách luân phiên đề xuất' + (this.include_approved && this.include_approved.checked ? ' và {{ $resetScope['approved'] }} người đã duyệt' : '') + '.
+• Giữ ca đã khóa / đã công bố / xếp tay.
+
+Thao tác được ghi nhật ký. Tiếp tục?')">
+                    @csrf
+                    <input type="hidden" name="week" value="{{ $week->toDateString() }}">
+                    <input type="hidden" name="confirm" value="1">
+                    @if ($resetScope['approved'])
+                        <label class="form-check small mb-0"><input type="checkbox" class="form-check-input" name="include_approved" value="1"> Xóa cả {{ $resetScope['approved'] }} người luân phiên đã duyệt</label>
+                    @endif
+                    <button class="btn btn-outline-danger" type="submit">Reset lịch Night</button>
+                </form>
+            </div>
+        </div>
+    @endif
+
     <div class="row row-cards mb-3">
         <div class="col-md-6">
             <div class="card h-100">
@@ -185,6 +215,13 @@
                             <input type="hidden" name="week" value="{{ $week->toDateString() }}">
                             {{ $person($e) }} @if ($canEdit)<button class="btn btn-link btn-sm p-0" type="submit">bật lại</button>@endif;
                         </form>
+                    @endforeach
+                </div>
+            @endif
+            @if ($groups['ineligible']->isNotEmpty())
+                <div class="small mt-2"><strong>Có năng lực Night nhưng không được chọn luân phiên:</strong>
+                    @foreach ($groups['ineligible'] as $row)
+                        <div>• {{ $person($row['employee']) }} – {{ $row['reason'] }} <a href="{{ route('roster.employees.edit', $row['employee']->getKey()) }}">sửa hồ sơ</a></div>
                     @endforeach
                 </div>
             @endif

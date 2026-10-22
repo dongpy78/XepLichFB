@@ -69,6 +69,9 @@ return [
         //          người outlet chính vẫn được ưu tiên, không rút người làm outlet nguồn dưới tối thiểu.
         // "skills" = chỉ theo năng lực đã khai; "flex_only" = không tự lấy người outlet nhà hàng khác (trừ Night đa năng).
         'cross_outlet_transfer' => 'auto',
+        // Mã ca thuật toán được TỰ xếp (quản lý 24/10/2026). "OH" (OH ở nhà hàng) không có trong danh sách → chỉ quản lý xếp tay;
+        // "OH(L)" là OH hỗ trợ Lobby. "N" = ca Night (luân phiên / Night cứng). Ô quản lý xếp tay hoặc khóa không bị lọc.
+        'auto_shift_codes' => ['M6', 'A2', 'N', 'OH(L)', 'M9(L)', 'M6(L)', 'A2(L)', 'M6(K)', 'A2(K)'],
         'transfer_outlets' => ['GUSTO', 'VILLA'],
         'transfer_positions' => ['Waiter', 'Hostess'],
         // Night (quản lý 23/10/2026): đúng 3 người / ngày (Định biên nhân sự), ≥ 1 Night cứng (ca cứng ca đêm) mỗi ngày;

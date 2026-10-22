@@ -136,6 +136,7 @@ trait SyntheticRoster
                 seed: $options['seed'] ?? 7,
                 weightOverrides: $options['weights'] ?? [],
                 maxSupportPerOutlet: $options['max_support'] ?? 2,
+                autoShiftCodes: $options['auto_shift_codes'] ?? null,
             ),
             hardUnavailable: $options['hard'] ?? [],
             softUnavailable: $options['soft'] ?? [],

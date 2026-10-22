@@ -107,9 +107,21 @@ class NightStaffService
         $sources = $this->rotationOutletIds();
         $roomLeads = app(RoomServiceStaffService::class)->leadIds($weekStart, $weekStart->addDays(6));
         $employees = Employee::query()->where('status', BaseStatusEnum::PUBLISHED)->with(['outlet', 'position', 'scheduleGroup', 'fixedShift'])->orderBy('code')->get();
-        // Hồ sơ đủ điều kiện: nam waiter outlet nguồn, không có ca cứng (gồm Night cứng), không Room Service chuyên trách, không thực tập.
-        $profile = $employees->filter(fn (Employee $e) => ! $e->fixed_shift_template_id && ! $e->is_trainee && ! in_array((int) $e->getKey(), $roomLeads, true)
-            && in_array((int) $e->outlet_id, $sources, true) && $this->isMaleWaiter($e));
+        // Lý do một người không vào được danh sách luân phiên (null = đủ điều kiện hồ sơ). Đã khai năng lực Night thì không bắt buộc vị trí "Waiter".
+        $blocker = function (Employee $e) use ($roomLeads, $sources, $skilled): ?string {
+            return match (true) {
+                $e->isNightCore() => 'Night cứng',
+                in_array((int) $e->getKey(), $roomLeads, true) => 'Room Service chuyên trách',
+                (bool) $e->fixed_shift_template_id => 'đang có ca cứng ' . ($e->fixedShift?->code ?? ''),
+                (bool) $e->is_trainee => 'thực tập sinh',
+                $e->gender !== 'male' => $e->gender === null ? 'chưa khai giới tính (cần Nam)' : 'không phải nhân viên nam',
+                (bool) $e->position?->is_manager => 'thuộc cấp quản lý',
+                ! in_array((int) $e->outlet_id, $sources, true) => 'outlet chính ' . ($e->outlet?->code ?: '—') . ' không thuộc nguồn luân phiên (Villa / Gusto / Night)',
+                ! isset($skilled[$e->getKey()]) && ! $this->isMaleWaiter($e) => 'chưa có năng lực Night và không phải Waiter',
+                default => null,
+            };
+        };
+        $profile = $employees->filter(fn (Employee $e) => $blocker($e) === null);
 
         return [
             // Night cứng = ca cứng là ca đêm (quản lý chọn ở mục Ca cứng của nhân viên).
@@ -123,7 +135,89 @@ class NightStaffService
             'disabled' => $profile->filter(fn (Employee $e) => isset($skilled[$e->getKey()]) && $e->night_rotation_enabled === false)->values(),
             // Nam waiter chưa khai báo năng lực Night: không được chọn luân phiên (không tự gán năng lực).
             'not_skilled' => $profile->reject(fn (Employee $e) => isset($skilled[$e->getKey()]))->values(),
+            // Có năng lực Night nhưng không được chọn luân phiên – kèm lý do để quản lý sửa hồ sơ.
+            'ineligible' => $employees->filter(fn (Employee $e) => isset($skilled[$e->getKey()]) && ! $e->isNightCore() && $blocker($e) !== null)
+                ->map(fn (Employee $e) => ['employee' => $e, 'reason' => $blocker($e)])->values(),
         ];
+    }
+
+    /**
+     * Phạm vi "Reset lịch Night" của một tuần (để hiện trong hộp xác nhận): ca đêm do thuật toán xếp còn nháp và chưa khóa sẽ bị xóa;
+     * ca đêm đã khóa / đã công bố / quản lý xếp tay được giữ; danh sách luân phiên đề xuất / đã duyệt / đã công bố.
+     *
+     * @return array{engine: int, kept_locked: int, kept_published: int, kept_manual: int, proposed: int, approved: int, published: int}
+     */
+    public function resetScope(CarbonInterface $week): array
+    {
+        $weekStart = CarbonImmutable::parse($week)->startOfWeek();
+        $cells = $this->nightCells($weekStart)->get();
+        $rows = NightRotation::query()->whereDate('week_start', $weekStart->toDateString())->get();
+
+        return [
+            'engine' => $cells->filter(fn (Shift $s) => $this->resettable($s))->count(),
+            'kept_locked' => $cells->filter(fn (Shift $s) => $s->is_locked)->count(),
+            'kept_published' => $cells->filter(fn (Shift $s) => ! $s->is_locked && $s->status === Shift::STATUS_PUBLISHED)->count(),
+            'kept_manual' => $cells->filter(fn (Shift $s) => ! $s->is_locked && $s->status !== Shift::STATUS_PUBLISHED && $s->source !== 'engine')->count(),
+            'proposed' => $rows->where('status', NightRotation::STATUS_PROPOSED)->count(),
+            'approved' => $rows->where('status', NightRotation::STATUS_APPROVED)->count(),
+            'published' => $rows->where('status', NightRotation::STATUS_PUBLISHED)->count(),
+        ];
+    }
+
+    /**
+     * Reset lịch Night của MỘT tuần để chạy lại thuật toán: xóa ca đêm do thuật toán xếp (nháp, chưa khóa) ở outlet Night,
+     * xóa danh sách luân phiên đề xuất – và danh sách đã duyệt nếu người dùng xác nhận. Không động tới: ca đã khóa / đã công bố /
+     * quản lý xếp tay, danh sách đã công bố, tuần khác, outlet khác, OFF, nhân viên, cấu hình. Một transaction; ghi nhật ký từng ô.
+     *
+     * @return array{deleted_cells: int, deleted_rotation: int, kept: array<string, int>}
+     */
+    public function resetWeek(CarbonInterface $week, ?int $userId, bool $includeApproved = false): array
+    {
+        $weekStart = CarbonImmutable::parse($week)->startOfWeek();
+        $scope = $this->resetScope($weekStart);
+
+        return DB::transaction(function () use ($weekStart, $userId, $includeApproved, $scope) {
+            $deleted = 0;
+            $codes = ShiftTemplate::query()->pluck('code', 'id');
+
+            foreach ($this->nightCells($weekStart)->lockForUpdate()->get()->filter(fn (Shift $s) => $this->resettable($s)) as $cell) {
+                ChangeLog::query()->create(['employee_id' => $cell->employee_id, 'date' => $cell->date->toDateString(), 'action' => 'night_reset',
+                    'before' => ['notation' => $codes[$cell->shift_template_id] ?? null, 'outlet_id' => $cell->outlet_id, 'status' => $cell->status, 'source' => $cell->source],
+                    'after' => null, 'reason' => 'Reset lịch Night tuần ' . $weekStart->format('d/m') . ' để chạy lại thuật toán', 'user_id' => $userId]);
+                $cell->delete();
+                $deleted++;
+            }
+
+            $statuses = [NightRotation::STATUS_PROPOSED, ...($includeApproved ? [NightRotation::STATUS_APPROVED] : [])];
+            $rows = NightRotation::query()->whereDate('week_start', $weekStart->toDateString())->whereIn('status', $statuses)->get();
+
+            foreach ($rows as $row) {
+                ChangeLog::query()->create(['employee_id' => $row->employee_id, 'date' => $weekStart->toDateString(), 'action' => 'night_reset',
+                    'before' => ['night_rotation' => $row->status], 'after' => ['night_rotation' => null],
+                    'reason' => 'Reset danh sách luân phiên Night tuần ' . $weekStart->format('d/m'), 'user_id' => $userId]);
+                $row->delete();
+            }
+
+            return [
+                'deleted_cells' => $deleted,
+                'deleted_rotation' => $rows->count(),
+                'kept' => ['locked' => $scope['kept_locked'], 'published' => $scope['kept_published'], 'manual' => $scope['kept_manual'],
+                    'approved' => $includeApproved ? 0 : $scope['approved'], 'published_rotation' => $scope['published']],
+            ];
+        });
+    }
+
+    /** Ca đêm ở outlet Night trong tuần. */
+    private function nightCells(CarbonImmutable $weekStart): \Illuminate\Database\Eloquent\Builder
+    {
+        return Shift::query()->whereIn('outlet_id', $this->nightOutletIds())->whereIn('shift_template_id', $this->nightTemplates()->modelKeys())
+            ->where('kind', Shift::KIND_SHIFT)->whereDate('date', '>=', $weekStart->toDateString())->whereDate('date', '<=', $weekStart->addDays(6)->toDateString());
+    }
+
+    /** Ô được phép reset: do thuật toán xếp, còn nháp, chưa khóa. */
+    private function resettable(Shift $shift): bool
+    {
+        return $shift->source === 'engine' && ! $shift->is_locked && $shift->status !== Shift::STATUS_PUBLISHED;
     }
 
     /** Bật / tắt tư cách luân phiên Night của một người (ghi nhật ký). */

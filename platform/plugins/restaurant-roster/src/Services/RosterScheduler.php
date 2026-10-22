@@ -145,6 +145,13 @@ class RosterScheduler
         $changed = 0;
         $kept = 0;
 
+        // Chốt chặn backend: phương án tự động không được có ca ngoài danh sách auto_shift_codes (vd "OH" ở nhà hàng),
+        // kể cả khi dữ liệu phương án bị sửa. Ô đã có sẵn trên lịch (quản lý xếp tay) được giữ nguyên.
+        if ($invalid = $this->disallowedCells($run, $templates)) {
+            throw new RuntimeException('Phương án có ca không được xếp tự động, không áp dụng: ' . implode('; ', array_slice($invalid, 0, 5))
+                . (count($invalid) > 5 ? ' … (+' . (count($invalid) - 5) . ')' : '') . '. Hãy chạy lại "Tạo lịch tự động".');
+        }
+
         DB::transaction(function () use ($run, $userId, $templates, $employees, &$changed, &$kept): void {
             $now = now()->format('Y-m-d H:i:s');
             $upserts = [];
@@ -255,6 +262,49 @@ class RosterScheduler
     /**
      * Dấu phiên bản của lịch trong phạm vi; đổi khi có ô thêm/sửa/xóa.
      */
+    /**
+     * Ô do thuật toán đề xuất nhưng mã ca (theo cách ghi trên bảng: M6, OH(L), M9(L), A2(K)…) không thuộc auto_shift_codes.
+     *
+     * @return string[]
+     */
+    public function disallowedCells(Run $run, $templates): array
+    {
+        $allowed = array_map(fn ($c) => strtoupper(str_replace(' ', '', (string) $c)), (array) config('plugins.restaurant-roster.general.scheduling.auto_shift_codes', []));
+
+        if (! $allowed) {
+            return [];
+        }
+
+        $outlets = \Botble\RestaurantRoster\Models\Outlet::query()->pluck('code', 'id');
+        $station = $outlets->search(config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY'));
+        $children = $outlets->filter(fn ($code) => isset(config('plugins.restaurant-roster.general.scheduling.outlet_parents', [])[$code]))->keys()->all();
+        $existing = Shift::query()->whereBetween('date', [$run->scope_from->toDateString(), $run->scope_to->toDateString()])->get()
+            ->keyBy(fn (Shift $s) => $s->employee_id . '|' . $s->date->toDateString());
+        $names = Employee::query()->pluck('name', 'id');
+        $invalid = [];
+
+        foreach ($run->proposal['assignments'] ?? [] as $row) {
+            if ($row['kind'] !== 'shift' || ! empty($row['locked']) || ! ($template = $templates[$row['shift_id']] ?? null)) {
+                continue;
+            }
+
+            $outletId = (int) $row['outlet_id'];
+            $code = strtoupper((string) $template->code) . match (true) {
+                ! empty($row['support']) || ($station !== false && $outletId === (int) $station) => '(L)',
+                in_array($outletId, $children, true) => '(K)',
+                default => '',
+            };
+            $current = $existing[$row['employee_id'] . '|' . $row['date']] ?? null;
+            $unchanged = $current && $current->kind === Shift::KIND_SHIFT && (int) $current->shift_template_id === (int) $row['shift_id'] && (int) $current->outlet_id === $outletId;
+
+            if (! in_array($code, $allowed, true) && ! $unchanged) {
+                $invalid[] = sprintf('%s %s %s', $names[$row['employee_id']] ?? "#{$row['employee_id']}", date('d/m', strtotime($row['date'])), $code);
+            }
+        }
+
+        return $invalid;
+    }
+
     public function scheduleStamp(CarbonInterface $from, CarbonInterface $to): string
     {
         $row = Shift::query()

@@ -93,6 +93,11 @@ final class Rules
         public readonly ?string $supportGender = null,
         // Mỗi outlet × ca × ngày góp tối đa bấy nhiêu người hỗ trợ Lobby (L).
         public readonly int $maxSupportPerOutlet = 2,
+        /**
+         * @var string[]|null Mã ca thuật toán được TỰ xếp, theo cách ghi trên bảng: "M6", "A2", "N", "OH(L)", "M9(L)", "M6(L)", "A2(L)",
+         *      "M6(K)", "A2(K)" (vd không có "OH" → không bao giờ tự xếp OH ở nhà hàng). null = không giới hạn. Ô quản lý xếp tay / khóa không bị lọc.
+         */
+        public readonly ?array $autoShiftCodes = null,
         /** @var int[] Thứ đông khách (ISO, 6 = thứ Bảy): hạn chế xếp OFF vào những ngày này. */
         public readonly array $busyWeekdays = [6],
         // Người không có ca cứng: số ca sáng và chiều trong tuần lệch nhau tối đa bấy nhiêu (1 → 5 ngày chia 3/2).
@@ -143,6 +148,7 @@ final class Rules
             minOffPerWeek: (int) ($config['min_off_per_week'] ?? 1),
             supportGender: $config['support_gender'] ?? null,
             maxSupportPerOutlet: (int) ($config['max_support_per_outlet'] ?? 2),
+            autoShiftCodes: isset($config['auto_shift_codes']) ? array_map(fn ($c) => strtoupper(str_replace(' ', '', (string) $c)), (array) $config['auto_shift_codes']) : null,
             busyWeekdays: array_map('intval', $config['busy_weekdays'] ?? [6]),
             shiftMixTolerance: (int) ($config['shift_mix_tolerance'] ?? 1),
             weightOverrides: (array) ($config['weights'] ?? []),

@@ -53,6 +53,7 @@ class NightStaffController extends BaseController
             'upcoming' => $upcoming,
             'perWeek' => $this->service->perWeek(),
             'preview' => $preview,
+            'resetScope' => $this->service->resetScope($week),
             'canEdit' => Auth::user()->hasPermission('roster.settings'),
         ]);
     }
@@ -85,6 +86,31 @@ class NightStaffController extends BaseController
             . ($result['exceptions'] ? ' Có ngoại lệ đã ghi nhật ký.' : '');
 
         return $this->httpResponse()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))->setMessage($message);
+    }
+
+    /**
+     * Reset lịch Night của tuần đang chọn (để chạy lại thuật toán): chỉ ca đêm do thuật toán xếp, còn nháp, chưa khóa;
+     * danh sách luân phiên đề xuất (và đã duyệt nếu tích xác nhận). Lịch đã khóa / đã công bố / xếp tay được giữ.
+     */
+    public function reset(Request $request)
+    {
+        $data = $request->validate(['week' => ['required', 'date'], 'confirm' => ['accepted'], 'include_approved' => ['nullable', 'boolean']]);
+        $week = CarbonImmutable::parse($data['week']);
+
+        try {
+            $result = $this->service->resetWeek($week, Auth::id(), (bool) ($data['include_approved'] ?? false));
+        } catch (\Throwable $e) {
+            return $this->httpResponse()->setError()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))
+                ->setMessage('Reset không thành công, dữ liệu giữ nguyên: ' . $e->getMessage());
+        }
+
+        $kept = array_filter($result['kept']);
+        $labels = ['locked' => 'ca đã khóa', 'published' => 'ca đã công bố', 'manual' => 'ca xếp tay', 'approved' => 'người luân phiên đã duyệt', 'published_rotation' => 'người luân phiên đã công bố'];
+
+        return $this->httpResponse()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))->setMessage(sprintf(
+            'Đã reset lịch Night tuần %s: xóa %d ca đêm do thuật toán xếp, %d dòng luân phiên.%s Có thể chạy lại "Tạo lịch tự động".',
+            $week->startOfWeek()->format('d/m'), $result['deleted_cells'], $result['deleted_rotation'],
+            $kept ? ' Giữ nguyên: ' . implode(', ', array_map(fn ($k, $n) => "{$n} {$labels[$k]}", array_keys($kept), $kept)) . '.' : ''));
     }
 
     /** Bật / tắt tư cách luân phiên Night của một nhân viên. */

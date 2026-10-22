@@ -659,6 +659,12 @@ final class ScheduleState
             return ['residence', sprintf('Ca %s chỉ dành cho nhân viên ở khu vực "%s" (xe đưa đón)', $shift->code, $shift->allowedResidence)];
         }
 
+        // Danh sách ca được tự xếp (auto_shift_codes): vd "OH(L)" được, "OH" (OH ở nhà hàng, không hỗ trợ Lobby) thì không.
+        if ($checkEligibility && $this->problem->rules->autoShiftCodes !== null
+            && ! in_array($code = $this->shiftKey($outletId, $shiftId, $support), $this->problem->rules->autoShiftCodes, true)) {
+            return ['not_allowed', "Ca {$code} không thuộc danh sách ca được xếp tự động (chỉ quản lý xếp tay)"];
+        }
+
         // Night luân phiên theo kế hoạch tuần: người luân phiên không có tên trong kế hoạch tuần này không được tự xếp ca đêm.
         if ($checkEligibility && isset($this->nightRotation[$employeeId]) && $shift->category() === 'night'
             && $this->problem->nightPlanned($employeeId, $date) === false) {
@@ -674,6 +680,12 @@ final class ScheduleState
             if ((! $isNight && $prev && $this->problem->shifts[$prev[1]]->category() === 'night')
                 || ($isNight && $next && $this->problem->shifts[$next[1]]->category() !== 'night')) {
                 return ['night_off', 'Người luân phiên Night phải OFF ngay sau đêm cuối'];
+            }
+
+            // Mỗi ngày tối đa 2 người luân phiên (người thứ 3 luôn là Night cứng điều phối): ngày không có Night cứng
+            // không được lấp bằng 3 người luân phiên – báo thiếu Night cứng thay vì xếp sai.
+            if ($isNight && ($this->rotationNights[$i] ?? 0) - ($this->shiftAt($employeeId, $i) && $this->problem->shifts[$this->shiftAt($employeeId, $i)[1]]->category() === 'night' ? 1 : 0) >= 2) {
+                return ['night_rotation_max', 'Night ngày này đã có 2 người luân phiên (người còn lại phải là Night cứng)'];
             }
 
             // Tối đa 3 đêm / tuần được chọn luân phiên (mục tiêu 2, đêm thứ 3 chỉ khi cần đủ 3 người / ngày).
@@ -862,7 +874,13 @@ final class ScheduleState
                     $this->supportFrom[$i][$k][$source]--;
                 }
 
+                // Ô đêm của người luân phiên cũng đang được đếm trong số người luân phiên của ngày: trừ tạm.
+                $rotationNight = $employee->nightRole === EmployeeSpec::NIGHT_ROTATION && $this->problem->shifts[$s]->category() === 'night';
+                $rotationNight && $this->rotationNights[$i]--;
+
                 $result = $this->violation($employeeId, $i, (int) $o, $s, $ot, checkEligibility: ! $isFixed, support: $f);
+
+                $rotationNight && $this->rotationNights[$i]++;
 
                 foreach ($windows as $k) {
                     $this->supportFrom[$i][$k][$source]++;
@@ -1689,6 +1707,20 @@ final class ScheduleState
         return $penalty;
     }
 
+    /**
+     * Mã ca theo cách ghi trên bảng: thêm "(L)" khi hỗ trợ Lobby hoặc làm trọn ở trạm Lobby (M9 → "M9(L)"), "(K)" khi đứng khu trực thuộc.
+     */
+    public function shiftKey(?int $outletId, int $shiftId, bool $support): string
+    {
+        $code = strtoupper($this->problem->shifts[$shiftId]->code);
+
+        return match (true) {
+            $support || ($outletId !== null && $outletId === $this->problem->stationOutletId) => $code . '(L)',
+            $outletId !== null && isset($this->problem->outletParents[$outletId]) => $code . '(K)',
+            default => $code,
+        };
+    }
+
     /** Số ca Lobby ưu tiên người này đã có trong tuần chứa ngày i. */
     public function lobbyPreferredInWeek(int $employeeId, int $i): int
     {
@@ -1787,8 +1819,15 @@ final class ScheduleState
         return $result;
     }
 
+    /** @var array<int, int> [dayIndex] => số người luân phiên đang làm ca đêm */
+    private array $rotationNights = [];
+
     private function adjustCount(int $i, int $outletId, int $shiftId, int $employeeId, int $delta, bool $support = false): void
     {
+        if (($this->problem->employees[$employeeId]?->nightRole ?? null) === EmployeeSpec::NIGHT_ROTATION && $this->problem->shifts[$shiftId]->category() === 'night') {
+            $this->rotationNights[$i] = ($this->rotationNights[$i] ?? 0) + $delta;
+        }
+
         if (isset($this->coreNeed[$i][$outletId]) && ($this->problem->employees[$employeeId]?->isNightCore() ?? false)
             && $this->problem->shifts[$shiftId]->category() === 'night') {
             $before = $this->coreNeed[$i][$outletId];
