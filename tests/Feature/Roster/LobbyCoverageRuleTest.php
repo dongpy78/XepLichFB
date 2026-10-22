@@ -127,6 +127,39 @@ class LobbyCoverageRuleTest extends TestCase
         $this->assertSame([], $validate('09:00', '16:45'), 'Khung chính 09:00–16:45 hợp lệ');
     }
 
+    /**
+     * Ca Lobby ưu tiên suy ra từ mẫu ca + hồ sơ (không ghi cứng): nữ waiter Nha Trang có năng lực OH → OH(L), Cam Ranh có năng lực M9 → M9(L);
+     * "M9" luôn được ghi là "M9(L)"; lượt hỗ trợ lịch sử quy về số tuần thực sự đi làm.
+     */
+    public function test_preferred_lobby_shift_normalised_codes_and_fair_history(): void
+    {
+        [$templates, $staff] = $this->world();
+        $lobby = Outlet::query()->where('code', 'LOBBY')->value('id');
+        $villa = Outlet::query()->where('code', 'VILLA')->value('id');
+        $gusto = Outlet::query()->where('code', 'GUSTO')->value('id');
+        $skill = fn (Employee $e, $outlet, $template = null) => \Botble\RestaurantRoster\Models\EmployeeSkill::query()->create(['employee_id' => $e->getKey(), 'outlet_id' => $outlet, 'shift_template_id' => $template, 'level' => 'primary']);
+        $skill($staff['oh'], $villa);
+        $skill($staff['oh'], $lobby);
+        $skill($staff['m6'], $gusto);
+        $skill($staff['m6'], $lobby, $templates['M9']->getKey());
+        $skill($staff['a2'], $gusto);
+
+        // CR1 chỉ đi làm 2 trong 8 tuần trước (nghỉ dài), có 2 lượt M9(L) → tính như 8 lượt / 8 tuần.
+        foreach (['2030-02-11', '2030-02-18'] as $date) {
+            Shift::query()->create(['employee_id' => $staff['m6']->getKey(), 'date' => $date, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $templates['M9']->getKey(),
+                'outlet_id' => $lobby, 'tags' => ['L'], 'status' => 'published', 'start_at' => "{$date} 09:00:00", 'end_at' => "{$date} 17:00:00", 'hours' => 8]);
+        }
+
+        $from = Carbon::parse(self::DATE);
+        $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['history_weeks' => 8]);
+
+        $this->assertSame([$staff['oh']->getKey() => $templates['OH']->getKey(), $staff['m6']->getKey() => $templates['M9']->getKey()], $problem->lobbyPreferred);
+        $this->assertSame(8, $problem->supportHistory[$staff['m6']->getKey()]['M9(L)'], 'Lượt quy về tuần đi làm: 2 lượt / 2 tuần ≈ 8 lượt / 8 tuần');
+
+        $values = app(\Botble\RestaurantRoster\Services\RosterAssigner::class)->values($staff['m6'], $from, ['kind' => Shift::KIND_SHIFT, 'template' => $templates['M9'], 'tags' => []]);
+        $this->assertContains('L', (array) (is_string($values['tags']) ? json_decode($values['tags'], true) : $values['tags']), '"M9" được chuẩn hóa thành "M9(L)"');
+    }
+
     /** @return array{0: array<string, ShiftTemplate>, 1: array<string, Employee>} */
     private function world(): array
     {

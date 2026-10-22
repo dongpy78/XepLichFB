@@ -1105,7 +1105,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1298,7 +1298,7 @@ final class ScheduleState
         $shifts = $this->problem->shifts;
         $planned = isset($this->nightRotation[$employeeId]) && $this->problem->nightPlan;
         $flexPlanned = $employee->isNightFlex() && $this->problem->nightPlan;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'borrow_nonflex' => 0, 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'borrow_nonflex' => 0, 'lobby_pref' => [], 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1375,6 +1375,11 @@ final class ScheduleState
             if (($o !== null && $o === $station) || ($f && $shift->lobbyWindow)) {
                 $m['lobby']++;
                 $m['lobby_partial'] += empty($this->coverageGroups[$i]) ? 0 : $this->lobbyPartial($i, $o, $s, (bool) $f);
+
+                // Ca Lobby ưu tiên của người này (OH(L) Nha Trang / M9(L) Cam Ranh) – đếm theo tuần để chia lượt.
+                if (($this->problem->lobbyPreferred[$employeeId] ?? null) === $s) {
+                    $m['lobby_pref'][$this->weekSeq[$i]] = ($m['lobby_pref'][$this->weekSeq[$i]] ?? 0) + 1;
+                }
                 $type = Problem::supportTypeKey($shift->code, 'lobby');
                 $m['support_types'][$type] = ($m['support_types'][$type] ?? 0) + 1;
             } elseif ($o !== null && isset($parents[$o])) {
@@ -1642,6 +1647,83 @@ final class ScheduleState
         }
 
         return null;
+    }
+
+    /**
+     * Lượt Lobby ưu tiên chưa chia đều trong tuần: số ca thứ hai trở đi (OH(L) / M9(L)) đang giao trong khi còn nữ waiter đủ điều kiện,
+     * làm được tuần đó mà chưa có ca nào – min(số người chưa có ca, số ca thừa), xét chung mọi nhóm (Nha Trang OH(L), Cam Ranh M9(L)):
+     * một người Cam Ranh làm M9 lần hai trong khi người Nha Trang chưa có OH(L) nào cũng bị tính.
+     */
+    public function lobbyRound(): int
+    {
+        if (! $this->problem->lobbyPreferred) {
+            return 0;
+        }
+
+        $groups = [];
+
+        foreach ($this->problem->lobbyPreferred as $employeeId => $shiftId) {
+            $counts = $this->metricsFor($employeeId)['lobby_pref'];
+
+            foreach ($this->lobbyAvailableWeeks($employeeId) as $week) {
+                $k = $counts[$week] ?? 0;
+                $group = &$groups[$week];
+                $group ??= ['zeros' => 0, 'extras' => 0];
+
+                if ($k === 0) {
+                    $group['zeros']++;
+                } else {
+                    $group['extras'] += $k - 1;
+                }
+
+                unset($group);
+            }
+        }
+
+        $penalty = 0;
+
+        foreach ($groups as $group) {
+            $penalty += min($group['zeros'], $group['extras']);
+        }
+
+        return $penalty;
+    }
+
+    /** Số ca Lobby ưu tiên người này đã có trong tuần chứa ngày i. */
+    public function lobbyPreferredInWeek(int $employeeId, int $i): int
+    {
+        return isset($this->problem->lobbyPreferred[$employeeId]) ? ($this->metricsFor($employeeId)['lobby_pref'][$this->weekSeq[$i]] ?? 0) : 0;
+    }
+
+    /** @var array<int, int[]> */
+    private array $lobbyWeeks = [];
+
+    /**
+     * Tuần nhân viên làm được ca Lobby ưu tiên: có ít nhất một ngày trong phạm vi không nghỉ đã duyệt, không bị ô cố định khác ca.
+     * Tuần nghỉ cả tuần không bị tính là "chưa nhận ca" (không bất lợi khi chia công bằng).
+     *
+     * @return int[]
+     */
+    public function lobbyAvailableWeeks(int $employeeId): array
+    {
+        if (isset($this->lobbyWeeks[$employeeId])) {
+            return $this->lobbyWeeks[$employeeId];
+        }
+
+        $shiftId = $this->problem->lobbyPreferred[$employeeId] ?? null;
+        $weeks = [];
+
+        foreach ($this->scopeIndexes() as $i) {
+            $fixed = $this->fixed[$employeeId][$i] ?? null;
+
+            if ($shiftId === null || isset($this->problem->hardUnavailable[$employeeId][$this->dates[$i]]) || ($fixed && (! $fixed->isWorking() || $fixed->shiftId !== $shiftId))) {
+                continue;
+            }
+
+            $weeks[$this->weekSeq[$i]] = $this->weekSeq[$i];
+        }
+
+        return $this->lobbyWeeks[$employeeId] = array_values($weeks);
     }
 
     /** @var array<string, array{0: int, 1: int, 2: int}> "i|o|s" => [tổng, nam waiter, nữ waiter] người mượn từ outlet khác */

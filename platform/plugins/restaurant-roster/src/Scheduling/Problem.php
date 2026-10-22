@@ -71,6 +71,11 @@ final class Problem
          *      Ngày có trong mảng: nhân viên luân phiên KHÔNG có tên không được tự xếp Night; ngày không có: không giới hạn.
          */
         public readonly array $nightPlan = [],
+        /**
+         * @var array<int, int> [employeeId] => ca Lobby ưu tiên của nữ waiter (ca phủ trọn giờ Lobby đúng khu vực sống:
+         *      Nha Trang → OH(L), Cam Ranh → M9(L)) – mỗi người một ca / tuần trước khi ai nhận ca thứ hai.
+         */
+        public readonly array $lobbyPreferred = [],
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -168,7 +173,7 @@ final class Problem
         return hash('sha256', serialize([
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
-            $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan,
+            $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan, $this->lobbyPreferred,
         ]));
     }
 }

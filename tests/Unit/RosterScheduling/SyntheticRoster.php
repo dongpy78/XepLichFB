@@ -153,6 +153,7 @@ trait SyntheticRoster
             shiftHistory: $options['shift_history'] ?? [],
             historyWeeks: $options['history_weeks'] ?? 4,
             nightPlan: $options['night_plan'] ?? [],
+            lobbyPreferred: $options['lobby_preferred'] ?? [],
         );
     }
 

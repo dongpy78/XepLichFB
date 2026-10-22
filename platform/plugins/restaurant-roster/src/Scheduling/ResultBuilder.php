@@ -724,7 +724,94 @@ final class ResultBuilder
             'idle' => $idle,
             'female_split' => $female,
             'reasons' => $this->supportReasons($state, $types),
+            'lobby_rounds' => $this->lobbyRounds($state),
         ];
+    }
+
+    /**
+     * Chia ca Lobby ưu tiên theo tuần (OH(L) Nha Trang, M9(L) Cam Ranh): ai đã có ca, ai có ca thứ hai, ai chưa có và vì sao.
+     * Người nghỉ cả tuần không bị tính là "chưa nhận ca".
+     */
+    private function lobbyRounds(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+
+        if (! $problem->lobbyPreferred) {
+            return [];
+        }
+
+        $weeks = [];
+
+        foreach ($state->scopeIndexes() as $i) {
+            $weeks[$state->weekKey($i)][] = $i;
+        }
+
+        $result = [];
+
+        foreach ($weeks as $days) {
+            foreach (array_unique($problem->lobbyPreferred) as $shiftId) {
+                $members = array_keys(array_filter($problem->lobbyPreferred, fn ($s) => $s === $shiftId));
+                $given = [];
+                $missing = [];
+                $away = [];
+                $slots = 0;
+
+                foreach ($members as $employeeId) {
+                    $employee = $problem->employees[$employeeId];
+                    $count = 0;
+                    $why = [];
+                    $available = false;
+
+                    foreach ($days as $i) {
+                        $date = $state->dates[$i];
+                        $current = $state->shiftAt($employeeId, $i);
+                        $fixed = $state->fixed[$employeeId][$i] ?? null;
+
+                        if ($current && $current[1] === $shiftId && $state->supportInterval($current[0], $current[1], (bool) $current[3])) {
+                            $count++;
+
+                            continue;
+                        }
+
+                        if (isset($problem->hardUnavailable[$employeeId][$date]) || ($fixed && (! $fixed->isWorking() || $fixed->shiftId !== $shiftId))) {
+                            continue;
+                        }
+
+                        $available = true;
+                        $day = date('d/m', strtotime($date));
+
+                        if (! $current) {
+                            $why[] = "{$day} OFF theo lịch";
+                        } elseif ($current[0] !== null && $state->removalBreaksMinimum($employeeId, $i, (int) $current[0], $current[1])) {
+                            $why[] = sprintf('%s %s %s cần giữ tối thiểu', $day, $problem->outletName((int) $current[0]), $problem->shifts[$current[1]]->code);
+                        } else {
+                            $why[] = sprintf('%s đang %s', $day, $problem->shifts[$current[1]]->code);
+                        }
+                    }
+
+                    $slots += $count;
+                    $label = $employee->name . ' (' . ($problem->supportHistory[$employeeId][Problem::supportTypeKey($problem->shifts[$shiftId]->code, 'lobby')] ?? 0) . ' lượt / ' . $problem->historyWeeks . ' tuần trước)';
+
+                    if ($count > 0) {
+                        $given[] = $label . ($count > 1 ? " – {$count} ca" : '');
+                    } elseif ($available) {
+                        $missing[] = ['name' => $label, 'why' => array_slice($why, 0, 3)];
+                    } else {
+                        $away[] = $employee->name;
+                    }
+                }
+
+                $code = Problem::supportTypeKey($problem->shifts[$shiftId]->code, 'lobby');
+                $result[] = [
+                    'week' => $state->dates[$days[0]], 'type' => $code, 'slots' => $slots, 'given' => $given, 'away' => $away,
+                    'missing' => array_map(fn ($m) => $m['name'] . ': ' . ($slots < count($given) + count($missing)
+                        ? "tuần có {$slots} ca {$code} cho " . (count($given) + count($missing)) . ' người – luân phiên tuần sau (ít lượt hơn được ưu tiên)'
+                        : implode('; ', $m['why'])), $missing),
+                ];
+            }
+        }
+
+        return $result;
     }
 
     /**

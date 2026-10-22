@@ -80,6 +80,11 @@ class RosterAssigner
     public function values(Employee $employee, CarbonInterface $date, array $spec, ?int $userId = null, string $status = Shift::STATUS_DRAFT): array
     {
         $tags = array_values(array_intersect($spec['tags'] ?? [], array_keys($this->tagDefinitions())));
+
+        // Chuẩn hóa mã ca: ca làm trọn ở trạm Lobby (vd M9) luôn là "M9(L)" – "M9" và "M9(L)" là cùng một ca, không tạo hai cách ghi.
+        if (($spec['template'] ?? null)?->support_station && isset($this->tagDefinitions()['L']) && ! in_array('L', $tags, true)) {
+            $tags[] = 'L';
+        }
         $overtime = max(0, min(12, (float) ($spec['overtime'] ?? 0)));
 
         $values = [

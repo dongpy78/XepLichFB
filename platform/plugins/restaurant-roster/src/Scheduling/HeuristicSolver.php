@@ -53,6 +53,8 @@ final class HeuristicSolver implements SolverInterface
                 $stats['off_repaired'] = $this->repairOffSplits($state, microtime(true) + 3);
                 // Đánh bóng có hệ thống: đổi ca trong ngày cho người còn ca nặng / lệch sáng–chiều (thêm tối đa 2 giây).
                 $stats['polished'] = $this->polishSwaps($state, microtime(true) + min(2, max(0.5, $problem->rules->timeLimitSeconds * 0.15)));
+                // Chỉnh Lobby: thay M6(L) / A2(L) bằng ca ưu tiên của người chưa có ca trong tuần (thêm tối đa 2 giây).
+                $stats['lobby_polished'] = $this->polishLobby($state, microtime(true) + 2);
             }
 
             return (new ResultBuilder())->build($state, $constructed, [
@@ -819,6 +821,7 @@ final class HeuristicSolver implements SolverInterface
                 + ($requirement && $employee->isFemaleStaff && $state->femaleCount($i, $o, $s) - 1 < $requirement->targetFemale ? 80 : 0)
                 // Phương án thay thế (M6(L), A2(L) chỉ phủ một phần khung Lobby) xếp sau ca phủ trọn khung (OH(L), M9).
                 + $state->lobbyPartial($i, $o, $s, true) * 400
+                + (($state->problem->lobbyPreferred[$employeeId] ?? null) === $s ? $state->lobbyPreferredInWeek($employeeId, $i) * 600 : 0)
                 + mt_rand(0, 9);
 
             if ($score < $bestScore) {
@@ -890,6 +893,8 @@ final class HeuristicSolver implements SolverInterface
                     + $state->supportShiftCount($i, $k, $requirement->shiftId) * 100
                     // Ưu tiên OH(L) + M9 (phủ trọn khung Lobby); M6(L) / A2(L) chỉ để bù khi thiếu.
                     + $state->lobbyPartial($i, $requirement->outletId, $requirement->shiftId, ! $atStation) * 400
+                    // Mỗi nữ waiter một ca Lobby ưu tiên / tuần trước khi ai nhận ca thứ hai.
+                    + (($state->problem->lobbyPreferred[$employeeId] ?? null) === $requirement->shiftId ? $state->lobbyPreferredInWeek($employeeId, $i) * 600 : 0)
                     + mt_rand(0, 100) / 1000;
 
                 if ($score < $bestScore) {
@@ -1989,6 +1994,134 @@ final class HeuristicSolver implements SolverInterface
      * đổi ca cùng ngày với từng người khác (ô không khóa) và giữ thay đổi làm điểm phạt tốt hơn – lặp tới khi không còn cải thiện.
      * Số người mỗi ô không đổi khi hai người đổi ô cho nhau, nên không làm thiếu người.
      */
+    /**
+     * Chỉnh Lobby sau tìm kiếm: ngày còn dùng M6(L) / A2(L) (phủ một phần), thử giao ca Lobby ưu tiên (OH(L) / M9(L)) cho nữ waiter
+     * ít ca ưu tiên nhất trong tuần (người chưa có ca trước) rồi bỏ cờ (L) không còn cần – đổi nhiều ô cùng lúc mà bước tìm kiếm một ô không làm được.
+     * Chỉ giữ khi tổng điểm giảm (không phá ràng buộc cứng, không làm outlet gốc dưới tối thiểu).
+     */
+    private function polishLobby(ScheduleState $state, float $deadline): int
+    {
+        $problem = $state->problem;
+
+        if (! $problem->lobbyPreferred || ! $state->coverageGroups) {
+            return 0;
+        }
+
+        $improved = 0;
+        $current = $state->cost();
+
+        foreach ($state->scopeIndexes() as $i) {
+            if (empty($state->coverageGroups[$i])) {
+                continue;
+            }
+
+            $partial = [];
+
+            foreach (array_keys($problem->employees) as $e) {
+                $slot = $state->plan[$e][$i] ?? null;
+
+                if ($slot !== null && ! $state->isFixed($e, $i)) {
+                    [$o, $s, $f] = ScheduleState::parseSlot($slot);
+
+                    if ($f && $state->lobbyPartial($i, $o, $s, true) > 0) {
+                        $partial[] = $e;
+                    }
+                }
+            }
+
+            if (! $partial) {
+                continue;
+            }
+
+            // Người ít ca ưu tiên nhất trong tuần trước (0 ca trước, rồi 1 ca…), cùng mức thì ít lượt Lobby hơn trước.
+            $candidates = array_values(array_filter(array_keys($problem->lobbyPreferred), fn ($e) => ! $state->isFixed($e, $i)
+                && ! isset($problem->hardUnavailable[$e][$state->dates[$i]])));
+            usort($candidates, fn ($a, $b) => [$state->lobbyPreferredInWeek($a, $i), $state->lobbyLoad($a)] <=> [$state->lobbyPreferredInWeek($b, $i), $state->lobbyLoad($b)]);
+
+            foreach ($candidates as $c) {
+                if (microtime(true) > $deadline) {
+                    return $improved;
+                }
+
+                $shiftId = $problem->lobbyPreferred[$c];
+                $employee = $problem->employees[$c];
+                $atStation = isset($state->requirements[$i]["{$problem->stationOutletId}|{$shiftId}"]) && $employee->skillLevel((int) $problem->stationOutletId, $shiftId) !== null;
+                $outletId = $atStation ? (int) $problem->stationOutletId : $employee->homeOutletId;
+
+                if ($outletId === null || ! isset($state->requirements[$i]["{$outletId}|{$shiftId}"])) {
+                    continue;
+                }
+
+                $touched = [$c => $state->plan[$c][$i] ?? null];
+
+                foreach ($partial as $p) {
+                    $touched[$p] ??= $state->plan[$p][$i] ?? null;
+                }
+
+                $state->isOccupied($c, $i) && $state->remove($c, $i);
+
+                if ($state->violation($c, $i, $outletId, $shiftId, support: ! $atStation)) {
+                    $this->restoreCells($state, $i, $touched);
+
+                    continue;
+                }
+
+                $state->place($c, $i, $outletId, $shiftId, ! $atStation);
+
+                // Bỏ cờ (L) của người phủ một phần: họ ở lại outlet gốc trọn ca.
+                foreach ($partial as $p) {
+                    if ($p === $c || ! isset($state->plan[$p][$i])) {
+                        continue;
+                    }
+
+                    [$o, $s] = ScheduleState::parseSlot($state->plan[$p][$i]);
+                    $withFlag = $state->cost();
+                    $state->remove($p, $i);
+
+                    if ($state->violation($p, $i, (int) $o, $s)) {
+                        $state->place($p, $i, (int) $o, $s, true);
+
+                        continue;
+                    }
+
+                    $state->place($p, $i, (int) $o, $s);
+
+                    // Người này vẫn cần ở Lobby (bỏ cờ làm điểm tệ hơn): trả lại cờ (L).
+                    if ($state->cost() > $withFlag + 1e-6) {
+                        $state->remove($p, $i);
+                        $state->place($p, $i, (int) $o, $s, true);
+                    }
+                }
+
+                if (($candidate = $state->cost()) < $current - 1e-6) {
+                    $current = $candidate;
+                    $improved++;
+
+                    break;
+                }
+
+                $this->restoreCells($state, $i, $touched);
+            }
+        }
+
+        return $improved;
+    }
+
+    /** @param array<int, ?string> $cells [employeeId => slot cũ (null = không làm)] */
+    private function restoreCells(ScheduleState $state, int $i, array $cells): void
+    {
+        foreach ($cells as $e => $slot) {
+            $state->isOccupied($e, $i) && ! $state->isFixed($e, $i) && $state->remove($e, $i);
+        }
+
+        foreach ($cells as $e => $slot) {
+            if ($slot !== null) {
+                [$o, $s, $f] = ScheduleState::parseSlot($slot);
+                $state->place($e, $i, (int) $o, $s, $f);
+            }
+        }
+    }
+
     private function polishSwaps(ScheduleState $state, float $deadline): int
     {
         $improved = 0;

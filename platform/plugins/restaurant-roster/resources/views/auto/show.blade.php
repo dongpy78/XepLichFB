@@ -226,6 +226,26 @@
                         @endforeach
                     </ul>
                 @endif
+                @if (! empty($report['lobby_rounds']))
+                    <div class="fw-semibold mt-3 mb-1">Chia ca Lobby ưu tiên theo tuần (mỗi người một ca trước khi ai nhận ca thứ hai)</div>
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-vcenter">
+                            <thead><tr><th>Tuần</th><th>Ca</th><th>Số ca</th><th>Đã có ca</th><th>Chưa có ca – lý do</th><th>Nghỉ cả tuần (không tính)</th></tr></thead>
+                            <tbody>
+                                @foreach ($report['lobby_rounds'] as $round)
+                                    <tr class="{{ $round['missing'] && $round['slots'] >= count($round['given']) + count($round['missing']) ? 'table-warning' : '' }}">
+                                        <td>{{ \Carbon\Carbon::parse($round['week'])->format('d/m') }}</td>
+                                        <td>{{ $round['type'] }}</td>
+                                        <td>{{ $round['slots'] }}</td>
+                                        <td class="small">{{ implode('; ', $round['given']) ?: '—' }}</td>
+                                        <td class="small">@foreach ($round['missing'] as $line)<div>{{ $line }}</div>@endforeach</td>
+                                        <td class="small text-muted">{{ implode(', ', $round['away']) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
                 @if (! empty($report['reasons']))
                     <details>
                         <summary class="fw-semibold">Lý do từng phân công hỗ trợ ({{ count($report['reasons']) }})</summary>

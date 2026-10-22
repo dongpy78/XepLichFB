@@ -89,10 +89,12 @@ class SupportHistoryTest extends TestCase
         $four = $build(4);
         $this->assertSame(1, $four->nightHistory[$employee->getKey()] ?? null, 'Số tuần có ca đêm');
         $this->assertSame(4, $four->historyWeeks);
-        $this->assertEqualsCanonicalizing(['A2(L)' => 2, 'M9(L)' => 1, 'M6(K)' => 1], $four->supportHistory[$employee->getKey()] ?? null);
+        // Lượt quy về số tuần đi làm (công bằng cho người nghỉ): 4 tuần chỉ đi làm 2 tuần → lượt × 2 (thô: A2(L) 2, M9(L) 1, M6(K) 1).
+        $this->assertEqualsCanonicalizing(['A2(L)' => 4, 'M9(L)' => 2, 'M6(K)' => 2], $four->supportHistory[$employee->getKey()] ?? null);
         $this->assertEquals(['morning' => 2, 'afternoon' => 3], $four->shiftHistory[$employee->getKey()] ?? null);
 
         $eight = $build(8);
-        $this->assertSame(3, $eight->supportHistory[$employee->getKey()]['A2(L)'], 'Khoảng 8 tuần tính thêm lượt cũ hơn');
+        // 8 tuần: thêm lượt A2(L) 40 ngày trước (thô 3), đi làm 3 / 8 tuần → 3 × 8 / 3 = 8.
+        $this->assertSame(8, $eight->supportHistory[$employee->getKey()]['A2(L)'], 'Khoảng 8 tuần tính thêm lượt cũ hơn');
     }
 }

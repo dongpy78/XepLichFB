@@ -43,6 +43,8 @@ final class Rules
         // Mượn người outlet khác (BorrowPolicy): chỉ để đủ tối thiểu – mượn vượt phần thiếu tối thiểu nặng hơn thiếu mục tiêu;
         // mượn người không phải nhân viên đa năng Night khi người đa năng làm được: phạt nhẹ (ưu tiên đa năng trước).
         'borrow_excess' => 20000,
+        // Lobby: mỗi nữ waiter đủ điều kiện một ca OH(L) / M9(L) trong tuần trước khi ai trong cùng nhóm nhận ca thứ hai.
+        'lobby_round' => 5000,
         'borrow_order' => 400,
         // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử khoảng đánh giá + kỳ này) – nhẹ hơn xen kẽ ca trong tuần.
         'shift_history' => 500,

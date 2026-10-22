@@ -279,6 +279,7 @@ class ProblemBuilder
             shiftHistory: $shiftHistory,
             historyWeeks: $historyWeeks,
             nightPlan: $this->nightPlan($nightStaff, $from, $to),
+            lobbyPreferred: $this->lobbyPreferred($specs, $shifts, $templates, $stationOutletId, $stationCode),
         );
     }
 
@@ -311,6 +312,51 @@ class ProblemBuilder
     /**
      * @return array<int, int> [outletId khu] => outletId nhà hàng chủ quản (config scheduling.outlet_parents theo mã outlet)
      */
+    /**
+     * Ca Lobby ưu tiên của từng nữ waiter: ca phủ trọn giờ ở Lobby (ca làm trọn ở trạm như M9, hoặc ca có khung (L) bằng cả ca
+     * như OH(L)) mà người đó làm được – đúng khu vực sống / giới tính / vị trí của mẫu ca và có năng lực. Không ghi cứng mã ca.
+     *
+     * @param EmployeeSpec[] $specs
+     * @param ShiftSpec[] $shifts
+     * @return array<int, int>
+     */
+    private function lobbyPreferred(array $specs, array $shifts, $templates, ?int $stationOutletId, string $stationCode): array
+    {
+        if ($stationOutletId === null) {
+            return [];
+        }
+
+        $stationShifts = $templates->where('support_station', $stationCode)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $preferred = array_filter($shifts, fn (ShiftSpec $s) => in_array($s->id, $stationShifts, true)
+            || ($s->lobbyWindow && $s->lobbyWindow[0] <= $s->start() && $s->lobbyWindow[1] >= $s->end()));
+        // Ca dành riêng cho một khu vực sống (OH → Nha Trang, M9 → Cam Ranh) xét trước ca chung.
+        usort($preferred, fn (ShiftSpec $a, ShiftSpec $b) => ($a->allowedResidence === null) <=> ($b->allowedResidence === null));
+        $result = [];
+
+        foreach ($specs as $employee) {
+            if (! $employee->isFemaleStaff || $employee->isManager) {
+                continue;
+            }
+
+            foreach ($preferred as $shift) {
+                $atStation = in_array($shift->id, $stationShifts, true);
+                $capable = $atStation
+                    ? $employee->skillLevel($stationOutletId, $shift->id) !== null
+                    : $employee->canSupport($stationOutletId, $shift->id) && $employee->homeOutletId !== null && $employee->skillLevel($employee->homeOutletId, $shift->id) !== null;
+
+                if ($capable && ($shift->allowedResidence === null || $shift->allowedResidence === $employee->residence)
+                    && ($shift->allowedGender === null || $shift->allowedGender === $employee->gender)
+                    && ($shift->allowedPositionId === null || $shift->allowedPositionId === $employee->positionId)) {
+                    $result[$employee->id] = $shift->id;
+
+                    break;
+                }
+            }
+        }
+
+        return $result;
+    }
+
     /** @var array<string, array{source: string, ids: int[], warnings: string[]}> Kế hoạch luân phiên Night đã dùng ở lần build gần nhất (theo tuần) */
     public array $nightWeeks = [];
 
@@ -438,14 +484,17 @@ class ProblemBuilder
         $specs = $templates->mapWithKeys(fn (ShiftTemplate $t) => [$t->getKey() => $this->shiftSpec($t)])->all();
         $support = [];
         $halves = [];
+        $workedWeeks = [];
 
         Shift::query()
             ->whereIn('employee_id', $employeeIds)
             ->where('kind', Shift::KIND_SHIFT)
             ->whereNotNull('shift_template_id')
             ->whereDate('date', '>=', $from->subWeeks($weeks)->toDateString())->whereDate('date', '<=', $from->subDay()->toDateString())
-            ->get(['employee_id', 'outlet_id', 'shift_template_id', 'tags'])
-            ->each(function (Shift $shift) use (&$support, &$halves, $specs, $childOutlets, $stationOutletId): void {
+            ->get(['employee_id', 'outlet_id', 'shift_template_id', 'tags', 'date'])
+            ->each(function (Shift $shift) use (&$support, &$halves, &$workedWeeks, $specs, $childOutlets, $stationOutletId): void {
+                $workedWeeks[(int) $shift->employee_id][$shift->date->format('o-W')] = true;
+
                 $spec = $specs[$shift->shift_template_id] ?? null;
 
                 if (! $spec) {
@@ -474,6 +523,18 @@ class ProblemBuilder
 
         foreach ($halves as &$counts) {
             $counts += ['morning' => 0, 'afternoon' => 0];
+        }
+
+        unset($counts);
+
+        // Công bằng không thiệt cho người nghỉ dài: lượt hỗ trợ quy về số tuần thực sự đi làm trong khoảng đánh giá
+        // (vd nghỉ phép 4 / 8 tuần, 2 lượt → tính như 4 lượt) – người vừa đi làm lại không bị dồn ca bù.
+        foreach ($support as $employeeId => $types) {
+            $worked = count($workedWeeks[$employeeId] ?? []);
+
+            if ($worked > 0 && $worked < $weeks) {
+                $support[$employeeId] = array_map(fn ($n) => (int) round($n * $weeks / $worked), $types);
+            }
         }
 
         return [$support, $halves];
@@ -594,7 +655,8 @@ class ProblemBuilder
                     }
 
                     $existing[$key] = true;
-                    $slots[] = new \Botble\RestaurantRoster\Scheduling\Requirement($window->date, (int) $outletId, $shiftId, 0, 0, 0);
+                    // Sức chứa = số người Lobby cần: người (L) không tính vào outlet nhưng các bước tìm kiếm cần chỗ để xếp / đổi OH(L).
+                    $slots[] = new \Botble\RestaurantRoster\Scheduling\Requirement($window->date, (int) $outletId, $shiftId, 0, 0, max($window->min, $window->target));
                 }
             }
         }
