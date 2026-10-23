@@ -424,8 +424,9 @@ class NightStaffService
         return function (Employee $employee) use ($dates, $resolver, $templates, &$cache): ?string {
             $outletId = (int) $employee->outlet_id;
 
-            // Người của outlet Night: không rút người khỏi nhà hàng nào.
-            if (in_array($outletId, $this->nightOutletIds(), true)) {
+            // Người của outlet Night: không rút người khỏi nhà hàng nào. Chế độ "balance": nhà hàng không còn định biên tối thiểu.
+            if (in_array($outletId, $this->nightOutletIds(), true)
+                || (config('plugins.restaurant-roster.general.scheduling.staffing_mode', 'balance') === 'balance' && ! in_array($outletId, $this->builder->staffedOutletIds(), true))) {
                 return null;
             }
 

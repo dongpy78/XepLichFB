@@ -97,6 +97,7 @@ class CellLockHttpTest extends TestCase
     /** Kỳ lịch: tổng hợp OFF có cảnh báo; chưa xác nhận nhập xong OFF thì không chạy xếp tự động, xác nhận rồi thì chạy được. */
     public function test_period_summary_and_off_confirmation_gate(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
         $outlet = Outlet::query()->firstOrFail();
         $m6 = ShiftTemplate::query()->firstOrFail();
         \Botble\RestaurantRoster\Models\EmployeeSkill::query()->create(['employee_id' => $this->employee->getKey(), 'outlet_id' => $outlet->getKey(), 'level' => 'primary']);
@@ -238,6 +239,7 @@ class CellLockHttpTest extends TestCase
     /** 8. Nữ waiter trực tiếp: cờ theo vị trí, sửa tay trên bảng tính lại cảnh báo thiếu ngay; form định biên có ô nữ waiter. */
     public function test_female_waiter_minimum_on_grid_is_recomputed_after_manual_edits(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
         $outlet = Outlet::query()->firstOrFail();
         $m6 = ShiftTemplate::query()->where('code', 'M6')->firstOrFail();
         $waiter = \Botble\RestaurantRoster\Models\Position::query()->create(['name' => 'Waiter', 'status' => 'published']);

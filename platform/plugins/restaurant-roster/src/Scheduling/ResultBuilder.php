@@ -28,6 +28,7 @@ final class ResultBuilder
 
         $unfilled = array_map(fn ($u) => $this->borrowNote($state, $u), [...$this->unfilled($state), ...$this->uncoveredWindows($state), ...$this->coreGaps($state)]);
         $borrows = $this->borrowReport($state);
+        $balance = $this->balanceReport($state);
         usort($unfilled, fn ($a, $b) => [$a['level'] === 'min' ? 0 : 1, $a['date'], $a['outlet_name'], $a['shift_code']] <=> [$b['level'] === 'min' ? 0 : 1, $b['date'], $b['outlet_name'], $b['shift_code']]);
         $objective = $state->objective();
 
@@ -43,6 +44,7 @@ final class ResultBuilder
 
         $femaleStaffing = $this->femaleStaffing($state);
         $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing), ...$this->femaleBalanceWarnings($state, $femaleStaffing),
+            ...$balance['warnings'],
             ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
@@ -67,7 +69,7 @@ final class ResultBuilder
             explanation: $explanation,
             solverMetadata: $metadata,
             warnings: $warnings,
-            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing, 'borrows' => $borrows],
+            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing, 'borrows' => $borrows, 'balance' => $balance['days']],
         );
     }
 
@@ -292,6 +294,81 @@ final class ResultBuilder
         }
 
         return $result;
+    }
+
+    /**
+     * Bảng cân bằng theo ngày (chế độ không định biên nhà hàng): số quản lý OFF; theo outlet: quản lý, nữ waiter, nam waiter ở M6 / A2;
+     * danh sách Night. Kèm cảnh báo ngày quá nhiều quản lý OFF (thường do OFF đã duyệt trùng nhau).
+     *
+     * @return array{days: array<int, array<string, mixed>>, warnings: array<int, array<string, mixed>>}
+     */
+    private function balanceReport(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $managers = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isManager);
+        $pairs = [];
+        $days = [];
+        $warnings = [];
+
+        foreach ($state->femalePairs() as [$i, $o, $am, $pm]) {
+            $pairs[$i][] = [$o, $am, $pm];
+        }
+
+        $offCounts = [];
+
+        foreach ($state->scopeIndexes() as $i) {
+            $date = $state->dates[$i];
+            $off = [];
+            $approved = [];
+
+            foreach ($managers as $id => $employee) {
+                if (! $state->shiftAt($id, $i)) {
+                    $off[] = $employee->name;
+
+                    if (isset($problem->hardUnavailable[$id][$date])) {
+                        $approved[] = $employee->name;
+                    }
+                }
+            }
+
+            $outlets = [];
+
+            foreach ($pairs[$i] ?? [] as [$o, $am, $pm]) {
+                $manager = fn (int $s) => count(array_filter(array_keys($managers), fn ($id) => ($c = $state->shiftAt($id, $i)) && $c[0] === $o && $c[1] === $s));
+                $outlets[] = [
+                    'outlet' => $problem->outletName($o), 'am' => $problem->shifts[$am]->code, 'pm' => $problem->shifts[$pm]->code,
+                    'managers' => [$manager($am), $manager($pm)],
+                    'female' => [$state->femaleCount($i, $o, $am), $state->femaleCount($i, $o, $pm)],
+                    'male' => [$state->maleCount($i, $o, $am), $state->maleCount($i, $o, $pm)],
+                ];
+            }
+
+            $night = [];
+
+            foreach ($problem->employees as $id => $employee) {
+                if (($c = $state->shiftAt($id, $i)) && $problem->shifts[$c[1]]->category() === 'night') {
+                    $night[] = $employee->name . ($employee->isNightCore() ? ' (cứng)' : '');
+                }
+            }
+
+            $offCounts[$i] = count($off);
+            $days[] = ['date' => $date, 'managers_off' => $off, 'approved_off' => $approved, 'outlets' => $outlets, 'night' => $night];
+        }
+
+        if ($managers && $offCounts) {
+            $average = array_sum($offCounts) / count($offCounts);
+
+            foreach ($days as $k => $day) {
+                if (count($day['managers_off']) >= max(2, (int) ceil($average) + 2)) {
+                    $warnings[] = ['code' => 'manager_off', 'date' => $day['date'], 'outlet_id' => null, 'outlet_name' => '',
+                        'message' => sprintf('%s: %d quản lý OFF (trung bình %.1f / ngày)%s – %s.', date('d/m', strtotime($day['date'])), count($day['managers_off']), $average,
+                            $day['approved_off'] ? ', trong đó OFF đã duyệt: ' . implode(', ', $day['approved_off']) . ' (giữ nguyên)' : '',
+                            $day['approved_off'] ? 'quản lý cân nhắc đổi ngày OFF chưa duyệt' : 'do giới hạn ngày làm / giờ nghỉ')];
+                }
+            }
+        }
+
+        return ['days' => $days, 'warnings' => $warnings];
     }
 
     /**

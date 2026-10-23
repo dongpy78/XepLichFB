@@ -843,6 +843,16 @@ class ProblemBuilder
      */
     private function requirements(array $days, array $outletIds, array $templateIds): array
     {
+        // Chế độ "balance" (quản lý 23/10/2026): bỏ định biên ở nhà hàng thông thường – chỉ giữ định biên của Night, Room Service,
+        // khu trực thuộc (Kid-Deline) và Lobby (định biên phủ, đọc riêng). Nhà hàng chỉ có "chỗ mở" M6 / A2 (không tối thiểu / mục tiêu):
+        // mỗi người làm đủ ngày công ở outlet chính, thuật toán cân bằng quản lý / nam / nữ waiter giữa ca sáng và chiều.
+        if (config('plugins.restaurant-roster.general.scheduling.staffing_mode', 'balance') === 'balance') {
+            $kept = $this->staffedOutletIds();
+            $open = array_values(array_diff($outletIds, $kept));
+            $outletIds = array_values(array_intersect($outletIds, $kept));
+            $openSlots = $this->openSlots($days, $open);
+        }
+
         // Định biên đọc trực tiếp từ database (Định biên nhân sự): chỉ dòng đang áp dụng, còn hiệu lực, kèm nhóm theo vị trí.
         $resolver = new RequirementResolver(StaffingRequirementService::resolverRows(
             StaffingRequirement::query()->whereIn('outlet_id', $outletIds)->where('status', StaffingRequirement::STATUS_ACTIVE)
@@ -888,7 +898,59 @@ class ProblemBuilder
 
         $this->conflicts = array_values($resolver->conflicts());
 
-        return $requirements;
+        return [...$requirements, ...($openSlots ?? [])];
+    }
+
+    /**
+     * Outlet vẫn giữ định biên ở chế độ "balance": Night (ca đêm), Room Service, khu trực thuộc (Kid-Deline).
+     * Lobby là trạm hỗ trợ, có định biên phủ riêng (Định biên quầy Lobby).
+     *
+     * @return int[]
+     */
+    public function staffedOutletIds(): array
+    {
+        $outlets = Outlet::query()->get(['id', 'code']);
+
+        return array_values(array_unique(array_map('intval', array_filter([
+            ...(new NightStaffService($this))->nightOutletIds(),
+            app(RoomServiceStaffService::class)->outletId(),
+            ...array_keys($this->outletParents($outlets)),
+        ]))));
+    }
+
+    /**
+     * "Chỗ mở" ca M6 / A2 (open_shift_codes) ở nhà hàng không còn định biên: 0 tối thiểu, 0 mục tiêu, sức chứa = số nhân viên của outlet.
+     * Ngày đóng cửa (Ngày đặc biệt) không có chỗ.
+     *
+     * @return \Botble\RestaurantRoster\Scheduling\Requirement[]
+     */
+    private function openSlots(array $days, array $outletIds): array
+    {
+        if (! $outletIds) {
+            return [];
+        }
+
+        $codes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.open_shift_codes', ['M6', 'A2']));
+        $templates = ShiftTemplate::query()->wherePublished()->get()->filter(fn ($t) => in_array(strtoupper((string) $t->code), $codes, true))->modelKeys();
+        $staff = Employee::query()->where('status', BaseStatusEnum::PUBLISHED)->whereIn('outlet_id', $outletIds)->selectRaw('outlet_id, count(*) as n')->groupBy('outlet_id')->pluck('n', 'outlet_id');
+        $closed = OutletDay::query()->whereIn('outlet_id', $outletIds)->where('is_closed', true)
+            ->whereDate('date', '>=', reset($days))->whereDate('date', '<=', end($days))->get()
+            ->mapWithKeys(fn ($d) => [$d->outlet_id . '|' . $d->date->toDateString() => true]);
+        $slots = [];
+
+        foreach ($days as $date) {
+            foreach ($outletIds as $outletId) {
+                if (isset($closed[$outletId . '|' . $date])) {
+                    continue;
+                }
+
+                foreach ($templates as $templateId) {
+                    $slots[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, (int) $outletId, (int) $templateId, 0, 0, max(1, (int) ($staff[$outletId] ?? 0) + 2));
+                }
+            }
+        }
+
+        return $slots;
     }
 
     /** @var array<int, array{date: string, outlet_id: int, shift_id: int, ids: int[]}> Xung đột định biên của lần dựng gần nhất */

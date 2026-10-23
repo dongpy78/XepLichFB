@@ -38,6 +38,7 @@ class RosterStatistics
         \Botble\RestaurantRoster\Models\StaffingRequirement::query()
             ->with('positions')
             ->where('status', \Botble\RestaurantRoster\Models\StaffingRequirement::STATUS_ACTIVE)
+            ->when($this->balanceMode(), fn ($q) => $q->whereIn('outlet_id', app(ProblemBuilder::class)->staffedOutletIds()))
             ->get()
             ->each(function ($row) use (&$checks, &$hostessIds, $outletCodes, $templateCodes): void {
                 if ((int) $row->min_male > 0 || $row->positions->isNotEmpty()) {
@@ -145,6 +146,12 @@ class RosterStatistics
         return $result;
     }
 
+    /** Chế độ "balance": nhà hàng thông thường không còn định biên → không cảnh báo thiếu theo định biên cũ của các outlet đó. */
+    private function balanceMode(): bool
+    {
+        return config('plugins.restaurant-roster.general.scheduling.staffing_mode', 'balance') === 'balance';
+    }
+
     public function summarize(Collection $employees): array
     {
         $leaderIds = $this->rules()['leaderIds'];
@@ -177,6 +184,7 @@ class RosterStatistics
         $rows = \Botble\RestaurantRoster\Models\StaffingRequirement::query()
             ->where('status', \Botble\RestaurantRoster\Models\StaffingRequirement::STATUS_ACTIVE)
             ->whereIn('outlet_id', $outlets->pluck('id'))
+            ->when($this->balanceMode(), fn ($q) => $q->whereIn('outlet_id', app(ProblemBuilder::class)->staffedOutletIds()))
             ->where(fn ($q) => $q->where('min_female', '>', 0)->orWhere('target_female', '>', 0))
             ->get();
 

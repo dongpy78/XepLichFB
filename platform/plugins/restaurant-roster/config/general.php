@@ -68,6 +68,11 @@ return [
         // "auto" = waiter / hostess (transfer_positions) và Night đa năng tự đủ điều kiện thay thế ở các outlet transfer_outlets;
         //          người outlet chính vẫn được ưu tiên, không rút người làm outlet nguồn dưới tối thiểu.
         // "skills" = chỉ theo năng lực đã khai; "flex_only" = không tự lấy người outlet nhà hàng khác (trừ Night đa năng).
+        // Định biên (quản lý 23/10/2026): "balance" = bỏ định biên ở nhà hàng thông thường (Gusto, Villa…) – mỗi người làm đủ ngày công
+        // ở outlet chính, thuật toán cân bằng quản lý / nam / nữ waiter giữa M6 và A2 (open_shift_codes), chia OFF quản lý đều theo ngày.
+        // Vẫn giữ định biên của Lobby (định biên phủ), Night, Room Service, Kid-Deline. "requirements" = dùng Định biên nhân sự như trước.
+        'staffing_mode' => 'balance',
+        'open_shift_codes' => ['M6', 'A2'],
         'cross_outlet_transfer' => 'auto',
         // Mã ca thuật toán được TỰ xếp (quản lý 24/10/2026). "OH" (OH ở nhà hàng) không có trong danh sách → chỉ quản lý xếp tay;
         // "OH(L)" là OH hỗ trợ Lobby. "N" = ca Night (luân phiên / Night cứng). Ô quản lý xếp tay hoặc khóa không bị lọc.

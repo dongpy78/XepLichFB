@@ -41,6 +41,8 @@ class StaffingRequirementModuleTest extends TestCase
         app('router')->getRoutes()->refreshNameLookups();
         $this->withoutMiddleware(\Botble\Installer\Http\Middleware\RedirectIfNotInstalledMiddleware::class);
         config(['plugins.restaurant-roster.general' => require dirname(__DIR__, 3) . '/platform/plugins/restaurant-roster/config/general.php']);
+        // Module Định biên nhân sự dùng ở chế độ "requirements" (chế độ mặc định "balance" chỉ giữ định biên Lobby / Night / Room Service / Kid).
+        config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
 
         if (! Schema::hasTable('users')) {
             $this->artisan('migrate', ['--path' => 'database/migrations', '--force' => true]);

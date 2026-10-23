@@ -316,6 +316,31 @@
         </div>
     @endif
 
+    @if ($balance = $proposal['support_report']['balance'] ?? [])
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Cân bằng theo ngày (quản lý / nữ waiter / nam waiter M6–A2, Night)</h3></div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter table-sm">
+                    <thead><tr><th>Ngày</th><th>Quản lý OFF</th><th>Outlet: quản lý · nữ waiter · nam waiter (sáng / chiều)</th><th>Night</th></tr></thead>
+                    <tbody>
+                        @foreach ($balance as $day)
+                            <tr>
+                                <td>{{ \Carbon\Carbon::parse($day['date'])->format('d/m') }}</td>
+                                <td class="small" title="{{ implode(', ', $day['managers_off']) }}">{{ count($day['managers_off']) }}@if ($day['approved_off']) <span class="text-muted">({{ count($day['approved_off']) }} đã duyệt)</span>@endif</td>
+                                <td class="small">
+                                    @foreach ($day['outlets'] as $o)
+                                        <div><strong>{{ $o['outlet'] }}</strong> {{ $o['am'] }}/{{ $o['pm'] }}: QL {{ $o['managers'][0] }}/{{ $o['managers'][1] }} · nữ {{ $o['female'][0] }}/{{ $o['female'][1] }} · nam {{ $o['male'][0] }}/{{ $o['male'][1] }}</div>
+                                    @endforeach
+                                </td>
+                                <td class="small {{ count($day['night']) !== 3 ? 'text-danger fw-semibold' : '' }}">{{ count($day['night']) }}: {{ implode(', ', $day['night']) }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+
     @if ($borrows = $proposal['support_report']['borrows'] ?? [])
         <div class="card mb-3">
             <div class="card-header"><h3 class="card-title">Mượn người giữa các outlet ({{ count($borrows) }} ô – bản nháp, quản lý xem rồi áp dụng)</h3></div>

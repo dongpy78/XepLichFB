@@ -445,6 +445,7 @@ class NightAndScheduleGroupTest extends TestCase
     /** 9.11: không chọn người mà outlet nguồn sẽ thiếu nam waiter tối thiểu – nêu rõ lý do. */
     public function test_rotation_skips_people_whose_outlet_would_fall_below_minimum(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
         $this->restaurants(villaMales: 3);
         $proposal = app(NightStaffService::class)->propose(Carbon::parse(self::WEEK));
 
@@ -458,6 +459,7 @@ class NightAndScheduleGroupTest extends TestCase
     /** 9.17: chọn người bị loại phải có lý do và được ghi nhật ký; tuần đã công bố không bị ghi đè. */
     public function test_exceptions_require_reason_are_audited_and_published_week_is_locked(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
         $people = $this->restaurants(villaMales: 3);
         $service = app(NightStaffService::class);
 

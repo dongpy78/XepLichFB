@@ -50,6 +50,10 @@ final class Rules
         // Nữ waiter trực tiếp chia giữa ca sáng (M6) và chiều (A2) của từng outlet × ngày theo tỉ lệ định biên (mục tiêu nữ waiter,
         // không khai thì theo mục tiêu tổng của ca) – sau khi đã rút người đi Lobby / Kid. Không ép bằng nhau.
         'female_balance' => 2500,
+        // Nam waiter chia đều ca sáng / chiều mỗi outlet × ngày (2 → 1/1, 4 → 2/2, tránh 3/1) – sau khi đã xếp Night.
+        'male_balance' => 2500,
+        // Số quản lý (Junior Restaurant Captain trở lên) OFF mỗi ngày đều nhau: tổng bình phương số quản lý OFF theo ngày.
+        'manager_off_spread' => 3000,
         // Người đứng Lobby vượt định biên (vd thêm M6(L) khi OH(L) + M9 đã đủ): nặng hơn cân bằng nữ M6 / A2 – ca hỗ trợ chỉ để bù giờ thiếu.
         'lobby_over' => 6000,
         // Night luân phiên vào ngày không có Night cứng nào: không được phép (nặng hơn thiếu tối thiểu – để trống và báo thiếu).
@@ -109,6 +113,8 @@ final class Rules
         public readonly ?array $autoShiftCodes = null,
         // Số đêm tối đa / tuần của một người luân phiên Night (quản lý 23/10/2026: làm nhiều đêm cũng được, không nhất thiết 2).
         public readonly int $nightRotationMaxNights = 5,
+        /** @var string[] Mã ca sáng / chiều được cân bằng quản lý / nam / nữ waiter (mặc định M6, A2). */
+        public readonly array $balanceShiftCodes = ['M6', 'A2'],
         /** @var int[] Thứ đông khách (ISO, 6 = thứ Bảy): hạn chế xếp OFF vào những ngày này. */
         public readonly array $busyWeekdays = [6],
         // Người không có ca cứng: số ca sáng và chiều trong tuần lệch nhau tối đa bấy nhiêu (1 → 5 ngày chia 3/2).
@@ -160,6 +166,7 @@ final class Rules
             supportGender: $config['support_gender'] ?? null,
             maxSupportPerOutlet: (int) ($config['max_support_per_outlet'] ?? 2),
             nightRotationMaxNights: max(1, (int) ($config['night_rotation_max_nights'] ?? 5)),
+            balanceShiftCodes: array_map('strtoupper', (array) ($config['open_shift_codes'] ?? ['M6', 'A2'])),
             autoShiftCodes: isset($config['auto_shift_codes']) ? array_map(fn ($c) => strtoupper(str_replace(' ', '', (string) $c)), (array) $config['auto_shift_codes']) : null,
             busyWeekdays: array_map('intval', $config['busy_weekdays'] ?? [6]),
             shiftMixTolerance: (int) ($config['shift_mix_tolerance'] ?? 1),
