@@ -107,6 +107,8 @@ final class Rules
          *      "M6(K)", "A2(K)" (vd không có "OH" → không bao giờ tự xếp OH ở nhà hàng). null = không giới hạn. Ô quản lý xếp tay / khóa không bị lọc.
          */
         public readonly ?array $autoShiftCodes = null,
+        // Số đêm tối đa / tuần của một người luân phiên Night (quản lý 23/10/2026: làm nhiều đêm cũng được, không nhất thiết 2).
+        public readonly int $nightRotationMaxNights = 5,
         /** @var int[] Thứ đông khách (ISO, 6 = thứ Bảy): hạn chế xếp OFF vào những ngày này. */
         public readonly array $busyWeekdays = [6],
         // Người không có ca cứng: số ca sáng và chiều trong tuần lệch nhau tối đa bấy nhiêu (1 → 5 ngày chia 3/2).
@@ -157,6 +159,7 @@ final class Rules
             minOffPerWeek: (int) ($config['min_off_per_week'] ?? 1),
             supportGender: $config['support_gender'] ?? null,
             maxSupportPerOutlet: (int) ($config['max_support_per_outlet'] ?? 2),
+            nightRotationMaxNights: max(1, (int) ($config['night_rotation_max_nights'] ?? 5)),
             autoShiftCodes: isset($config['auto_shift_codes']) ? array_map(fn ($c) => strtoupper(str_replace(' ', '', (string) $c)), (array) $config['auto_shift_codes']) : null,
             busyWeekdays: array_map('intval', $config['busy_weekdays'] ?? [6]),
             shiftMixTolerance: (int) ($config['shift_mix_tolerance'] ?? 1),

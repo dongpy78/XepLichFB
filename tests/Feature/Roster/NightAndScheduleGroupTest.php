@@ -208,7 +208,8 @@ class NightAndScheduleGroupTest extends TestCase
 
         foreach ($planned as $employee) {
             $dates = collect($result->assignments)->filter(fn ($r) => $r['employee_id'] === $employee->getKey() && $r['shift_id'] === $n)->pluck('date')->sort()->values();
-            $this->assertContains($dates->count(), [2, 3], "{$employee->code}: 2–3 đêm");
+            $this->assertGreaterThanOrEqual(2, $dates->count(), "{$employee->code}: ít nhất 2 đêm");
+            $this->assertLessThanOrEqual(5, $dates->count(), "{$employee->code}: tối đa 5 đêm");
             $this->assertSame($dates->count() - 1, (int) Carbon::parse($dates->first())->diffInDays(Carbon::parse($dates->last())), "{$employee->code}: các đêm liền nhau");
             $after = Carbon::parse($dates->last())->addDay()->toDateString();
             $this->assertTrue($after > Carbon::parse(self::WEEK)->addDays(6)->toDateString() || $at($employee->getKey(), $after) === null, "{$employee->code}: hôm sau đêm cuối OFF");

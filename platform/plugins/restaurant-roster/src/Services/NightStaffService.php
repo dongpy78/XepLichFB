@@ -24,7 +24,8 @@ use InvalidArgumentException;
  *
  * Luân phiên (quản lý 23/10/2026): mỗi tuần chọn N người (night_rotation_per_week, mặc định 4) trong các nam waiter của
  * Villa / Gusto / Night (night_rotation_outlets) có năng lực Night, không phải Night cứng (ca cứng ca đêm), không phải Room Service
- * chuyên trách, đang bật "tham gia luân phiên". Mỗi người 2 đêm liền nhau (3 khi cần đủ 3 người / ngày), hôm sau OFF.
+ * chuyên trách, đang bật "tham gia luân phiên". Mỗi người ít nhất 2 đêm liền nhau, làm thêm đêm (tới night_rotation_max_nights) khi cần
+ * đủ 3 người / ngày, hôm sau OFF. Nam waiter ưu tiên giữ định mức nhà hàng (không rút người làm nhà hàng thiếu tối thiểu).
  * Xếp hạng: ít tuần Night trong khoảng lịch sử → không làm tuần liền trước → tránh dồn cùng một outlet;
  * loại người có ca khóa trùng tuần, nghỉ nhiều ngày, hoặc rút đi làm outlet chính thiếu ngày công nam / tổng tối thiểu.
  * Quản lý duyệt danh sách (có thể sửa, chọn ngoài đề xuất phải ghi lý do) – mọi thay đổi ghi nhật ký.
@@ -555,7 +556,7 @@ class NightStaffService
         $need = array_sum(array_column($daily, 'min'));
         $coreNights = $this->groups($weekStart)['core']->sum(fn (Employee $e) => max(0, 7 - (int) $e->days_off_per_week));
         $slots = max(0, $need - $coreNights);
-        [$low, $high] = [count($employeeIds) * 2, count($employeeIds) * 3];
+        [$low, $high] = [count($employeeIds) * 2, count($employeeIds) * max(2, (int) config('plugins.restaurant-roster.general.scheduling.night_rotation_max_nights', 5))];
 
         if ($need && ($slots < $low || $slots > $high)) {
             $warnings[] = sprintf('Night cần khoảng %d lượt luân phiên trong tuần (%d − %d đêm của Night cứng), %d người làm được %d–%d lượt.',

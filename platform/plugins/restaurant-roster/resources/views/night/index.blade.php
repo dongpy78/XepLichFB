@@ -33,7 +33,7 @@
             <div class="text-muted small">
                 Tuần <strong>{{ $week->format('d/m') }} – {{ $week->addDays(6)->format('d/m/Y') }}</strong> ·
                 Night đúng <strong>3</strong> người / ngày, ít nhất <strong>1 Night cứng</strong> ·
-                <strong>{{ $perWeek }}</strong> người luân phiên × 2 đêm liền nhau (3 khi cần), hôm sau OFF
+                <strong>{{ $perWeek }}</strong> người luân phiên, mỗi người 2 đêm liền nhau trở lên (làm thêm đêm khi cần đủ 3 người), hôm sau OFF
             </div>
         </div>
     </div>
@@ -194,7 +194,7 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                                 onclick="return confirm('Công bố sẽ khóa danh sách luân phiên tuần này. Tiếp tục?')">Duyệt & công bố (khóa)</button>
                         </div>
                     </div>
-                    <div class="small text-muted mt-2">Sau khi duyệt, chạy "Tạo lịch tự động" / "Tối ưu lại": mỗi người được chọn làm 2 đêm liền nhau (3 khi cần đủ 3 người / ngày), hôm sau OFF, các ngày còn lại làm ca chính ở outlet.</div>
+                    <div class="small text-muted mt-2">Sau khi duyệt, chạy "Tạo lịch tự động" / "Tối ưu lại": mỗi người được chọn làm ít nhất 2 đêm liền nhau, thêm đêm khi cần đủ 3 người / ngày (nam waiter vẫn ưu tiên giữ định mức nhà hàng), hôm sau OFF, các ngày còn lại làm ca chính ở outlet.</div>
                 @endif
             </form>
 

@@ -77,7 +77,8 @@ class NightRotationRulesTest extends TestCase
 
         foreach (self::ROTATION as $id) {
             $nights = array_keys(array_filter($days, fn ($d) => in_array($id, $this->nightIds($result, $d), true)));
-            $this->assertContains(count($nights), [2, 3], "#{$id}: 2–3 đêm");
+            $this->assertGreaterThanOrEqual(2, count($nights), "#{$id}: ít nhất 2 đêm");
+            $counts[$id] = count($nights);
             $this->assertSame(count($nights) - 1, end($nights) - $nights[0], "#{$id}: các đêm liền nhau");
 
             if (isset($days[end($nights) + 1])) {
@@ -85,6 +86,7 @@ class NightRotationRulesTest extends TestCase
             }
         }
 
+        $this->assertLessThanOrEqual(2, max($counts) - min($counts), 'Đêm thêm chia đều, không dồn một người: ' . json_encode($counts));
         $this->assertSame([], array_filter($result->unfilledRequirements, fn ($u) => $u['level'] === 'min'));
         $this->assertHardConstraintsHold($problem, $result);
     }

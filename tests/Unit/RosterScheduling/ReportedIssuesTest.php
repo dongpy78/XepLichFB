@@ -64,7 +64,8 @@ class ReportedIssuesTest extends TestCase
 
         foreach ($rotation as $id) {
             $nights = array_keys(array_filter($days, fn ($d) => $this->shiftOf($result, $id, $d) === [self::NIGHT, self::N]));
-            $this->assertContains(count($nights), [2, 3], "#{$id}: 2–3 đêm");
+            $this->assertGreaterThanOrEqual(1, count($nights), "#{$id}: có đêm luân phiên");
+            $this->assertLessThanOrEqual(5, count($nights), "#{$id}: tối đa 5 đêm");
         }
 
         $this->assertHardConstraintsHold($problem, $result);

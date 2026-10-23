@@ -77,6 +77,8 @@ return [
         // Night (quản lý 23/10/2026): đúng 3 người / ngày (Định biên nhân sự), ≥ 1 Night cứng (ca cứng ca đêm) mỗi ngày;
         // mỗi tuần chọn bấy nhiêu nam waiter luân phiên từ các outlet dưới, mỗi người 2 đêm liền nhau (3 khi cần), hôm sau OFF.
         'night_rotation_per_week' => 4,
+        // Số đêm tối đa / tuần của một người luân phiên (mục tiêu 2 đêm liền nhau; làm thêm đêm khi cần đủ 3 người / ngày).
+        'night_rotation_max_nights' => 5,
         'night_rotation_outlets' => ['GUSTO', 'VILLA', 'NIGHT'],
         // Outlet Room Service (mã outlet) – người chuyên trách / dự phòng / thay thế quản lý ở trang Nhân sự Room Service.
         'room_service_codes' => ['ROOM', 'RS', 'ROOMSERVICE'],

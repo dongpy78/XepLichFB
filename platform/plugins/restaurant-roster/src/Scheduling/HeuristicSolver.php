@@ -444,7 +444,7 @@ final class HeuristicSolver implements SolverInterface
                     }
                 }
 
-                if (! $ok || array_sum($remaining) > 3 * count($rotation)) {
+                if (! $ok || array_sum($remaining) > $problem->rules->nightRotationMaxNights * count($rotation)) {
                     continue;
                 }
 
@@ -457,13 +457,15 @@ final class HeuristicSolver implements SolverInterface
                 }
 
                 if ($blocks !== null) {
-                    $threes = count(array_filter($blocks, fn ($b) => count($b) === 3));
+                    // Số đêm thêm (ngoài 2 đêm / người): càng ít càng chia đều.
+                    // Bình phương số đêm thêm: càng chia đều càng tốt.
+                    $threes = array_sum(array_map(fn ($b) => max(0, count($b) - 2) ** 2, $blocks));
 
                     if ($best === null || $threes < $best[2]) {
                         $best = [$choice, $blocks, $threes];
                     }
 
-                    if ($threes === max(0, array_sum($remaining) - 2 * count($rotation))) {
+                    if ($threes <= max(0, array_sum($remaining) - 2 * count($rotation))) {
                         break;
                     }
                 }
@@ -521,7 +523,8 @@ final class HeuristicSolver implements SolverInterface
         $e = array_shift($people);
         $feasible = false;
 
-        foreach ([2, 3] as $length) {
+        // Cụm ngắn trước (2 đêm), dài dần tới số đêm tối đa / tuần khi cần đủ 3 người / ngày.
+        foreach (range(2, max(2, $state->problem->rules->nightRotationMaxNights)) as $length) {
             foreach ($nightDays as $start) {
                 if (--$budget <= 0) {
                     return null;
@@ -550,8 +553,8 @@ final class HeuristicSolver implements SolverInterface
                     $left[$i]--;
                 }
 
-                // Cắt nhánh: những người còn lại (mỗi người tối đa 3 đêm) phải gánh đủ phần còn thiếu.
-                if (array_sum($left) > 3 * count($people)) {
+                // Cắt nhánh: những người còn lại (mỗi người tối đa số đêm cho phép) phải gánh đủ phần còn thiếu.
+                if (array_sum($left) > $state->problem->rules->nightRotationMaxNights * count($people)) {
                     continue;
                 }
 
@@ -582,7 +585,7 @@ final class HeuristicSolver implements SolverInterface
         foreach ($people as $e) {
             $best = null;
 
-            foreach ([3, 2] as $length) {
+            foreach (range(max(2, $state->problem->rules->nightRotationMaxNights), 2) as $length) {
                 foreach ($nightDays as $start) {
                     $block = range($start, $start + $length - 1);
                     $after = $state->fixed[$e][$start + $length] ?? null;

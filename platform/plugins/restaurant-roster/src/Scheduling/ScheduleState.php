@@ -705,8 +705,8 @@ final class ScheduleState
                     }
                 }
 
-                if (count($nights) > 3) {
-                    return ['night_max', 'Người luân phiên Night đã đủ 3 đêm trong tuần'];
+                if (count($nights) > $this->problem->rules->nightRotationMaxNights) {
+                    return ['night_max', sprintf('Người luân phiên Night đã đủ %d đêm trong tuần', $this->problem->rules->nightRotationMaxNights)];
                 }
 
                 // Các đêm liền nhau là ưu tiên mạnh (night_plan_gap), không phải ràng buộc cứng: khi bắt buộc để Night đủ 3 người / ngày
@@ -1178,6 +1178,7 @@ final class ScheduleState
             foreach ($this->crossCells[$i] ?? [] as $employeeId => $outletId) {
                 $employee = $this->problem->employees[$employeeId];
 
+
                 foreach ($this->protectedSlots($employeeId) as [$homeId, $shiftId]) {
                     if ($homeId === $outletId || ! isset($slots["{$homeId}|{$shiftId}"])) {
                         continue;
@@ -1482,8 +1483,10 @@ final class ScheduleState
 
         // Tuần luân phiên: mục tiêu 2 đêm (3 khi cần), một cụm liền nhau; ngày còn lại làm ca chính ở outlet (không tính "trộn đêm / ngày").
         foreach ($plannedWeeks as $week) {
-            $m['night_plan_gap'] += max(0, 2 - $week['nights']) + max(0, $week['nights'] - 3) + max(0, $week['blocks'] - 1);
-            $m['night_plan_extra'] += $week['nights'] === 3 ? 1 : 0;
+            // Mục tiêu ít nhất 2 đêm, một cụm liền nhau; đêm thêm (từ đêm thứ 3) được phép khi cần đủ 3 người / ngày – phạt nhẹ để chia đều.
+            $m['night_plan_gap'] += max(0, 2 - $week['nights']) + max(0, $week['blocks'] - 1);
+            // Bình phương số đêm thêm: chia đều đêm thêm giữa người luân phiên (3-3-3-2 tốt hơn 5-2-2-2).
+            $m['night_plan_extra'] += max(0, $week['nights'] - 2) ** 2;
         }
 
         foreach ($byWeek as $weekKey => $counts) {
