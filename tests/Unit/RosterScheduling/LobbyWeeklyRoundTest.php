@@ -137,9 +137,12 @@ class LobbyWeeklyRoundTest extends TestCase
         $this->assertEqualsCanonicalizing([self::OH, self::M6, self::A2], array_values(array_unique(array_column($support, 'shift_id'))));
         $this->assertSame([], array_filter($this->lobbyGaps($result), fn ($g) => $g['date'] === $day));
 
-        // Ngày khác đủ OH(L) + M9: không dùng M6(L) / A2(L).
-        $extra = array_filter($result->assignments, fn ($r) => $r['date'] !== $day && $r['support'] && in_array($r['shift_id'], [self::M6, self::A2], true));
-        $this->assertSame([], $extra, 'Không xếp ca hỗ trợ thừa khi Lobby đã đủ');
+        // Ngày khác: chỉ dùng M6(L) / A2(L) khi Lobby chưa có đủ 2 người phủ trọn ca (OH(L) / M9) – không xếp ca hỗ trợ thừa khi đã đủ.
+        foreach (array_diff($this->days(), [$day]) as $date) {
+            $full = count(array_filter($result->assignments, fn ($r) => $r['date'] === $date && (($r['shift_id'] === self::OH && $r['support']) || $r['shift_id'] === self::M9)));
+            $partial = count(array_filter($result->assignments, fn ($r) => $r['date'] === $date && $r['support'] && in_array($r['shift_id'], [self::M6, self::A2], true)));
+            $this->assertTrue($partial === 0 || $full < 2, "{$date}: có {$full} người OH(L)/M9 mà vẫn thêm {$partial} M6(L)/A2(L)");
+        }
     }
 
     /** Công bằng nhiều tuần: người đã có nhiều lượt OH(L) các tuần trước là người nhường lượt khi thiếu ca. */

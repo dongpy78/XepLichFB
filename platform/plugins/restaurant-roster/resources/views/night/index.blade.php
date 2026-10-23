@@ -136,7 +136,7 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                             <tr>
                                 <th style="width: 40px"></th>
                                 <th>Nam waiter đủ điều kiện (Villa / Gusto / Night)</th>
-                                <th>Tuần Night ({{ \Botble\RestaurantRoster\Services\NightStaffService::HISTORY_WEEKS }} tuần qua)</th>
+                                <th>Night {{ \Botble\RestaurantRoster\Services\NightStaffService::HISTORY_WEEKS }} tuần qua</th>
                                 <th>Đêm tuần này</th>
                                 <th>Đánh giá</th>
                                 <th></th>
@@ -146,14 +146,15 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                             @forelse ($groups['rotation'] as $e)
                                 @php
                                     $id = $e->getKey();
-                                    $h = $history[$id] ?? ['weeks' => 0, 'last_week' => false, 'list' => []];
+                                    $h = $history[$id] ?? ['weeks' => 0, 'nights' => 0, 'rate' => 0, 'last_week' => false, 'list' => []];
                                     $ex = $excludedById[$id] ?? null;
                                 @endphp
                                 <tr class="{{ $ex ? 'text-muted' : '' }}">
                                     <td><input type="checkbox" class="form-check-input" name="employee_ids[]" value="{{ $id }}" @checked(in_array($id, $selectedIds, true)) @disabled($locked || ! $canEdit)></td>
                                     <td>{{ $person($e) }}</td>
                                     <td>
-                                        {{ $h['weeks'] }}
+                                        {{ $h['nights'] }} đêm / {{ $h['weeks'] }} tuần
+                                        @if ($h['rate'] != $h['nights'])<span class="text-muted small" title="Quy về số tuần thực sự đi làm">(≈ {{ $h['rate'] }} đêm)</span>@endif
                                         @if ($h['last_week'])<span class="badge bg-warning text-white ms-1">tuần trước</span>@endif
                                         @if ($h['list'])<span class="text-muted small ms-1">({{ implode(', ', $h['list']) }})</span>@endif
                                     </td>

@@ -391,7 +391,9 @@ final class HeuristicSolver implements SolverInterface
                 }
             }
 
+            // Người nhiều tuần Night trong lịch sử xét trước → nhận cụm 2 đêm; người ít hơn nhận đêm thứ 3 khi cần (công bằng dài hạn).
             $rotation = array_keys($rotation);
+            usort($rotation, fn ($a, $b) => ($problem->nightHistory[$b] ?? 0) <=> ($problem->nightHistory[$a] ?? 0));
             // Ngày người này làm ca đêm được: không nghỉ đã duyệt, không có ô cố định khác ca đêm, và đặt ca đêm không vi phạm
             // ràng buộc với các ngày liền kề đã có (vd A2 tối Chủ nhật tuần trước → không vào N tối thứ Hai; vừa hết đêm → phải OFF).
             $free = function (int $e, int $i) use ($state, $problem, $need): ?bool {

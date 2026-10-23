@@ -42,7 +42,7 @@ final class ResultBuilder
         };
 
         $femaleStaffing = $this->femaleStaffing($state);
-        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing),
+        $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing), ...$this->femaleBalanceWarnings($state, $femaleStaffing),
             ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
@@ -1034,6 +1034,40 @@ final class ResultBuilder
      * Cảnh báo: ca vượt mục tiêu nữ waiter trong khi ca kia của cùng outlet hôm đó còn thiếu – người dư không chuyển được
      * (giờ nghỉ, ca khóa, OFF) hoặc nên được quản lý cân nhắc chuyển.
      */
+    /**
+     * Nữ waiter trực tiếp lệch giữa ca sáng / chiều so với tỉ lệ định biên (sau khi rút người đi Lobby / Kid) mà bộ giải không cân được.
+     */
+    private function femaleBalanceWarnings(ScheduleState $state, array $rows): array
+    {
+        $problem = $state->problem;
+        $byKey = [];
+        $warnings = [];
+
+        foreach ($rows as $row) {
+            $byKey[$row['date'] . '|' . $row['outlet_id'] . '|' . $row['shift_code']] = $row;
+        }
+
+        foreach ($state->femalePairs() as [$i, $o, $am, $pm, $wAm, $wPm]) {
+            $fAm = $state->femaleCount($i, $o, $am);
+            $fPm = $state->femaleCount($i, $o, $pm);
+            $total = $fAm + $fPm;
+
+            if ($total < 2 || abs($fAm - $total * $wAm / ($wAm + $wPm)) <= 1.0) {
+                continue;
+            }
+
+            $date = $state->dates[$i];
+            $detail = fn (int $s) => ($row = $byKey[$date . '|' . $o . '|' . $problem->shifts[$s]->code] ?? null)
+                ? sprintf(' (+%d đi Lobby, %d Kid-Deline, %d outlet khác)', $row['lobby'], $row['kid'], $row['away']) : '';
+            $warnings[] = ['code' => 'female_balance', 'date' => $date, 'outlet_id' => $o, 'outlet_name' => $problem->outletName($o),
+                'message' => sprintf('%s %s: nữ waiter trực tiếp %s %d%s / %s %d%s – lệch so với tỉ lệ định biên %s:%s; không đổi ca được do OFF, ca khóa, giờ nghỉ hoặc Lobby cần người. Quản lý cân nhắc đổi ca.',
+                    $problem->outletName($o), date('d/m', strtotime($date)), $problem->shifts[$am]->code, $fAm, $detail($am), $problem->shifts[$pm]->code, $fPm, $detail($pm),
+                    rtrim(rtrim(number_format($wAm, 1), '0'), '.'), rtrim(rtrim(number_format($wPm, 1), '0'), '.'))];
+        }
+
+        return $warnings;
+    }
+
     private function femaleWarnings(array $rows): array
     {
         $warnings = [];

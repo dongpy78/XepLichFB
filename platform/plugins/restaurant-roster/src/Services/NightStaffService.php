@@ -246,12 +246,23 @@ class NightStaffService
         $from = $weekStart->subWeeks(self::HISTORY_WEEKS);
         $lastWeek = $weekStart->subWeek()->format('o-W');
         $weeks = [];
+        $nights = [];
+        $worked = [];
 
         Shift::query()->whereIn('employee_id', $employeeIds)->whereIn('shift_template_id', $this->nightTemplates()->modelKeys())
             ->whereDate('date', '>=', $from->toDateString())->whereDate('date', '<', $weekStart->toDateString())
             ->get(['employee_id', 'date'])
-            ->each(function (Shift $shift) use (&$weeks): void {
+            ->each(function (Shift $shift) use (&$weeks, &$nights): void {
                 $weeks[(int) $shift->employee_id][$shift->date->format('o-W')] = $shift->date->startOfWeek()->format('d/m');
+                $nights[(int) $shift->employee_id][$shift->date->toDateString()] = true;
+            });
+
+        // Tuần thực sự đi làm (có ca bất kỳ): số đêm quy về số tuần đi làm – người nghỉ dài không bị dồn Night bù.
+        Shift::query()->whereIn('employee_id', $employeeIds)->where('kind', Shift::KIND_SHIFT)
+            ->whereDate('date', '>=', $from->toDateString())->whereDate('date', '<', $weekStart->toDateString())
+            ->get(['employee_id', 'date'])
+            ->each(function (Shift $shift) use (&$worked): void {
+                $worked[(int) $shift->employee_id][$shift->date->format('o-W')] = true;
             });
 
         NightRotation::query()->whereIn('employee_id', $employeeIds)->where('status', '!=', NightRotation::STATUS_PROPOSED)
@@ -266,7 +277,10 @@ class NightStaffService
         foreach ($employeeIds as $id) {
             $list = $weeks[$id] ?? [];
             ksort($list);
-            $result[$id] = ['weeks' => count($list), 'last_week' => isset($list[$lastWeek]), 'list' => array_values($list)];
+            $count = count($nights[$id] ?? []);
+            $workedWeeks = count($worked[$id] ?? []);
+            $result[$id] = ['weeks' => count($list), 'nights' => $count, 'last_week' => isset($list[$lastWeek]), 'list' => array_values($list),
+                'rate' => $workedWeeks > 0 ? round($count * self::HISTORY_WEEKS / $workedWeeks, 1) : (float) $count];
         }
 
         return $result;
@@ -344,7 +358,10 @@ class NightStaffService
                     . ($first ? " (ca khóa {$first->template?->code} ngày {$first->date->format('d/m')})" : " (OFF / nghỉ {$offDays} ngày)")];
             } else {
                 // Ít tuần Night trước → ưu tiên; vừa làm tuần trước → tránh lặp; nghỉ nhiều ngày → xếp sau.
-                $row['score'] = $history[$id]['weeks'] * 10 + ($history[$id]['last_week'] ? 25 : 0) + (5 - min(5, $nights));
+                // Ít đêm Night trong lịch sử (quy về tuần đi làm) → ưu tiên; tuần đã chọn trong cùng lần lập lịch tính như 2–3 đêm;
+                // vừa làm tuần trước → tránh lặp; nghỉ nhiều ngày → xếp sau.
+                $row['score'] = $history[$id]['rate'] * 4 + ($history[$id]['weeks'] - count($history[$id]['list'])) * 10
+                    + ($history[$id]['last_week'] ? 25 : 0) + (5 - min(5, $nights));
                 $candidates[] = $row;
             }
         }

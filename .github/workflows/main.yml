@@ -14,6 +14,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Không để một lần deploy treo vô hạn (FTP mất kết nối…): quá 40 phút thì tự hủy, bấm Re-run để chạy lại.
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
@@ -47,6 +49,7 @@ jobs:
 
       # FTPS (FTP có mã hóa). -k vì kết nối bằng IP nên tên trong chứng chỉ SSL không khớp.
       - name: Upload qua FTP
+        timeout-minutes: 25
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -54,12 +57,14 @@ jobs:
           FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }} # Ví dụ: / — phải kết thúc bằng dấu /
         run: |
           base="ftp://${FTP_SERVER}${FTP_SERVER_DIR}"
-          opts=(--ssl-reqd -k --ftp-create-dirs --fail --show-error --silent --retry 3 --user "${FTP_USERNAME}:${FTP_PASSWORD}")
+          # --connect-timeout / --max-time: FTP treo thì báo lỗi (và thử lại) thay vì chờ mãi.
+          opts=(--ssl-reqd -k --ftp-create-dirs --fail --show-error --silent --retry 3 --retry-all-errors --connect-timeout 30 --max-time 1200 --user "${FTP_USERNAME}:${FTP_PASSWORD}")
           curl "${opts[@]}" -T public/deploy.php "${base}public/deploy.php"
           curl "${opts[@]}" -T release.zip "${base}.deploy/release.zip"
           echo "Upload xong"
 
       - name: Giải nén trên hosting
+        timeout-minutes: 17
         env:
           DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
           DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}

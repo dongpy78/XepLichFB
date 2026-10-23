@@ -37,7 +37,8 @@ final class Rules
         'lobby_mix' => 1500,
         // Lobby: ưu tiên OH(L) (Nha Trang) + M9(L) (Cam Ranh) phủ trọn 09:00–16:45; M6(L) / A2(L) chỉ phủ một phần khung
         // là phương án thay thế – mỗi lượt bị phạt, nên chỉ dùng khi bù được thiếu người.
-        'lobby_partial' => 1200,
+        // Trên cân bằng nữ M6 / A2 (2500): M6(L) / A2(L) chỉ dùng khi OH(L) / M9(L) không phủ được (quản lý 23/10/2026).
+        'lobby_partial' => 4000,
         // Người luân phiên Night làm đêm thứ 3 trong tuần: chỉ khi cần để Night đủ 3 người / ngày (mục tiêu 2 đêm / người).
         'night_extra' => 3000,
         // Mượn người outlet khác (BorrowPolicy): chỉ để đủ tối thiểu – mượn vượt phần thiếu tối thiểu nặng hơn thiếu mục tiêu;
@@ -46,6 +47,13 @@ final class Rules
         // Lobby: mỗi nữ waiter đủ điều kiện một ca OH(L) / M9(L) trong tuần trước khi ai trong cùng nhóm nhận ca thứ hai.
         // Trên "thiếu mục tiêu" (10000): giữ người ở nhà hàng cho đủ mục tiêu không được làm ai đó nhận 2 ca OH(L) / M9(L) khi người khác chưa có.
         'lobby_round' => 15000,
+        // Nữ waiter trực tiếp chia giữa ca sáng (M6) và chiều (A2) của từng outlet × ngày theo tỉ lệ định biên (mục tiêu nữ waiter,
+        // không khai thì theo mục tiêu tổng của ca) – sau khi đã rút người đi Lobby / Kid. Không ép bằng nhau.
+        'female_balance' => 2500,
+        // Người đứng Lobby vượt định biên (vd thêm M6(L) khi OH(L) + M9 đã đủ): nặng hơn cân bằng nữ M6 / A2 – ca hỗ trợ chỉ để bù giờ thiếu.
+        'lobby_over' => 6000,
+        // Night luân phiên vào ngày không có Night cứng nào: không được phép (nặng hơn thiếu tối thiểu – để trống và báo thiếu).
+        'night_no_core' => 1e12,
         'borrow_order' => 400,
         // Cân bằng ca sáng / chiều qua nhiều tuần (lịch sử khoảng đánh giá + kỳ này) – nhẹ hơn xen kẽ ca trong tuần.
         'shift_history' => 500,
