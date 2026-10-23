@@ -143,6 +143,59 @@ class NightStaffService
     }
 
     /**
+     * Bước 1 – Đề xuất: lưu danh sách thuật toán chọn cho tuần ở trạng thái "đề xuất" (thay đề xuất cũ). Tuần đã duyệt / công bố thì
+     * phải hủy duyệt trước.
+     *
+     * @return int[] nhân viên được đề xuất
+     */
+    public function storeProposal(CarbonInterface $week, ?int $userId): array
+    {
+        $weekStart = CarbonImmutable::parse($week)->startOfWeek();
+
+        if (NightRotation::query()->whereDate('week_start', $weekStart->toDateString())->where('status', '!=', NightRotation::STATUS_PROPOSED)->exists()) {
+            throw new InvalidArgumentException('Tuần ' . $weekStart->format('d/m') . ' đã duyệt – bấm "Hủy duyệt" trước khi đề xuất lại.');
+        }
+
+        $proposal = $this->propose($weekStart);
+
+        return DB::transaction(function () use ($weekStart, $proposal, $userId) {
+            NightRotation::query()->whereDate('week_start', $weekStart->toDateString())->delete();
+            $ids = [];
+
+            foreach ($proposal['selected'] as $row) {
+                $ids[] = $row['employee']->getKey();
+                NightRotation::query()->create(['week_start' => $weekStart->toDateString(), 'employee_id' => $row['employee']->getKey(),
+                    'source_outlet_id' => $row['outlet_id'], 'status' => NightRotation::STATUS_PROPOSED, 'note' => 'Thuật toán đề xuất', 'created_by' => $userId]);
+            }
+
+            return $ids;
+        });
+    }
+
+    /**
+     * Hủy duyệt (kể cả đã công bố): danh sách về trạng thái "đề xuất", giữ nguyên người để quản lý chọn lại. Lịch ca đã xếp không bị đổi.
+     *
+     * @return int số người được đưa về đề xuất
+     */
+    public function unapprove(CarbonInterface $week, ?int $userId, ?string $reason = null): int
+    {
+        $weekStart = CarbonImmutable::parse($week)->startOfWeek();
+
+        return DB::transaction(function () use ($weekStart, $userId, $reason) {
+            $rows = NightRotation::query()->whereDate('week_start', $weekStart->toDateString())->where('status', '!=', NightRotation::STATUS_PROPOSED)->lockForUpdate()->get();
+
+            foreach ($rows as $row) {
+                ChangeLog::query()->create(['employee_id' => $row->employee_id, 'date' => $weekStart->toDateString(), 'action' => 'night_rotation',
+                    'before' => ['night_rotation' => $row->status], 'after' => ['night_rotation' => NightRotation::STATUS_PROPOSED],
+                    'reason' => mb_substr('Hủy duyệt luân phiên Night tuần ' . $weekStart->format('d/m') . ($reason ? ': ' . $reason : ''), 0, 500), 'user_id' => $userId]);
+                $row->update(['status' => NightRotation::STATUS_PROPOSED, 'approved_by' => null, 'approved_at' => null]);
+            }
+
+            return $rows->count();
+        });
+    }
+
+    /**
      * Phạm vi "Reset lịch Night" của một tuần (để hiện trong hộp xác nhận): ca đêm do thuật toán xếp còn nháp và chưa khóa sẽ bị xóa;
      * ca đêm đã khóa / đã công bố / quản lý xếp tay được giữ; danh sách luân phiên đề xuất / đã duyệt / đã công bố.
      *
@@ -493,9 +546,17 @@ class NightStaffService
         for ($week = $start; $week->lte(CarbonImmutable::parse($to)); $week = $week->addWeek()) {
             $rows = NightRotation::query()->whereDate('week_start', $week->toDateString())->where('status', '!=', NightRotation::STATUS_PROPOSED)->pluck('employee_id');
 
+            $stored = $rows->isEmpty()
+                ? NightRotation::query()->whereDate('week_start', $week->toDateString())->where('status', NightRotation::STATUS_PROPOSED)->pluck('employee_id')
+                : collect();
+
             if ($rows->isNotEmpty()) {
                 $ids = $rows->map(fn ($id) => (int) $id)->all();
                 $weeks[$week->toDateString()] = ['source' => 'approved', 'ids' => $ids, 'warnings' => []];
+            } elseif ($stored->isNotEmpty()) {
+                // Đề xuất đã lưu (bước "Đề xuất" trên trang Nhân sự Night): dùng đúng danh sách đó, chưa duyệt.
+                $ids = $stored->map(fn ($id) => (int) $id)->all();
+                $weeks[$week->toDateString()] = ['source' => 'proposed', 'ids' => $ids, 'warnings' => []];
             } else {
                 // Tuần chưa duyệt: đề xuất có tính cả các tuần trước trong cùng lần lập lịch (luân phiên công bằng nhiều tuần).
                 $proposal = $this->propose($week, $counts, $taken);
@@ -602,7 +663,12 @@ class NightStaffService
             }
         }
 
-        if ($exceptions && ! trim((string) $reason)) {
+        // Công bố đúng danh sách đã duyệt: ngoại lệ đã được ghi lý do lúc duyệt.
+        $approvedIds = NightRotation::query()->whereDate('week_start', $weekStart->toDateString())->where('status', NightRotation::STATUS_APPROVED)
+            ->pluck('employee_id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+        $sameAsApproved = $approvedIds && $approvedIds === collect($employeeIds)->sort()->values()->all();
+
+        if ($exceptions && ! trim((string) $reason) && ! $sameAsApproved) {
             throw new InvalidArgumentException('Có người bị thuật toán loại (' . implode('; ', $exceptions) . ') – ghi lý do ngoại lệ để duyệt.');
         }
 

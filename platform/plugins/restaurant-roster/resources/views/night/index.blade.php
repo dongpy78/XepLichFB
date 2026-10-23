@@ -6,6 +6,10 @@
     $dayNames = [1 => 'T2', 2 => 'T3', 3 => 'T4', 4 => 'T5', 5 => 'T6', 6 => 'T7', 7 => 'CN'];
     $statusBadges = ['proposed' => 'warning', 'approved' => 'success', 'published' => 'dark'];
     $locked = $saved->contains('status', NightRotation::STATUS_PUBLISHED);
+    // Trạng thái tuần: none (chưa đề xuất) → proposed (đã đề xuất, sửa được) → approved (đã duyệt) → published (đã công bố, khóa).
+    $stage = $saved->isEmpty() ? 'none' : ($locked ? 'published' : ($saved->contains('status', NightRotation::STATUS_APPROVED) ? 'approved' : 'proposed'));
+    $editable = $canEdit && in_array($stage, ['none', 'proposed'], true);
+    $today = \Carbon\CarbonImmutable::today()->startOfWeek();
     $selectedIds = $preview['ids'] ?? old('employee_ids', $saved->isNotEmpty()
         ? $saved->pluck('employee_id')->map(fn ($id) => (int) $id)->all()
         : collect($proposal['selected'])->map(fn ($row) => $row['employee']->getKey())->all());
@@ -20,16 +24,21 @@
 
 @section('content')
     <div class="card mb-3">
-        <div class="card-body d-flex flex-wrap gap-3 align-items-end justify-content-between">
-            <form method="GET" action="{{ route('roster.night.index') }}" class="d-flex gap-2 align-items-end">
-                <div>
-                    <label class="form-label">Tuần (chọn một ngày bất kỳ)</label>
-                    <input type="date" name="week" value="{{ $week->toDateString() }}" class="form-control">
+        <div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a class="btn btn-outline-secondary" href="{{ route('roster.night.index', ['week' => $week->subWeek()->toDateString()]) }}" title="Tuần trước">‹</a>
+                <div class="px-2 text-center" style="min-width: 240px">
+                    <div class="fw-bold fs-3">Tuần {{ $week->isoWeek() }} · {{ $week->format('d/m') }} – {{ $week->addDays(6)->format('d/m/Y') }}</div>
+                    @if ($week->equalTo($today))<div class="small text-success">Tuần hiện tại</div>@endif
                 </div>
-                <button class="btn btn-primary" type="submit">Xem</button>
-                <a class="btn btn-outline-secondary" href="{{ route('roster.night.index', ['week' => $week->subWeek()->toDateString()]) }}">‹ Tuần trước</a>
-                <a class="btn btn-outline-secondary" href="{{ route('roster.night.index', ['week' => $week->addWeek()->toDateString()]) }}">Tuần sau ›</a>
-            </form>
+                <a class="btn btn-outline-secondary" href="{{ route('roster.night.index', ['week' => $week->addWeek()->toDateString()]) }}" title="Tuần sau">›</a>
+                @unless ($week->equalTo($today))
+                    <a class="btn btn-primary" href="{{ route('roster.night.index', ['week' => $today->toDateString()]) }}">Tuần hiện tại</a>
+                @endunless
+                <form method="GET" action="{{ route('roster.night.index') }}" class="d-flex gap-1">
+                    <input type="date" name="week" value="{{ $week->toDateString() }}" class="form-control form-control-sm" title="Chọn một ngày bất kỳ của tuần" onchange="this.form.submit()">
+                </form>
+            </div>
             <div class="text-muted small">
                 Tuần <strong>{{ $week->format('d/m') }} – {{ $week->addDays(6)->format('d/m/Y') }}</strong> ·
                 Night đúng <strong>3</strong> người / ngày, ít nhất <strong>1 Night cứng</strong> ·
@@ -110,6 +119,33 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
             </span>
         </div>
         <div class="card-body">
+            @php
+                $steps = ['none' => 0, 'proposed' => 1, 'approved' => 2, 'published' => 3];
+                $current = $steps[$stage];
+            @endphp
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                @foreach (['1. Đề xuất', '2. Duyệt', '3. Công bố (khóa)'] as $n => $label)
+                    <span class="badge {{ $current > $n ? 'bg-success' : ($current === $n ? 'bg-primary' : 'bg-secondary-lt') }} {{ $current >= $n ? 'text-white' : '' }} px-3 py-2">{{ $label }}</span>
+                    @if ($n < 2)<span class="text-muted">→</span>@endif
+                @endforeach
+
+                @if ($canEdit)
+                    <div class="ms-auto d-flex flex-wrap gap-2">
+                        @if (in_array($stage, ['none', 'proposed'], true))
+                            <button class="btn btn-outline-primary" type="submit" form="night-propose">{{ $stage === 'none' ? 'Đề xuất nhân sự Night' : 'Đề xuất lại' }}</button>
+                        @endif
+                        @if ($stage === 'approved')
+                            <button class="btn btn-dark" type="submit" form="night-publish"
+                                onclick="return confirm('Công bố sẽ khóa danh sách luân phiên tuần này. Tiếp tục?')">Công bố (khóa)</button>
+                        @endif
+                        @if (in_array($stage, ['approved', 'published'], true))
+                            <button class="btn btn-outline-danger" type="submit" form="night-unapprove"
+                                onclick="return confirm('Hủy duyệt danh sách luân phiên Night tuần {{ $week->format('d/m') }}? Danh sách về trạng thái đề xuất để chọn lại người khác. Lịch ca đã xếp không bị đổi – chạy lại Tạo lịch tự động sau khi duyệt lại.')">Hủy duyệt</button>
+                        @endif
+                    </div>
+                @endif
+            </div>
+
             @foreach ($proposal['warnings'] as $warning)
                 <div class="alert alert-warning py-2">{{ $warning }}</div>
             @endforeach
@@ -123,8 +159,12 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                     @endforelse
                 </div>
             @endif
-            @if ($locked)
-                <div class="alert alert-secondary py-2">Tuần đã công bố (khóa): không sửa danh sách luân phiên.</div>
+            @if ($stage === 'published')
+                <div class="alert alert-secondary py-2">Tuần đã công bố (khóa). Muốn chọn người khác: bấm "Hủy duyệt".</div>
+            @elseif ($stage === 'approved')
+                <div class="alert alert-success py-2">Đã duyệt. Muốn chọn người khác: bấm "Hủy duyệt", đổi người rồi duyệt lại.</div>
+            @elseif ($stage === 'none')
+                <div class="alert alert-info py-2">Chưa đề xuất. Bấm "Đề xuất nhân sự Night" để thuật toán chọn người (dấu tích bên dưới là gợi ý), hoặc tự tích người rồi bấm "Duyệt".</div>
             @endif
 
             <form method="POST" action="{{ route('roster.night.save') }}">
@@ -150,7 +190,7 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                                     $ex = $excludedById[$id] ?? null;
                                 @endphp
                                 <tr class="{{ $ex ? 'text-muted' : '' }}">
-                                    <td><input type="checkbox" class="form-check-input" name="employee_ids[]" value="{{ $id }}" @checked(in_array($id, $selectedIds, true)) @disabled($locked || ! $canEdit)></td>
+                                    <td><input type="checkbox" class="form-check-input" name="employee_ids[]" value="{{ $id }}" @checked(in_array($id, $selectedIds, true)) @disabled(! $editable)></td>
                                     <td>{{ $person($e) }}</td>
                                     <td>
                                         {{ $h['nights'] }} đêm / {{ $h['weeks'] }} tuần
@@ -181,7 +221,7 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                     </table>
                 </div>
 
-                @if ($canEdit && ! $locked)
+                @if ($editable)
                     <div class="row g-2 align-items-end">
                         <div class="col-md-5">
                             <label class="form-label">Lý do (bắt buộc khi chọn người không chọn được)</label>
@@ -189,13 +229,28 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                         </div>
                         <div class="col-md-7 d-flex flex-wrap gap-2">
                             <button class="btn btn-outline-primary" type="submit" name="status" value="preview">Xem trước ảnh hưởng</button>
-                            <button class="btn btn-primary" type="submit" name="status" value="approved">Duyệt danh sách</button>
-                            <button class="btn btn-dark" type="submit" name="status" value="published"
-                                onclick="return confirm('Công bố sẽ khóa danh sách luân phiên tuần này. Tiếp tục?')">Duyệt & công bố (khóa)</button>
+                            <button class="btn btn-primary" type="submit" name="status" value="approved">Duyệt</button>
                         </div>
                     </div>
                     <div class="small text-muted mt-2">Sau khi duyệt, chạy "Tạo lịch tự động" / "Tối ưu lại": mỗi người được chọn làm ít nhất 2 đêm liền nhau, thêm đêm khi cần đủ 3 người / ngày (nam waiter vẫn ưu tiên giữ định mức nhà hàng), hôm sau OFF, các ngày còn lại làm ca chính ở outlet.</div>
                 @endif
+            </form>
+
+            <form id="night-propose" method="POST" action="{{ route('roster.night.propose') }}" class="d-none">
+                @csrf
+                <input type="hidden" name="week" value="{{ $week->toDateString() }}">
+            </form>
+            <form id="night-unapprove" method="POST" action="{{ route('roster.night.unapprove') }}" class="d-none">
+                @csrf
+                <input type="hidden" name="week" value="{{ $week->toDateString() }}">
+            </form>
+            <form id="night-publish" method="POST" action="{{ route('roster.night.save') }}" class="d-none">
+                @csrf
+                <input type="hidden" name="week" value="{{ $week->toDateString() }}">
+                <input type="hidden" name="status" value="published">
+                @foreach ($saved as $row)
+                    <input type="hidden" name="employee_ids[]" value="{{ $row->employee_id }}">
+                @endforeach
             </form>
 
             @foreach ($groups['rotation'] as $e)

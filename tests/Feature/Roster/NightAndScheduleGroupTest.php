@@ -410,6 +410,49 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame([], $scheduler->disallowedCells($run->fresh(), ShiftTemplate::query()->get()->keyBy('id')));
     }
 
+    /** Luồng trên trang Nhân sự Night: Đề xuất → Duyệt → Hủy duyệt (chọn người khác) → Duyệt lại → Công bố; tuần hiện tại mặc định. */
+    public function test_propose_approve_unapprove_flow(): void
+    {
+        $people = $this->restaurants();
+        $user = $this->user();
+        $statuses = fn () => NightRotation::query()->whereDate('week_start', self::WEEK)->orderBy('employee_id')->pluck('status', 'employee_id')->all();
+
+        $html = $this->actingAs($user)->get(route('roster.night.index', ['week' => self::WEEK]))->assertOk()->getContent();
+        $this->assertStringContainsString('Đề xuất nhân sự Night', $html);
+        $this->assertStringContainsString('Tuần hiện tại', $html, 'Nút về tuần hiện tại');
+        $this->assertStringContainsString('Tuần 10 · 04/03 – 10/03/2030', $html);
+
+        // 1. Đề xuất: lưu ở trạng thái "đề xuất"; bộ giải dùng đúng danh sách này.
+        $this->actingAs($user)->post(route('roster.night.propose'), ['week' => self::WEEK])->assertRedirect();
+        $proposed = array_keys($statuses());
+        $this->assertCount(4, $proposed);
+        $this->assertSame(['proposed'], array_values(array_unique($statuses())));
+        $plan = app(NightStaffService::class)->planFor(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $this->assertEqualsCanonicalizing($proposed, $plan['plan'][self::WEEK]);
+
+        // 2. Duyệt.
+        $this->actingAs($user)->post(route('roster.night.save'), ['week' => self::WEEK, 'employee_ids' => $proposed, 'status' => 'approved'])->assertRedirect();
+        $this->assertSame(['approved'], array_values(array_unique($statuses())));
+        $this->actingAs($user)->post(route('roster.night.propose'), ['week' => self::WEEK])->assertRedirect();
+        $this->assertSame(['approved'], array_values(array_unique($statuses())), 'Đã duyệt thì không đề xuất đè');
+        $this->assertStringContainsString('Hủy duyệt', $this->actingAs($user)->get(route('roster.night.index', ['week' => self::WEEK]))->getContent());
+
+        // 3. Hủy duyệt → về đề xuất, giữ người; quản lý chọn người khác rồi duyệt lại.
+        $this->actingAs($user)->post(route('roster.night.unapprove'), ['week' => self::WEEK])->assertRedirect();
+        $this->assertSame(['proposed'], array_values(array_unique($statuses())));
+        $this->assertNotNull(ChangeLog::query()->where('action', 'night_rotation')->where('reason', 'like', 'Hủy duyệt%')->first(), 'Có nhật ký hủy duyệt');
+        $other = collect($people)->first(fn ($e) => ! in_array($e->getKey(), $proposed, true) && app(NightStaffService::class)->groups(Carbon::parse(self::WEEK))['rotation']->contains('id', $e->getKey()));
+        $chosen = [...array_slice($proposed, 0, 3), $other->getKey()];
+        $this->actingAs($user)->post(route('roster.night.save'), ['week' => self::WEEK, 'employee_ids' => $chosen, 'status' => 'approved'])->assertRedirect();
+        $this->assertEqualsCanonicalizing($chosen, array_keys($statuses()));
+
+        // 4. Công bố (khóa) rồi vẫn hủy duyệt được.
+        $this->actingAs($user)->post(route('roster.night.save'), ['week' => self::WEEK, 'employee_ids' => $chosen, 'status' => 'published'])->assertRedirect();
+        $this->assertSame(['published'], array_values(array_unique($statuses())));
+        $this->actingAs($user)->post(route('roster.night.unapprove'), ['week' => self::WEEK])->assertRedirect();
+        $this->assertSame(['proposed'], array_values(array_unique($statuses())));
+    }
+
     /** 9.9: đề xuất 4 người ít tuần Night nhất, chia giữa các outlet. */
     public function test_rotation_prefers_least_history_and_balances_outlets(): void
     {

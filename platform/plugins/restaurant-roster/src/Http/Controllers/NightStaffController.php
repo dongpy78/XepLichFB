@@ -35,7 +35,8 @@ class NightStaffController extends BaseController
         $this->pageTitle('Nhân sự Night');
         Assets::addStylesDirectly('vendor/core/plugins/restaurant-roster/css/roster.css');
 
-        $week = CarbonImmutable::parse($request->input('week') ?: CarbonImmutable::today()->addWeek()->toDateString())->startOfWeek();
+        // Mặc định tuần hiện tại; trượt tuần bằng ‹ › hoặc nút "Tuần hiện tại".
+        $week = CarbonImmutable::parse($request->input('week') ?: CarbonImmutable::today()->toDateString())->startOfWeek();
         $groups = $this->service->groups($week);
         $saved = NightRotation::query()->whereDate('week_start', $week->toDateString())->with(['employee.outlet'])->get();
         $upcoming = collect(range(-2, 5))->map(fn ($n) => $week->addWeeks($n))->mapWithKeys(fn ($w) => [$w->toDateString() => [
@@ -111,6 +112,31 @@ class NightStaffController extends BaseController
             'Đã reset lịch Night tuần %s: xóa %d ca đêm do thuật toán xếp, %d dòng luân phiên.%s Có thể chạy lại "Tạo lịch tự động".',
             $week->startOfWeek()->format('d/m'), $result['deleted_cells'], $result['deleted_rotation'],
             $kept ? ' Giữ nguyên: ' . implode(', ', array_map(fn ($k, $n) => "{$n} {$labels[$k]}", array_keys($kept), $kept)) . '.' : ''));
+    }
+
+    /** Bước 1 – Đề xuất nhân sự Night: thuật toán chọn người cho tuần, lưu ở trạng thái "đề xuất" để quản lý xem / sửa rồi duyệt. */
+    public function propose(Request $request)
+    {
+        $data = $request->validate(['week' => ['required', 'date']]);
+
+        try {
+            $ids = $this->service->storeProposal(CarbonImmutable::parse($data['week']), Auth::id());
+        } catch (InvalidArgumentException $e) {
+            return $this->httpResponse()->setError()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))->setMessage($e->getMessage());
+        }
+
+        return $this->httpResponse()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))
+            ->setMessage(sprintf('Đã đề xuất %d người luân phiên Night – kiểm tra, đổi người nếu cần rồi bấm "Duyệt".', count($ids)));
+    }
+
+    /** Hủy duyệt: danh sách về "đề xuất" để quản lý chọn lại người khác. */
+    public function unapprove(Request $request)
+    {
+        $data = $request->validate(['week' => ['required', 'date'], 'reason' => ['nullable', 'string', 'max:255']]);
+        $count = $this->service->unapprove(CarbonImmutable::parse($data['week']), Auth::id(), $data['reason'] ?? null);
+
+        return $this->httpResponse()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))
+            ->setMessage($count ? "Đã hủy duyệt {$count} người – chọn lại người rồi bấm \"Duyệt\"." : 'Tuần này chưa có danh sách đã duyệt.');
     }
 
     /** Bật / tắt tư cách luân phiên Night của một nhân viên. */
