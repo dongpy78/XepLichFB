@@ -29,6 +29,12 @@ class RestaurantRosterServiceProvider extends ServiceProvider
             ->loadMigrations()
             ->publishAssets();
 
+        // Logo / favicon mặc định của phần mềm (thay thương hiệu cũ VUTA CMS); quản lý đặt logo riêng ở Giao diện quản trị thì dùng logo đó.
+        config([
+            'core.base.general.logo' => '/vendor/core/plugins/restaurant-roster/images/logo.svg',
+            'core.base.general.favicon' => '/vendor/core/plugins/restaurant-roster/images/favicon.svg',
+        ]);
+
         if ($this->app->runningInConsole()) {
             $this->commands([BootstrapSchedulingCommand::class, LearnFromScheduleCommand::class]);
         }
