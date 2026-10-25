@@ -1,6 +1,8 @@
 <?php
 
 return [
+    // Tên người phát triển hiển thị ở dòng copyright trang quản trị / đăng nhập.
+    'author' => 'Van Dong',
     // Quy tắc kiểm tra xung đột (Bộ luật Lao động 2019).
     'rules' => [
         // Nghỉ tối thiểu giữa hai ca (Điều 109: ít nhất 12 giờ trước khi chuyển ca).

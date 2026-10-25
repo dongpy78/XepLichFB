@@ -35,6 +35,21 @@ class RestaurantRosterServiceProvider extends ServiceProvider
             'core.base.general.favicon' => '/vendor/core/plugins/restaurant-roster/images/favicon.svg',
         ]);
 
+        // Dòng copyright trang quản trị / đăng nhập kèm tên người phát triển (config author).
+        $this->app->booted(function (): void {
+            $author = trim((string) config('plugins.restaurant-roster.general.author'));
+            $translator = $this->app['translator'];
+
+            if ($author === '') {
+                return;
+            }
+
+            foreach (array_unique([$translator->getLocale(), $translator->getFallback(), 'en', 'vi']) as $locale) {
+                $translator->load('core/base', 'layouts', $locale); // nạp đủ file gốc trước, chỉ ghi đè một dòng
+                $translator->addLines(['layouts.copyright' => 'Copyright :year © :company · Phát triển bởi ' . e($author) . '. Version :version'], $locale, 'core/base');
+            }
+        });
+
         if ($this->app->runningInConsole()) {
             $this->commands([BootstrapSchedulingCommand::class, LearnFromScheduleCommand::class]);
         }

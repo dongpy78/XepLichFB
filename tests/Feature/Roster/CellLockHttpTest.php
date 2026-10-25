@@ -144,6 +144,9 @@ class CellLockHttpTest extends TestCase
         }
 
         $this->actingAs($manager)->getJson(route('roster.grid', ['week' => '2030-01-07']))->assertJson(['error' => false]);
+        // Dòng copyright có tên người phát triển; các dòng dịch khác của layouts vẫn còn.
+        $this->assertStringContainsString('Phát triển bởi Van Dong', trans('core/base::layouts.copyright', ['year' => 2026, 'company' => 'X', 'version' => '1']));
+        $this->assertNotSame('core/base::layouts.dashboard', trans('core/base::layouts.dashboard'));
 
         // Bảng Botble tải dữ liệu bằng POST tới chính trang danh sách: route danh sách OFF phải nhận POST như các bảng khác.
         $this->actingAs($manager)->post(route('roster.availability.index'))->assertOk();
