@@ -18,22 +18,23 @@
                 <div class="card-body">
                     <form method="POST" action="{{ route('roster.auto.run') }}" id="roster-auto-form">
                         @csrf
+                        <input type="hidden" name="from" value="{{ $week->toDateString() }}">
+                        <input type="hidden" name="to" value="{{ $week->copy()->addDays(6)->toDateString() }}">
                         <div class="mb-3">
-                            <label class="form-label">Phạm vi nhanh</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                @foreach ($presets as $label => [$from, $to])
-                                    <button type="button" class="btn btn-sm" data-preset-from="{{ $from }}" data-preset-to="{{ $to }}">{{ $label }}</button>
-                                @endforeach
+                            <label class="form-label">Tuần xếp lịch</label>
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <a class="btn btn-outline-secondary" href="{{ route('roster.auto.index', ['week' => $week->copy()->subWeek()->toDateString()]) }}" title="Tuần trước">‹</a>
+                                <div class="px-2 text-center flex-grow-1">
+                                    <div class="fw-bold fs-3">Tuần {{ $week->isoWeek() }} · {{ $week->format('d/m') }} – {{ $week->copy()->addDays(6)->format('d/m/Y') }}</div>
+                                    @if ($week->equalTo($currentWeek))<div class="small text-success">Tuần hiện tại</div>@endif
+                                </div>
+                                <a class="btn btn-outline-secondary" href="{{ route('roster.auto.index', ['week' => $week->copy()->addWeek()->toDateString()]) }}" title="Tuần sau">›</a>
                             </div>
-                        </div>
-                        <div class="row g-2 mb-3">
-                            <div class="col-6">
-                                <label class="form-label required" for="auto-from">Từ ngày</label>
-                                <input type="date" class="form-control" id="auto-from" name="from" value="{{ $range[0] ?? reset($presets)[0] }}" required>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label required" for="auto-to">Đến ngày</label>
-                                <input type="date" class="form-control" id="auto-to" name="to" value="{{ $range[1] ?? reset($presets)[1] }}" required>
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                @unless ($week->equalTo($currentWeek))
+                                    <a class="btn btn-sm btn-primary" href="{{ route('roster.auto.index', ['week' => $currentWeek->toDateString()]) }}">Tuần hiện tại</a>
+                                @endunless
+                                <a class="btn btn-sm" href="{{ route('roster.index', ['week' => $week->toDateString()]) }}"><x-core::icon name="ti ti-calendar" /> Xem tuần này ở Bảng xếp ca</a>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -69,8 +70,8 @@
                         </div>
                         <p class="form-hint mt-3 mb-0">
                             Kết quả chỉ là <strong>phương án</strong>: bạn xem, so sánh rồi mới bấm áp dụng. Lịch áp dụng luôn ở trạng thái nháp,
-                            không tự công bố. Ô đã khóa (OFF quản lý đã cho, ca đã xác nhận, tiệc BQ) không bao giờ bị thay đổi.
-                            Tạo lịch / Tối ưu lại chỉ chạy được khi kỳ lịch đã xác nhận <strong>đã nhập xong OFF</strong>.
+                            không tự công bố. Ô đã khóa (OFF quản lý đã cho, ca nhân viên xin, ca đã xác nhận, tiệc BQ) không bao giờ bị thay đổi.
+                            Ghi OFF và ca nhân viên xin ở Bảng xếp ca trước khi chạy.
                         </p>
                     </form>
                 </div>
@@ -130,13 +131,6 @@
     </div>
 
     <script>
-        document.querySelectorAll('[data-preset-from]').forEach(function (button) {
-            button.addEventListener('click', function () {
-                document.getElementById('auto-from').value = button.dataset.presetFrom;
-                document.getElementById('auto-to').value = button.dataset.presetTo;
-            });
-        });
-
         document.getElementById('roster-auto-form').addEventListener('submit', function (event) {
             var buttons = this.querySelectorAll('button[type=submit]');
             setTimeout(function () { buttons.forEach(function (b) { b.disabled = true; }); }, 0);

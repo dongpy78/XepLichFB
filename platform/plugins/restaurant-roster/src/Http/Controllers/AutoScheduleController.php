@@ -38,22 +38,21 @@ class AutoScheduleController extends BaseController
         $this->pageTitle('Tự động xếp lịch');
         Assets::addStylesDirectly('vendor/core/plugins/restaurant-roster/css/roster.css');
 
-        $thisMonday = Carbon::today()->startOfWeek(Carbon::MONDAY);
-        $nextMonday = $thisMonday->copy()->addWeek();
+        // Xếp lịch theo tuần: mặc định tuần đang xem ở Bảng xếp ca (lưu trong phiên), trượt sang tuần trước / tuần sau.
+        try {
+            $week = Carbon::parse($request->input('week') ?: ($request->input('from') ?: (session('roster.week') ?: 'today')))->startOfWeek(Carbon::MONDAY)->startOfDay();
+        } catch (\Throwable) {
+            $week = Carbon::today()->startOfWeek(Carbon::MONDAY);
+        }
+
+        session(['roster.week' => $week->toDateString()]);
 
         return view('plugins/restaurant-roster::auto.index', [
             'outlets' => Outlet::query()->wherePublished()->orderBy('order')->get(['id', 'name', 'code']),
             'runs' => Run::query()->latest()->limit(20)->get(),
-            'presets' => [
-                'Tuần này' => [$thisMonday->toDateString(), $thisMonday->copy()->addDays(6)->toDateString()],
-                'Tuần sau' => [$nextMonday->toDateString(), $nextMonday->copy()->addDays(6)->toDateString()],
-                'Tháng sau' => [Carbon::today()->addMonthNoOverflow()->startOfMonth()->toDateString(), Carbon::today()->addMonthNoOverflow()->endOfMonth()->toDateString()],
-                'Tháng này (còn lại)' => [Carbon::today()->toDateString(), Carbon::today()->endOfMonth()->toDateString()],
-            ],
+            'week' => $week,
+            'currentWeek' => Carbon::today()->startOfWeek(Carbon::MONDAY)->startOfDay(),
             'health' => $this->dataHealth(),
-            // Mở từ trang kỳ lịch: điền sẵn phạm vi của kỳ.
-            'range' => $request->filled(['from', 'to']) ? [(string) $request->input('from'), (string) $request->input('to')] : null,
-            'periods' => Period::query()->latest('start_date')->limit(6)->get(),
         ]);
     }
 

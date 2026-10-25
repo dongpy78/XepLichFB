@@ -197,6 +197,22 @@ class CellLockHttpTest extends TestCase
         $this->assertSame($before, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count(), 'Không tạo OFF');
     }
 
+    /** Tự động xếp lịch mở đúng tuần đang xem ở Bảng xếp ca, trượt tuần trước / sau; không còn chọn ngày. */
+    public function test_auto_page_follows_grid_week(): void
+    {
+        $manager = $this->user([], true);
+
+        $this->actingAs($manager)->getJson(route('roster.grid', ['week' => '2030-01-09']))->assertJson(['error' => false]);
+        $page = $this->actingAs($manager)->get(route('roster.auto.index'))->assertOk();
+        $page->assertSee('07/01 – 13/01/2030', false)->assertSee('name="from" value="2030-01-07"', false)->assertSee('name="to" value="2030-01-13"', false)
+            ->assertDontSee('type="date"', false);
+        $page->assertSee(route('roster.auto.index', ['week' => '2029-12-31']), false)->assertSee(route('roster.auto.index', ['week' => '2030-01-14']), false);
+
+        // Trượt sang tuần sau ở trang tự động → Bảng xếp ca mở lại tuần đó.
+        $this->actingAs($manager)->get(route('roster.auto.index', ['week' => '2030-01-14']))->assertOk()->assertSee('14/01 – 20/01/2030', false);
+        $this->actingAs($manager)->get(route('roster.index'))->assertOk()->assertSee('data-week="2030-01-14"', false);
+    }
+
     /** Ghi ca nhân viên xin (M6 / A2) trên bảng: ô được ghi ca và khóa như OFF xin; ô OFF đã cho không bị đè; chỉ ca được phép; cần quyền. */
     public function test_record_requested_shift_from_grid_selection(): void
     {

@@ -46,6 +46,10 @@ $(() => {
         $grid.html(data.html)
         state.week = data.week
         $('#roster-week-label').contents().last().replaceWith(` ${data.week_label}`)
+        // Nút "Tự động xếp lịch" mở đúng tuần đang xem.
+        $app.find('[data-auto-link]').each((_, link) => {
+            link.href = `${link.dataset.autoBase}?week=${data.week}`
+        })
         syncUrl()
     }
 

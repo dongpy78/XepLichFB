@@ -999,12 +999,14 @@ class RosterController extends BaseController
     protected function weekRange(Request $request): array
     {
         try {
-            $date = Carbon::parse($request->input('week') ?: 'today');
+            // Không chọn tuần: mở lại tuần đang làm việc gần nhất (bảng xếp ca / tự động xếp lịch dùng chung).
+            $date = Carbon::parse($request->input('week') ?: (session('roster.week') ?: 'today'));
         } catch (\Throwable) {
             $date = Carbon::today();
         }
 
         $weekStart = $date->copy()->startOfWeek(Carbon::MONDAY)->startOfDay();
+        session(['roster.week' => $weekStart->toDateString()]);
 
         return [$weekStart, $weekStart->copy()->addDays(6)];
     }

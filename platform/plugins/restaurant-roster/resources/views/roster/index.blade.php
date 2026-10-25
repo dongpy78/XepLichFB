@@ -46,7 +46,7 @@
                 @if ($canManage)
                     <div class="roster-toolbar__group">
                         @if (Auth::user()->hasPermission('roster.auto'))
-                            <a href="{{ route('roster.auto.index') }}" class="btn">
+                            <a href="{{ route('roster.auto.index', ['week' => $grid['weekStart']->toDateString()]) }}" class="btn" data-auto-link data-auto-base="{{ route('roster.auto.index') }}">
                                 <x-core::icon name="ti ti-wand" /> Tự động xếp lịch
                             </a>
                         @endif
