@@ -477,6 +477,24 @@ class SchedulingEngineTest extends TestCase
         $this->assertSame(5, $row['worked_days'], 'Sinh nhật là 1 trong 2 ngày OFF – vẫn làm đủ 5 ngày');
     }
 
+    /** Sinh nhật mặc định chỉ OFF đúng ngày đó: không bị tính "OFF lẻ", ngày OFF còn lại không buộc ghép cạnh sinh nhật. */
+    public function test_birthday_off_stands_alone_without_pairing_penalty(): void
+    {
+        $days = $this->days();
+        $problem = $this->problem(
+            $this->team(1, 7, self::GUSTO),
+            $this->dailyRequirements($days, self::GUSTO, self::M6, 5, 5),
+            ['hard' => [1 => [$this->day(3) => 'Sinh nhật (giả lập) – OFF theo quy định']], 'regular_off' => [1 => [$this->day(3) => true]]]
+        );
+
+        $result = $this->solve($problem);
+        $row = $result->employeeWorkload[array_search(1, array_column($result->employeeWorkload, 'employee_id'), true)];
+
+        $this->assertNull($this->shiftOf($result, 1, $this->day(3)));
+        $this->assertSame(5, $row['worked_days']);
+        $this->assertSame(0, $row['off_split'], 'Sinh nhật + 1 OFF khác không liền kề không bị phạt OFF lẻ');
+    }
+
     /** Ca cứng A2: xếp tự động không bao giờ đưa sang M6, kể cả khi M6 thiếu người. */
     public function test_fixed_shift_employee_is_only_auto_scheduled_on_fixed_shift(): void
     {

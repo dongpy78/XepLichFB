@@ -1505,12 +1505,23 @@ final class ScheduleState
 
         // OFF 2 ngày liền nhau (trong cùng tuần – không có tuần OFF thứ Hai + Chủ nhật) & hạn chế OFF ngày đông khách.
         // Chỉ xét ngày OFF do thuật toán chọn:
-        // ngày nhân viên tự xin OFF / nghỉ phép đã duyệt và ô quản lý đã khóa được miễn (sinh nhật thì không – OFF còn lại nên ghép cạnh).
-        $isOff = fn (int $k, int $i) => $k >= 0 && $k <= $last && $this->weekOf[$k] === $this->weekOf[$i]
+        // ngày nhân viên tự xin OFF / nghỉ phép đã duyệt và ô quản lý đã khóa được miễn.
+        // Sinh nhật (quản lý 25/10/2026): mặc định chỉ OFF đúng ngày sinh nhật – không ghép ngày OFF khác cạnh sinh nhật, ngày OFF còn lại
+        // của tuần đó xếp như bình thường và không bị tính "OFF lẻ"; quản lý muốn cho OFF thêm thì chỉnh tay.
+        $birthdays = $this->problem->regularOff[$employeeId] ?? [];
+        $birthdayWeeks = [];
+
+        foreach ($scope as $i) {
+            if (isset($birthdays[$this->dates[$i]])) {
+                $birthdayWeeks[$this->weekOf[$i]] = true;
+            }
+        }
+
+        $isOff = fn (int $k, int $i) => $k >= 0 && $k <= $last && $this->weekOf[$k] === $this->weekOf[$i] && ! isset($birthdays[$this->dates[$k]])
             && ($work[$k] === null && (isset($fixedRow[$k]) || $this->inScope[$k]));
 
         foreach ($scope as $i) {
-            if ($work[$i] || $this->isExcusedOff($employeeId, $i)) {
+            if ($work[$i] || $this->isExcusedOff($employeeId, $i) || isset($birthdays[$this->dates[$i]])) {
                 continue;
             }
 
@@ -1518,7 +1529,7 @@ final class ScheduleState
                 $m['busy_off']++;
             }
 
-            if ($employee->daysOffPerWeek >= 2 && ! $isOff($i - 1, $i) && ! $isOff($i + 1, $i)) {
+            if ($employee->daysOffPerWeek >= 2 && ! isset($birthdayWeeks[$this->weekOf[$i]]) && ! $isOff($i - 1, $i) && ! $isOff($i + 1, $i)) {
                 $m['off_split']++;
             }
         }
