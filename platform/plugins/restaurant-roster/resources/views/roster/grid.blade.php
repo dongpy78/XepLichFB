@@ -128,9 +128,6 @@
                                 @if ($employee->position->name || $nightRole || $row['night_rotation'] || $row['room_lead'] || $employee->is_trainee)
                                     <div class="roster-staff__meta">
                                         {{ $employee->position->name }}
-                                        @if ($row['section']['key'] !== 'o' . $employee->outlet_id && $employee->outlet->code)
-                                            <span title="Outlet chính">· {{ $employee->outlet->code }}</span>
-                                        @endif
                                         @if ($role = $nightRoles[$nightRole] ?? null)
                                             <span class="badge bg-dark-lt" title="{{ $role[1] }}">{{ $role[0] }}</span>
                                         @endif
