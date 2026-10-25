@@ -215,7 +215,7 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="text-warning">Chưa có nam waiter nào đủ điều kiện (cần năng lực Night ở Năng lực nhân viên).</td></tr>
+                                <tr><td colspan="6" class="text-warning">Chưa có nam waiter nào đủ điều kiện (nam, vị trí Waiter, outlet chính Villa / Gusto / Night, không có ca cứng).</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -275,14 +275,14 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
                 </div>
             @endif
             @if ($groups['ineligible']->isNotEmpty())
-                <div class="small mt-2"><strong>Có năng lực Night nhưng không được chọn luân phiên:</strong>
+                <div class="small mt-2"><strong>Có khai Ngoại lệ năng lực Night nhưng không được chọn luân phiên:</strong>
                     @foreach ($groups['ineligible'] as $row)
                         <div>• {{ $person($row['employee']) }} – {{ $row['reason'] }} <a href="{{ route('roster.employees.edit', $row['employee']->getKey()) }}">sửa hồ sơ</a></div>
                     @endforeach
                 </div>
             @endif
             @if ($groups['not_skilled']->isNotEmpty())
-                <div class="small text-muted mt-2">Chưa có năng lực Night (không được chọn): {{ $groups['not_skilled']->pluck('name')->implode(', ') }}</div>
+                <div class="small text-muted mt-2">Không phải Waiter, chưa khai Ngoại lệ năng lực Night (không được chọn): {{ $groups['not_skilled']->pluck('name')->implode(', ') }}</div>
             @endif
         </div>
     </div>

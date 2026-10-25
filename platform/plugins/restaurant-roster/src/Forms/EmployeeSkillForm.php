@@ -29,7 +29,7 @@ class EmployeeSkillForm extends FormAbstract
                 ->choices(['' => 'Mọi ca của outlet'] + ShiftTemplate::query()->orderBy('order')->get()->mapWithKeys(fn ($t) => [$t->id => "{$t->code} ({$t->time_range})"])->all()))
             ->add('level', SelectField::class, SelectFieldOption::make()->label('Mức')->required()->colspan(1)
                 ->choices(['primary' => 'Chuyên trách – ưu tiên giữ ở ca/outlet này', 'eligible' => 'Đủ điều kiện thay thế'])
-                ->helperText('Không có dòng năng lực = KHÔNG đủ điều kiện, thuật toán không bao giờ xếp.'))
+                ->helperText('Mặc định năng lực tự suy từ hồ sơ (outlet chính, nữ waiter → Lobby, nam waiter → Night). Chỉ khai dòng này khi cho làm thêm outlet / ca ngoài mặc định.'))
             ->add('is_fixed', SelectField::class, SelectFieldOption::make()->label('Ca cứng')->colspan(1)->defaultValue(0)
                 ->choices([0 => 'Không', 1 => 'Có – chỉ được xếp vào các ca cứng của mình (hoặc OFF)']))
             ->add('note', TextField::class, TextFieldOption::make()->label('Ghi chú')->maxLength(255)->colspan(2));

@@ -97,8 +97,8 @@
                         <span>Nhân viên chưa khai báo giới tính</span>
                         <span class="badge {{ $health['no_gender'] ? 'bg-warning' : 'bg-success' }} text-white">{{ $health['no_gender'] }}</span>
                     </a>
-                    <a href="{{ route('roster.skills.index') }}" class="list-group-item list-group-item-action d-flex justify-content-between">
-                        <span>Nhân viên chưa có năng lực (không được xếp)</span>
+                    <a href="{{ route('roster.employees.index') }}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                        <span>Nhân viên chưa có outlet chính (không được xếp)</span>
                         <span class="badge {{ $health['no_skills'] ? 'bg-warning' : 'bg-success' }} text-white" title="{{ implode(', ', $health['no_skills']) }}">{{ count($health['no_skills']) }}</span>
                     </a>
                     <a href="{{ route('roster.requirements.index') }}" class="list-group-item list-group-item-action d-flex justify-content-between">

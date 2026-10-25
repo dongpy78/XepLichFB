@@ -202,7 +202,10 @@ class AutoScheduleController extends BaseController
     {
         return [
             'no_gender' => Employee::query()->wherePublished()->whereNull('gender')->count(),
-            'no_skills' => Employee::query()->wherePublished()->where('auto_schedule', true)->whereDoesntHave('skills')->pluck('name')->all(),
+            // Năng lực tự suy từ hồ sơ: người chưa có outlet chính mới không được xếp.
+            'no_skills' => config('plugins.restaurant-roster.general.scheduling.skills_from_profile', true)
+                ? Employee::query()->wherePublished()->where('auto_schedule', true)->whereNull('outlet_id')->whereDoesntHave('skills')->pluck('name')->all()
+                : Employee::query()->wherePublished()->where('auto_schedule', true)->whereDoesntHave('skills')->pluck('name')->all(),
             'unconfirmed_requirements' => StaffingRequirement::query()->where('is_confirmed', false)->count(),
             'requirements' => StaffingRequirement::query()->count(),
             'pending_requests' => AvailabilityRequest::query()->where('status', 'pending')->whereDate('date_to', '>=', today())->count(),

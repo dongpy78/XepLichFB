@@ -97,7 +97,8 @@ class LobbyCoverageRuleTest extends TestCase
 
         $result = (new \Botble\RestaurantRoster\Scheduling\HeuristicSolver())->solve($problem);
         $ohL = array_filter($result->assignments, fn ($r) => $r['employee_id'] === $staff['oh']->getKey() && $r['shift_id'] === $templates['OH']->getKey() && $r['support']);
-        $m9 = array_filter($result->assignments, fn ($r) => $r['employee_id'] === $staff['m6']->getKey() && $r['shift_id'] === $templates['M9']->getKey());
+        // Năng lực từ hồ sơ: cả 2 nữ waiter Cam Ranh (CR1, CR2) đều làm được M9(L).
+        $m9 = array_filter($result->assignments, fn ($r) => in_array($r['employee_id'], [$staff['m6']->getKey(), $staff['a2']->getKey()], true) && $r['shift_id'] === $templates['M9']->getKey());
 
         $this->assertGreaterThanOrEqual(4, count($ohL), 'Nữ waiter Nha Trang được xếp OH(L)');
         $this->assertGreaterThanOrEqual(4, count($m9), 'Nữ waiter Cam Ranh được xếp M9(L)');
@@ -153,7 +154,9 @@ class LobbyCoverageRuleTest extends TestCase
         $from = Carbon::parse(self::DATE);
         $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['history_weeks' => 8]);
 
-        $this->assertSame([$staff['oh']->getKey() => $templates['OH']->getKey(), $staff['m6']->getKey() => $templates['M9']->getKey()], $problem->lobbyPreferred);
+        // CR2 không khai dòng năng lực Lobby nhưng là nữ waiter Cam Ranh → năng lực từ hồ sơ: ưu tiên M9(L).
+        $this->assertSame([$staff['oh']->getKey() => $templates['OH']->getKey(), $staff['m6']->getKey() => $templates['M9']->getKey(),
+            $staff['a2']->getKey() => $templates['M9']->getKey()], $problem->lobbyPreferred);
         $this->assertSame(8, $problem->supportHistory[$staff['m6']->getKey()]['M9(L)'], 'Lượt quy về tuần đi làm: 2 lượt / 2 tuần ≈ 8 lượt / 8 tuần');
 
         $values = app(\Botble\RestaurantRoster\Services\RosterAssigner::class)->values($staff['m6'], $from, ['kind' => Shift::KIND_SHIFT, 'template' => $templates['M9'], 'tags' => []]);

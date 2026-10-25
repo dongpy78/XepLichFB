@@ -105,6 +105,7 @@ class NightStaffService
     {
         $weekStart = CarbonImmutable::parse($week ?? CarbonImmutable::today())->startOfWeek();
         $skilled = array_flip($this->nightSkilledIds());
+        $fromProfile = (bool) config('plugins.restaurant-roster.general.scheduling.skills_from_profile', true);
         $sources = $this->rotationOutletIds();
         $roomLeads = app(RoomServiceStaffService::class)->leadIds($weekStart, $weekStart->addDays(6));
         $employees = Employee::query()->where('status', BaseStatusEnum::PUBLISHED)->with(['outlet', 'position', 'scheduleGroup', 'fixedShift'])->orderBy('code')->get();
@@ -123,6 +124,15 @@ class NightStaffService
             };
         };
         $profile = $employees->filter(fn (Employee $e) => $blocker($e) === null);
+
+        // Năng lực tự suy từ hồ sơ: nam waiter thuộc nguồn luân phiên được coi là làm được Night, không cần khai dòng năng lực.
+        if ($fromProfile) {
+            foreach ($profile as $e) {
+                if ($this->isMaleWaiter($e)) {
+                    $skilled[(int) $e->getKey()] = true;
+                }
+            }
+        }
 
         return [
             // Night cứng = ca cứng là ca đêm (quản lý chọn ở mục Ca cứng của nhân viên).

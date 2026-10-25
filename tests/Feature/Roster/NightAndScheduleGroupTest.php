@@ -218,9 +218,33 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame(0, (int) ($result->solverMetadata['objective']['hard'] ?? 0));
     }
 
+    /** Năng lực tự suy từ hồ sơ (mặc định): nam waiter Villa / Gusto / Night không cần dòng năng lực Night vẫn vào luân phiên và làm được ca N. */
+    public function test_rotation_pool_from_profile_without_night_skill_rows(): void
+    {
+        $people = $this->restaurants();
+        $this->nightSkill($this->employee('NC1', 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]));
+        $service = app(NightStaffService::class);
+        $service->setRotationEnabled($people['V3'], false, 1, 'Xin tạm nghỉ luân phiên');
+
+        $groups = $service->groups(Carbon::parse(self::WEEK));
+        $rotation = $groups['rotation']->pluck('code')->all();
+
+        $this->assertContains('G4', $rotation, 'Nam waiter chưa khai năng lực Night vẫn được luân phiên');
+        $this->assertNotContains('V3', $rotation, 'Đã tắt luân phiên thì không chọn');
+        $this->assertNotContains('NC1', $rotation);
+        $this->assertCount(0, $groups['not_skilled']);
+
+        $problem = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $spec = collect($problem->employees)->first(fn ($e) => $e->id === $people['G4']->getKey());
+        $night = \Botble\RestaurantRoster\Models\Outlet::query()->where('code', 'NIGHT')->value('id');
+        $this->assertNotNull($spec->skillLevel((int) $night, $this->templates['N']->getKey()), 'Người luân phiên làm được ca N tại Night');
+        $this->assertNotNull($spec->skillLevel((int) $people['G4']->outlet_id, $this->templates['M6']->getKey()), 'Làm được ca của outlet chính');
+    }
+
     /** 9.1: danh sách luân phiên loại Night cứng, Room Service chuyên trách, người đã tắt luân phiên; nhận cả nam waiter outlet Night. */
     public function test_rotation_pool_excludes_core_room_service_and_disabled(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.skills_from_profile' => false]); // chỉ người có dòng năng lực Night
         $people = $this->restaurants();
         $this->nightSkill($this->employee('NC1', 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]));
         $this->nightSkill($this->employee('NW1', 'NIGHT'));
@@ -267,6 +291,7 @@ class NightAndScheduleGroupTest extends TestCase
     /** 9.17: đề xuất nhiều tuần liền (chưa duyệt) chia đều lượt Night cho mọi người đủ điều kiện. */
     public function test_rotation_is_fair_over_several_weeks(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.skills_from_profile' => false]); // chỉ người có dòng năng lực Night
         $this->restaurants();
         $plan = app(NightStaffService::class)->planFor(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addWeeks(3)->subDay());
         $counts = [];
@@ -488,6 +513,7 @@ class NightAndScheduleGroupTest extends TestCase
     /** 9.11: không chọn người mà outlet nguồn sẽ thiếu nam waiter tối thiểu – nêu rõ lý do. */
     public function test_rotation_skips_people_whose_outlet_would_fall_below_minimum(): void
     {
+        config(['plugins.restaurant-roster.general.scheduling.skills_from_profile' => false]); // chỉ người có dòng năng lực Night
         config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
         $this->restaurants(villaMales: 3);
         $proposal = app(NightStaffService::class)->propose(Carbon::parse(self::WEEK));

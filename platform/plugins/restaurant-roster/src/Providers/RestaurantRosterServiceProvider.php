@@ -172,7 +172,7 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'id' => 'cms-plugins-restaurant-roster-skills',
                     'priority' => 7,
                     'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Năng lực nhân viên',
+                    'name' => 'Ngoại lệ năng lực',
                     'icon' => 'ti ti-certificate',
                     'route' => 'roster.skills.index',
                     'permissions' => ['roster.settings'],

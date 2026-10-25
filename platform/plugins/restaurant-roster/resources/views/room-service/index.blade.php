@@ -51,7 +51,7 @@
                         @endforelse
                     @endforeach
                     @if ($skillOnly->isNotEmpty())
-                        <div class="fw-semibold mt-2">Có năng lực Room Service (khai ở Năng lực nhân viên)</div>
+                        <div class="fw-semibold mt-2">Có khai Ngoại lệ năng lực Room Service</div>
                         <div>{{ $skillOnly->map(fn ($e) => $person($e))->implode('; ') }}</div>
                     @endif
                 </div>

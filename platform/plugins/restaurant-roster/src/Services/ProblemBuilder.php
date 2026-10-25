@@ -106,6 +106,9 @@ class ProblemBuilder
 
         $specs = [];
         $decisionIds = [];
+        $fromProfile = (bool) config('plugins.restaurant-roster.general.scheduling.skills_from_profile', true);
+        $nightTemplateIds = $fromProfile ? $nightStaff->nightTemplates()->modelKeys() : [];
+        $roomOutletKey = $roomOutletId ? (int) $roomOutletId : null;
 
         foreach ($employees as $employee) {
             $skills = [];
@@ -118,6 +121,12 @@ class ProblemBuilder
                 if ($skill->is_fixed) {
                     $fixed[] = $key;
                 }
+            }
+
+            // Năng lực mặc định từ hồ sơ (skills_from_profile): làm được mọi ca của outlet chính (quản lý vẫn chỉ tự xếp M6 / A2;
+            // ca nào được tự xếp vẫn theo auto_shift_codes). Room Service vẫn theo module Nhân sự Room Service.
+            if ($fromProfile && $employee->outlet_id && (int) $employee->outlet_id !== $roomOutletKey) {
+                $skills["{$employee->outlet_id}:0"] ??= EmployeeSpec::PRIMARY;
             }
 
             // Ca cứng trong hồ sơ: thuật toán chỉ xếp vào ca này, tại các outlet có năng lực làm ca đó
@@ -164,6 +173,27 @@ class ProblemBuilder
                     && ($rule['gender'] === null || $employee->gender === $rule['gender'])
                     && (! $rule['positions'] || in_array($positionNames[(int) $employee->position_id] ?? '', $rule['positions'], true))) {
                     $skills["{$childId}:0"] ??= EmployeeSpec::PRIMARY;
+                }
+            }
+
+            if ($fromProfile) {
+                $position = $positionNames[(int) $employee->position_id] ?? '';
+                $isManagerLevel = isset($managerPositions[(int) $employee->position_id]);
+
+                // Nữ waiter outlet nhà hàng → hỗ trợ Lobby (L); OH(L) / M9(L) vẫn lọc theo khu vực sống của mẫu ca.
+                if ($stationId && $employee->gender === 'female' && ! $isManagerLevel && $employee->outlet_id
+                    && ! in_array((int) $employee->outlet_id, [(int) $stationId, $roomOutletKey], true) && ! isset($childStaff[(int) $employee->outlet_id])
+                    && (! $femaleStaffPositions || in_array($position, $femaleStaffPositions, true))) {
+                    $skills["{$stationId}:0"] ??= EmployeeSpec::ELIGIBLE;
+                }
+
+                // Nam waiter trong danh sách luân phiên Night → làm được ca đêm ở outlet Night.
+                if (isset($rotationIds[$employee->getKey()])) {
+                    foreach ($nightOutletIds as $o) {
+                        foreach ($nightTemplateIds as $t) {
+                            $skills["{$o}:{$t}"] ??= EmployeeSpec::ELIGIBLE;
+                        }
+                    }
                 }
             }
 

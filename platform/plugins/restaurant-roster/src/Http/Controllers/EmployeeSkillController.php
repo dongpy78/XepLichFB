@@ -36,6 +36,6 @@ class EmployeeSkillController extends RosterCrudController
 
     protected function title(): string
     {
-        return 'Năng lực nhân viên';
+        return 'Ngoại lệ năng lực';
     }
 }
