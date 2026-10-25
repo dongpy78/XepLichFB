@@ -16,6 +16,7 @@
         data-off-remove-url="{{ route('roster.off-remove') }}"
         data-review-url="{{ route('roster.review') }}"
         data-off-record-url="{{ route('roster.off-record') }}"
+        data-shift-request-url="{{ route('roster.shift-request') }}"
         data-week="{{ $grid['weekStart']->toDateString() }}"
     >
         <div class="card mb-3">
@@ -57,8 +58,8 @@
                             </button>
                         @endif
                         @if (Auth::user()->hasPermission('roster.approve'))
-                            <button type="button" class="btn btn-outline-secondary" data-off-select title="Bấm vào các ô cần cho OFF (nhiều người, nhiều ngày; giữ Shift để chọn liền nhiều ngày của một người), rồi bấm Ghi OFF & khóa">
-                                <x-core::icon name="ti ti-calendar-off" /> Ghi OFF
+                            <button type="button" class="btn btn-outline-secondary" data-off-select title="Bấm vào các ô cần ghi (nhiều người, nhiều ngày; giữ Shift để chọn liền nhiều ngày của một người), chọn OFF hoặc ca nhân viên xin (M6 / A2), rồi bấm Ghi & khóa">
+                                <x-core::icon name="ti ti-calendar-off" /> Ghi OFF / ca xin
                             </button>
                         @endif
                         <button type="button" class="btn" data-roster-action="copy">
@@ -78,15 +79,23 @@
         @if ($canManage && Auth::user()->hasPermission('roster.approve'))
             <div id="roster-off-bar" class="roster-off-bar d-none">
                 <div class="roster-off-bar__inner">
-                    <strong><x-core::icon name="ti ti-calendar-off" /> Ghi OFF:</strong>
-                    <span id="roster-off-count">Bấm vào các ô cần cho OFF</span>
-                    <select class="form-select form-select-sm" id="roster-off-type" aria-label="Loại OFF">
-                        @foreach (config('plugins.restaurant-roster.general.availability_types', []) as $code => $label)
-                            <option value="{{ $code }}">{{ $label }}</option>
-                        @endforeach
+                    <strong><x-core::icon name="ti ti-calendar-off" /> Ghi OFF / ca xin:</strong>
+                    <span id="roster-off-count">Bấm vào các ô cần ghi</span>
+                    @php($requestCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.request_shift_codes', ['M6', 'A2'])))
+                    <select class="form-select form-select-sm" id="roster-off-type" aria-label="Ghi OFF hoặc ca xin">
+                        <optgroup label="OFF">
+                            @foreach (config('plugins.restaurant-roster.general.availability_types', []) as $code => $label)
+                                <option value="{{ $code }}">{{ $label }}</option>
+                            @endforeach
+                        </optgroup>
+                        <optgroup label="Ca nhân viên xin (khóa)">
+                            @foreach ($templates->filter(fn ($t) => in_array(strtoupper((string) $t->code), $requestCodes, true)) as $template)
+                                <option value="shift:{{ $template->id }}">Xin ca {{ $template->code }} ({{ $template->time_range }})</option>
+                            @endforeach
+                        </optgroup>
                     </select>
                     <input type="text" class="form-control form-control-sm" id="roster-off-reason" maxlength="255" placeholder="Lý do (tùy chọn)">
-                    <button type="button" class="btn btn-sm btn-primary" data-off-save disabled>Ghi OFF & khóa</button>
+                    <button type="button" class="btn btn-sm btn-primary" data-off-save disabled>Ghi & khóa</button>
                     <button type="button" class="btn btn-sm" data-off-cancel>Hủy</button>
                 </div>
                 <div class="form-hint mt-1">Giữ <kbd>Shift</kbd> rồi bấm để chọn liền nhiều ngày của cùng một người. Ca đã khóa không bị đè – ô sẽ được đánh dấu "cần xem xét".</div>
@@ -135,7 +144,7 @@
                 <span class="roster-legend__item"><span class="roster-dot roster-dot--published"></span> Đã công bố</span>
                 <span class="roster-legend__item"><x-core::icon name="ti ti-alert-triangle" class="text-warning" /> Cảnh báo xung đột</span>
                 <span class="roster-legend__item"><span class="roster-mini roster-mini--off is-locked is-recorded-off roster-legend__sample"><span class="roster-mini__code">OFF</span></span> OFF quản lý đã cho (khóa)</span>
-                <span class="roster-legend__item"><span class="roster-mini roster-mini--sky is-locked roster-legend__sample"><span class="roster-mini__code">M6</span></span> Ca đã xác nhận (khóa)</span>
+                <span class="roster-legend__item"><span class="roster-mini roster-mini--sky is-locked roster-legend__sample"><span class="roster-mini__code">M6</span></span> Ca đã xác nhận / ca nhân viên xin (khóa)</span>
                 <span class="roster-legend__item"><span class="roster-mini roster-mini--sand needs-review roster-legend__sample"><span class="roster-mini__code">A2</span></span> Cần xem xét</span>
             </div>
         </div>
@@ -218,6 +227,19 @@
                                 <div class="text-muted">Chưa có mẫu ca. <a href="{{ route('roster.shift-templates.create') }}">Tạo mẫu ca</a></div>
                             @endforelse
                         </div>
+
+                        @if (Auth::user()->hasPermission('roster.approve'))
+                            @php($requestCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.request_shift_codes', ['M6', 'A2'])))
+                            <div class="mt-3 mb-2 fw-semibold">Nhân viên xin ca (khóa)</div>
+                            <div class="roster-picker roster-picker--inline">
+                                @foreach ($templates->filter(fn ($t) => in_array(strtoupper((string) $t->code), $requestCodes, true)) as $template)
+                                    <button type="button" class="roster-picker__item" data-shift-request="{{ $template->id }}" title="Nhân viên xin ca {{ $template->code }} (nhắn trong nhóm): ghi ca và khóa – thuật toán không đổi">
+                                        <span class="roster-chip"><x-core::icon name="ti ti-lock" /> {{ $template->code }}</span>
+                                        <span class="roster-picker__name">Xin ca {{ $template->code }} (khóa)</span>
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
 
                         <div class="mt-3 mb-2 fw-semibold">Nghỉ</div>
                         <div class="roster-picker roster-picker--inline">

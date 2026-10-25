@@ -188,7 +188,7 @@ $(() => {
         })
 
         const count = offSelection.size
-        $('#roster-off-count').text(count ? `Đã chọn ${count} ô` : 'Bấm vào các ô cần cho OFF')
+        $('#roster-off-count').text(count ? `Đã chọn ${count} ô` : 'Bấm vào các ô cần ghi')
         $offBar.find('[data-off-save]').prop('disabled', !count)
     }
 
@@ -212,7 +212,10 @@ $(() => {
         }
     }
 
-    const recordOff = (cells, type, reason) => request('POST', urls.offRecordUrl, { cells, off_type: type, off_reason: reason })
+    // Giá trị "shift:<id>" = ca nhân viên xin (M6 / A2) → ghi ca & khóa; còn lại = loại OFF.
+    const recordOff = (cells, type, reason) => String(type).startsWith('shift:')
+        ? request('POST', urls.shiftRequestUrl, { cells, shift_template_id: String(type).slice(6), reason })
+        : request('POST', urls.offRecordUrl, { cells, off_type: type, off_reason: reason })
 
     $app.on('click', '[data-off-select]', () => setOffSelecting(!offSelecting))
     $offBar.on('click', '[data-off-cancel]', () => setOffSelecting(false))
@@ -268,6 +271,19 @@ $(() => {
         }
 
         recordOff([{ employee_id: currentCell.employee_id, date: currentCell.date }], 'off_request', $('#roster-cell-note').val()).done((response) => {
+            if (!response.error) {
+                $modal.modal('hide')
+            }
+        })
+    })
+
+    // Trong hộp xếp ca: nhân viên xin ca M6 / A2 ngày này → ghi ca & khóa.
+    $modal.on('click', '[data-shift-request]', (event) => {
+        if (!currentCell) {
+            return
+        }
+
+        recordOff([{ employee_id: currentCell.employee_id, date: currentCell.date }], `shift:${$(event.currentTarget).data('shift-request')}`, $('#roster-cell-note').val()).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
             }

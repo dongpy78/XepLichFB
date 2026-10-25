@@ -100,8 +100,11 @@ return [
         // Khoảng đánh giá công bằng (số tuần lịch sử): luân phiên OH(L), M9(L), M6(L), A2(L), Kid-Deline, ca đêm và cân bằng sáng / chiều.
         // Quản lý chọn lại được khi chạy xếp lịch (4 hoặc 8 tuần).
         'history_weeks' => 4,
-        // Chỉ chạy "Tạo lịch tự động" / "Tối ưu lại" khi kỳ lịch bao trọn phạm vi đã được xác nhận "đã nhập xong OFF".
-        'require_off_confirmation' => true,
+        // Xếp lịch theo tuần (quản lý 25/10/2026): bỏ bước "Kỳ lịch & OFF" – OFF và ca nhân viên xin ghi thẳng trên Bảng xếp ca rồi chạy xếp tự động.
+        // true = như trước: chỉ chạy khi kỳ lịch bao trọn phạm vi đã xác nhận "đã nhập xong OFF".
+        'require_off_confirmation' => false,
+        // Ca nhân viên xin (nhắn trong nhóm): quản lý ghi trên Bảng xếp ca và khóa giống OFF xin.
+        'request_shift_codes' => ['M6', 'A2'],
         // Giới hạn tăng ca / tháng (Bộ luật Lao động 2019, Điều 107: không quá 40 giờ/tháng).
         'max_monthly_overtime_hours' => 40,
     ],

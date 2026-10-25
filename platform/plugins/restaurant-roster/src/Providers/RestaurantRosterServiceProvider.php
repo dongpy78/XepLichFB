@@ -142,15 +142,6 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'permissions' => ['roster.index'],
                 ])
                 ->registerItem([
-                    'id' => 'cms-plugins-restaurant-roster-periods',
-                    'priority' => 0,
-                    'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Kỳ lịch & OFF',
-                    'icon' => 'ti ti-calendar-check',
-                    'route' => 'roster.periods.index',
-                    'permissions' => ['roster.index'],
-                ])
-                ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster-requirements',
                     'priority' => 6,
                     'parent_id' => 'cms-plugins-restaurant-roster',

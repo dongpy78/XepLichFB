@@ -77,20 +77,6 @@
             </div>
 
             <div class="card mt-3">
-                <div class="card-header d-flex justify-content-between"><h3 class="card-title">Kỳ lịch</h3><a href="{{ route('roster.periods.index') }}" class="btn btn-sm">Kỳ lịch & OFF</a></div>
-                <div class="list-group list-group-flush">
-                    @forelse ($periods as $period)
-                        <a href="{{ route('roster.periods.show', $period->id) }}" class="list-group-item list-group-item-action d-flex justify-content-between">
-                            <span>{{ $period->name }} <span class="text-muted small">{{ $period->start_date->format('d/m') }} – {{ $period->end_date->format('d/m') }}</span></span>
-                            <span class="badge {{ $period->off_confirmed_at ? 'bg-success' : 'bg-warning' }} text-white">{{ $period->off_confirmed_at ? 'Đã xong OFF' : 'Đang nhập OFF' }}</span>
-                        </a>
-                    @empty
-                        <div class="list-group-item text-muted">Chưa có kỳ lịch. Tạo kỳ và xác nhận nhập xong OFF trước khi xếp tự động.</div>
-                    @endforelse
-                </div>
-            </div>
-
-            <div class="card mt-3">
                 <div class="card-header"><h3 class="card-title">Kiểm tra dữ liệu đầu vào</h3></div>
                 <div class="list-group list-group-flush">
                     <a href="{{ route('roster.employees.index') }}" class="list-group-item list-group-item-action d-flex justify-content-between">

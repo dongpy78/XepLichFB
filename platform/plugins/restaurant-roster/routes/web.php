@@ -36,6 +36,7 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
 
             // Gỡ OFF đã cho / xử lý ô "cần xem xét": quyền ghi / gỡ OFF.
             Route::post('off-record', ['as' => 'off-record', 'uses' => 'RosterController@offRecord', 'permission' => 'roster.approve']);
+            Route::post('shift-request', ['as' => 'shift-request', 'uses' => 'RosterController@shiftRequest', 'permission' => 'roster.approve']);
             Route::post('off-remove', ['as' => 'off-remove', 'uses' => 'RosterController@offRemove', 'permission' => 'roster.approve']);
             Route::post('review', ['as' => 'review', 'uses' => 'RosterController@review', 'permission' => 'roster.approve']);
 

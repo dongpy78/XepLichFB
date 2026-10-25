@@ -181,6 +181,7 @@
                                         $lockLabels = [
                                             \Botble\RestaurantRoster\Models\Shift::LOCK_OFF_REQUEST => 'OFF quản lý đã cho – đã khóa',
                                             \Botble\RestaurantRoster\Models\Shift::LOCK_CONFIRMED => 'Ca đã xác nhận – đã khóa',
+                                            \Botble\RestaurantRoster\Models\Shift::LOCK_SHIFT_REQUEST => 'Ca nhân viên xin – đã khóa',
                                             \Botble\RestaurantRoster\Models\Shift::LOCK_BQ => 'Tiệc BQ – đã khóa',
                                         ];
                                         $tooltip[] = ($shift->status === 'published' ? 'Đã công bố' : 'Nháp')

@@ -97,6 +97,8 @@ class CellLockHttpTest extends TestCase
     /** Kỳ lịch: tổng hợp OFF có cảnh báo; chưa xác nhận nhập xong OFF thì không chạy xếp tự động, xác nhận rồi thì chạy được. */
     public function test_period_summary_and_off_confirmation_gate(): void
     {
+        // Bước "Kỳ lịch & OFF" đã bỏ mặc định (xếp theo tuần) – vẫn giữ được khi bật lại cấu hình.
+        config(['plugins.restaurant-roster.general.scheduling.require_off_confirmation' => true]);
         config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
         $outlet = Outlet::query()->firstOrFail();
         $m6 = ShiftTemplate::query()->firstOrFail();
@@ -193,6 +195,47 @@ class CellLockHttpTest extends TestCase
         $denied = $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.off-record'), ['cells' => [['employee_id' => $other->getKey(), 'date' => '2030-01-12']], 'off_type' => 'off_request']);
         $this->assertTrue($denied->status() >= 400 || $denied->json('error') === true, 'Bị chặn bởi phân quyền');
         $this->assertSame($before, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count(), 'Không tạo OFF');
+    }
+
+    /** Ghi ca nhân viên xin (M6 / A2) trên bảng: ô được ghi ca và khóa như OFF xin; ô OFF đã cho không bị đè; chỉ ca được phép; cần quyền. */
+    public function test_record_requested_shift_from_grid_selection(): void
+    {
+        $m6 = ShiftTemplate::query()->where('code', 'M6')->firstOrFail();
+        $oh = ShiftTemplate::query()->create(['code' => 'OH', 'name' => 'OH', 'start_time' => '08:45:00', 'end_time' => '16:45:00', 'status' => 'published']);
+        $cells = [
+            ['employee_id' => $this->employee->getKey(), 'date' => '2030-01-08'], // OFF đã cho (setUp) → giữ nguyên
+            ['employee_id' => $this->employee->getKey(), 'date' => '2030-01-09'],
+            ['employee_id' => $this->employee->getKey(), 'date' => '2030-01-10'],
+        ];
+
+        $response = $this->actingAs($this->user([], true))->postJson(route('roster.shift-request'), ['cells' => $cells, 'shift_template_id' => $m6->getKey(), 'reason' => 'Zalo', 'week' => '2030-01-07']);
+        $response->assertJson(['error' => false]);
+        $this->assertStringContainsString('Giữ nguyên ô đang khóa', (string) $response->json('message'));
+
+        foreach (['2030-01-09', '2030-01-10'] as $date) {
+            $shift = Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', $date)->firstOrFail();
+            $this->assertSame([Shift::KIND_SHIFT, $m6->getKey(), true, Shift::LOCK_SHIFT_REQUEST, (int) $this->employee->outlet_id],
+                [$shift->kind, (int) $shift->shift_template_id, (bool) $shift->is_locked, $shift->lock_reason, (int) $shift->outlet_id]);
+            $this->assertStringContainsString('Nhân viên xin ca M6', (string) $shift->note);
+        }
+
+        $this->assertTrue(Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-08')->first()->isRecordedOff(), 'OFF đã cho giữ nguyên');
+
+        // Ca không thuộc request_shift_codes (OH) bị từ chối.
+        $this->actingAs($this->user([], true))->postJson(route('roster.shift-request'), ['cells' => [['employee_id' => $this->employee->getKey(), 'date' => '2030-01-11']], 'shift_template_id' => $oh->getKey()])
+            ->assertStatus(422);
+
+        // Người không có quyền ghi OFF / ca xin bị chặn.
+        $denied = $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.shift-request'), ['cells' => [['employee_id' => $this->employee->getKey(), 'date' => '2030-01-12']], 'shift_template_id' => $m6->getKey()]);
+        $this->assertTrue($denied->status() >= 400 || $denied->json('error') === true, 'Bị chặn bởi phân quyền');
+        $this->assertNull(Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-12')->first());
+
+        // Xếp tự động chạy theo tuần, không cần kỳ lịch; ca xin đã khóa được giữ nguyên.
+        $this->actingAs($this->user([], true))->postJson(route('roster.auto.run'), ['from' => '2030-01-07', 'to' => '2030-01-13', 'type' => 'generate'])
+            ->assertJson(['error' => false]);
+        $run = \Botble\RestaurantRoster\Models\Run::query()->latest('id')->firstOrFail();
+        $cell = collect($run->proposal['assignments'] ?? [])->first(fn ($r) => (int) $r['employee_id'] === $this->employee->getKey() && $r['date'] === '2030-01-09');
+        $this->assertSame($m6->getKey(), (int) ($cell['shift_id'] ?? 0), 'Ca xin đã khóa: thuật toán giữ nguyên');
     }
 
     /** Cấp quản lý theo cờ của vị trí: thuật toán nhận đúng, xếp tay ngoài M6 / A2 thì ô tự khóa, bảng báo lệch sáng / chiều. */

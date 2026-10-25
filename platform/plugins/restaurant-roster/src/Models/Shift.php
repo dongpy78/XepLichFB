@@ -20,6 +20,8 @@ class Shift extends BaseModel
     public const LOCK_CONFIRMED = 'confirmed';
     public const LOCK_BQ = 'bq';
     public const LOCK_MANUAL = 'manual';
+    // Ca nhân viên xin (M6 / A2…) – quản lý ghi trên bảng xếp ca và khóa như OFF xin.
+    public const LOCK_SHIFT_REQUEST = 'shift_request';
 
     // Trạng thái ô (suy ra, xem cellState()).
     public const STATE_OFF_LOCKED = 'off_locked';

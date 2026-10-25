@@ -633,6 +633,61 @@ class RosterController extends BaseController
     }
 
     /**
+     * Ghi ca nhân viên xin (nhắn trong nhóm, vd M6 / A2) ngay trên bảng xếp ca: chọn các ô rồi ghi ca & khóa – giống OFF xin,
+     * thuật toán giữ nguyên. Ca ở outlet chính của nhân viên. Ô đang khóa (OFF đã cho, ca đã xác nhận…) không bị đè. Cần quyền roster.approve.
+     */
+    public function shiftRequest(Request $request)
+    {
+        $codes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.request_shift_codes', ['M6', 'A2']));
+        $allowed = ShiftTemplate::query()->get()->filter(fn (ShiftTemplate $t) => in_array(strtoupper((string) $t->code), $codes, true))->modelKeys();
+        $data = $request->validate([
+            'cells' => ['required', 'array', 'min:1', 'max:400'],
+            'cells.*.employee_id' => ['required', 'integer', 'exists:roster_employees,id'],
+            'cells.*.date' => ['required', 'date_format:Y-m-d'],
+            'shift_template_id' => ['required', 'integer', Rule::in($allowed)],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $template = ShiftTemplate::query()->findOrFail($data['shift_template_id']);
+        $employees = Employee::query()->whereIn('id', array_column($data['cells'], 'employee_id'))->get()->keyBy('id');
+        $note = 'Nhân viên xin ca ' . $template->code . (filled($data['reason'] ?? null) ? ' – ' . $data['reason'] : '');
+        $written = 0;
+        $kept = [];
+
+        DB::transaction(function () use ($data, $template, $employees, $note, $request, &$written, &$kept): void {
+            foreach ($data['cells'] as $cell) {
+                $employee = $employees[(int) $cell['employee_id']];
+                $date = Carbon::parse($cell['date']);
+                $existing = Shift::query()->with('template')->where('employee_id', $employee->getKey())->whereDate('date', $date)->first();
+
+                if ($existing?->is_locked) {
+                    if (! ($existing->lock_reason === Shift::LOCK_SHIFT_REQUEST && (int) $existing->shift_template_id === (int) $template->getKey())) {
+                        $kept[] = "{$employee->name} {$date->format('d/m')} ({$existing->notation})";
+                    }
+
+                    continue;
+                }
+
+                $before = $existing ? $this->snapshot($existing) : null;
+                $shift = $this->assigner->assign($employee, $date, ['kind' => Shift::KIND_SHIFT, 'template' => $template, 'tags' => [],
+                    'outlet_id' => $employee->outlet_id ?: null, 'note' => $note, 'source' => 'manual'], $request->user()?->getKey());
+                $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_SHIFT_REQUEST, 'locked_by' => $request->user()?->getKey(),
+                    'locked_at' => now(), 'needs_review' => false, 'review_note' => null]);
+                $this->logChange($request, $employee->getKey(), $date, $before, $shift->load('template'), 'shift_request');
+                $written++;
+            }
+        });
+
+        $message = $written ? "Đã ghi {$written} ô ca {$template->code} nhân viên xin và khóa." : 'Không có ô nào được ghi.';
+
+        if ($kept) {
+            $message .= ' ⚠ Giữ nguyên ô đang khóa (mở khóa / gỡ OFF trước nếu muốn đổi): ' . implode('; ', $kept) . '.';
+        }
+
+        return $this->gridResponse($request, $message);
+    }
+
+    /**
      * Số quản lý ca sáng / chiều tại outlet của ô vừa sửa trong ngày: trả về cảnh báo nếu lệch quá mức không tránh được.
      */
     protected function managerBalanceNote(Employee $employee, Carbon $date): ?string
