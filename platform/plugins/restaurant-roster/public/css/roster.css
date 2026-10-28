@@ -415,7 +415,7 @@
 
 /* Cột nhân viên */
 .roster-table--compact .roster-table__staff {
-    width: 240px;
+    width: 250px;
     padding: 6px 12px;
     border-right: 1px solid var(--r-line) !important;
 }
