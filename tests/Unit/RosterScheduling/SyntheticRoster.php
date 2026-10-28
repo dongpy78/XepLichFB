@@ -137,6 +137,8 @@ trait SyntheticRoster
                 weightOverrides: $options['weights'] ?? [],
                 maxSupportPerOutlet: $options['max_support'] ?? 2,
                 autoShiftCodes: $options['auto_shift_codes'] ?? null,
+                busyWeekdays: $options['busy_weekdays'] ?? [6],
+                lobbyHistoryFairness: $options['lobby_history_fairness'] ?? false,
             ),
             hardUnavailable: $options['hard'] ?? [],
             softUnavailable: $options['soft'] ?? [],

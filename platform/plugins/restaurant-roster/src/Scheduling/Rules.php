@@ -54,6 +54,12 @@ final class Rules
         'male_balance' => 2500,
         // Số quản lý (Junior Restaurant Captain trở lên) OFF mỗi ngày đều nhau: tổng bình phương số quản lý OFF theo ngày.
         'manager_off_spread' => 3000,
+        // Nhân viên (không phải quản lý) OFF rải đều các ngày trong tuần, kể cả thứ 7 / Chủ nhật (quản lý 28/10/2026):
+        // tổng bình phương số người OFF theo outlet chính × ngày. Dưới Lobby / Night / định biên; ngang OFF liền nhau.
+        'off_spread' => 400,
+        // Ca ở outlet khác do người chỉ "đủ điều kiện" (người thay thế Room Service, người điều chuyển) làm: dùng người dự phòng /
+        // chuyên trách trước. Trên OFF rải đều – rải OFF không được đổi người dự phòng lấy người thay thế.
+        'substitute_use' => 1000,
         // Người đứng Lobby vượt định biên (vd thêm M6(L) khi OH(L) + M9 đã đủ): nặng hơn cân bằng nữ M6 / A2 – ca hỗ trợ chỉ để bù giờ thiếu.
         'lobby_over' => 6000,
         // Night luân phiên vào ngày không có Night cứng nào: không được phép (nặng hơn thiếu tối thiểu – để trống và báo thiếu).
@@ -117,6 +123,8 @@ final class Rules
         public readonly array $balanceShiftCodes = ['M6', 'A2'],
         /** @var int[] Thứ đông khách (ISO, 6 = thứ Bảy): hạn chế xếp OFF vào những ngày này. */
         public readonly array $busyWeekdays = [6],
+        // Công bằng Lobby theo lịch sử các tuần trước (quản lý 28/10/2026: tắt – chỉ xét tuần đang xếp).
+        public readonly bool $lobbyHistoryFairness = false,
         // Người không có ca cứng: số ca sáng và chiều trong tuần lệch nhau tối đa bấy nhiêu (1 → 5 ngày chia 3/2).
         public readonly int $shiftMixTolerance = 1,
         public readonly array $weightOverrides = [],
@@ -169,6 +177,7 @@ final class Rules
             balanceShiftCodes: array_map('strtoupper', (array) ($config['open_shift_codes'] ?? ['M6', 'A2'])),
             autoShiftCodes: isset($config['auto_shift_codes']) ? array_map(fn ($c) => strtoupper(str_replace(' ', '', (string) $c)), (array) $config['auto_shift_codes']) : null,
             busyWeekdays: array_map('intval', $config['busy_weekdays'] ?? [6]),
+            lobbyHistoryFairness: (bool) ($config['lobby_history_fairness'] ?? false),
             shiftMixTolerance: (int) ($config['shift_mix_tolerance'] ?? 1),
             weightOverrides: (array) ($config['weights'] ?? []),
             annealStartTemperature: (float) ($config['anneal_start_temperature'] ?? 2000),

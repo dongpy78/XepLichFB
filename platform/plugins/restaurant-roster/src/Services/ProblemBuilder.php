@@ -278,6 +278,19 @@ class ProblemBuilder
         // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
         $historyWeeks = max(1, min(26, (int) ($overrides['history_weeks'] ?? config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))));
         [$supportHistory, $shiftHistory] = $this->assignmentHistory($employeeIds, $from, $historyWeeks, $stationOutletId, $outlets, $templates);
+        // Công bằng Lobby chỉ xét tuần đang xếp (lobby_history_fairness = false): không dùng lượt Lobby (L) các tuần trước;
+        // lượt Kid-Deline (K), Night, sáng / chiều vẫn tính lịch sử.
+        $lobbyHistoryFairness = (bool) config('plugins.restaurant-roster.general.scheduling.lobby_history_fairness', false);
+
+        if (! $lobbyHistoryFairness) {
+            foreach ($supportHistory as $employeeId => $types) {
+                $supportHistory[$employeeId] = array_filter($types, fn ($type) => ! str_ends_with((string) $type, '(L)'), ARRAY_FILTER_USE_KEY);
+
+                if (! $supportHistory[$employeeId]) {
+                    unset($supportHistory[$employeeId]);
+                }
+            }
+        }
 
         return new Problem(
             days: $days,
@@ -300,7 +313,7 @@ class ProblemBuilder
             regularOff: $regularOff,
             coverage: $coverage,
             stationOutletId: $stationOutletId,
-            lobbyHistory: $this->lobbyHistory($employeeIds, $from, $stationOutletId, $historyWeeks),
+            lobbyHistory: $lobbyHistoryFairness ? $this->lobbyHistory($employeeIds, $from, $stationOutletId, $historyWeeks) : [],
             nightHistory: $this->nightHistory($employeeIds, $from, $templates, $historyWeeks),
             positionNames: Position::query()->pluck('name', 'id')->all(),
             outletParents: $this->outletParents($outlets),

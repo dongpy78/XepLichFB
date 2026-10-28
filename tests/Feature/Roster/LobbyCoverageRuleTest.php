@@ -157,10 +157,47 @@ class LobbyCoverageRuleTest extends TestCase
         // CR2 không khai dòng năng lực Lobby nhưng là nữ waiter Cam Ranh → năng lực từ hồ sơ: ưu tiên M9(L).
         $this->assertSame([$staff['oh']->getKey() => $templates['OH']->getKey(), $staff['m6']->getKey() => $templates['M9']->getKey(),
             $staff['a2']->getKey() => $templates['M9']->getKey()], $problem->lobbyPreferred);
-        $this->assertSame(8, $problem->supportHistory[$staff['m6']->getKey()]['M9(L)'], 'Lượt quy về tuần đi làm: 2 lượt / 2 tuần ≈ 8 lượt / 8 tuần');
+        // Mặc định (quản lý 28/10/2026): Lobby chỉ xét tuần đang xếp – không dùng lượt Lobby các tuần trước.
+        $this->assertArrayNotHasKey('M9(L)', $problem->supportHistory[$staff['m6']->getKey()] ?? [], 'Không dùng lịch sử Lobby');
+        $this->assertSame([], $problem->lobbyHistory, 'Không tải lịch sử Lobby');
+        $this->assertFalse($problem->rules->lobbyHistoryFairness);
+
+        // Bật lại cấu hình cũ: lượt quy về tuần đi làm (2 lượt / 2 tuần ≈ 8 lượt / 8 tuần).
+        config(['plugins.restaurant-roster.general.scheduling.lobby_history_fairness' => true]);
+        $legacy = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['history_weeks' => 8]);
+        $this->assertSame(8, $legacy->supportHistory[$staff['m6']->getKey()]['M9(L)']);
+        config(['plugins.restaurant-roster.general.scheduling.lobby_history_fairness' => false]);
 
         $values = app(\Botble\RestaurantRoster\Services\RosterAssigner::class)->values($staff['m6'], $from, ['kind' => Shift::KIND_SHIFT, 'template' => $templates['M9'], 'tags' => []]);
         $this->assertContains('L', (array) (is_string($values['tags']) ? json_decode($values['tags'], true) : $values['tags']), '"M9" được chuẩn hóa thành "M9(L)"');
+    }
+
+    /**
+     * Lobby không phụ thuộc lịch sử 4–8 tuần: CR1 làm rất nhiều M9(L) các tuần trước → dữ liệu Lobby đưa vào thuật toán
+     * (lượt Lobby lịch sử, ca Lobby ưu tiên, ràng buộc) giống hệt khi không có lịch sử. (Cân bằng sáng / chiều qua nhiều tuần vẫn giữ.)
+     */
+    public function test_lobby_inputs_ignore_past_weeks(): void
+    {
+        [$templates, $staff] = $this->world();
+        $lobby = Outlet::query()->where('code', 'LOBBY')->value('id');
+        $from = Carbon::parse(self::DATE);
+        $build = fn () => app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['history_weeks' => 8]);
+        $before = $build();
+
+        foreach (range(1, 8) as $week) {
+            foreach (range(0, 4) as $d) {
+                $date = $from->copy()->subWeeks($week)->addDays($d)->toDateString();
+                Shift::query()->create(['employee_id' => $staff['m6']->getKey(), 'date' => $date, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $templates['M9']->getKey(),
+                    'outlet_id' => $lobby, 'tags' => ['L'], 'status' => 'published', 'start_at' => "{$date} 09:00:00", 'end_at' => "{$date} 17:00:00", 'hours' => 8]);
+            }
+        }
+
+        $after = $build();
+
+        $this->assertSame([], $after->lobbyHistory, 'Không tải lịch sử Lobby');
+        $this->assertSame($before->supportHistory, $after->supportHistory, 'Lượt Lobby các tuần trước không vào bài toán');
+        $this->assertSame($before->lobbyPreferred, $after->lobbyPreferred);
+        $this->assertEquals($before->coverage, $after->coverage, 'Định biên Lobby giữ nguyên');
     }
 
     /** @return array{0: array<string, ShiftTemplate>, 1: array<string, Employee>} */

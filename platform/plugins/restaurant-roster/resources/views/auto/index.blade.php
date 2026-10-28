@@ -55,7 +55,7 @@
                                     <option value="{{ $weeks }}" @selected($weeks === (int) config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))>{{ $weeks }} tuần gần nhất</option>
                                 @endforeach
                             </select>
-                            <div class="form-hint">Luân phiên OH(L), M9(L), M6(L), A2(L), Kid-Deline, ca đêm và cân bằng sáng / chiều có tính lịch sử trong khoảng này.</div>
+                            <div class="form-hint">Luân phiên Kid-Deline, ca đêm và cân bằng sáng / chiều có tính lịch sử trong khoảng này. Lobby (OH(L), M9(L), M6(L), A2(L)) chỉ xét tuần đang xếp.</div>
                         </div>
                         <div class="d-grid gap-2">
                             <button type="submit" name="type" value="generate" class="btn btn-primary">

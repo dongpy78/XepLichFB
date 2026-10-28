@@ -86,6 +86,15 @@ class SupportHistoryTest extends TestCase
 
         $build = fn (int $weeks) => app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['history_weeks' => $weeks]);
 
+        // Mặc định (quản lý 28/10/2026): Lobby (L) không tính lịch sử – chỉ còn Kid-Deline (K); Night, sáng / chiều vẫn tính.
+        $default = $build(4);
+        $this->assertSame(['M6(K)' => 2], $default->supportHistory[$employee->getKey()] ?? null);
+        $this->assertSame(1, $default->nightHistory[$employee->getKey()] ?? null);
+        $this->assertEquals(['morning' => 2, 'afternoon' => 3], $default->shiftHistory[$employee->getKey()] ?? null);
+
+        // Cấu hình cũ (lobby_history_fairness = true): đếm cả lượt Lobby.
+        config(['plugins.restaurant-roster.general.scheduling.lobby_history_fairness' => true]);
+
         $four = $build(4);
         $this->assertSame(1, $four->nightHistory[$employee->getKey()] ?? null, 'Số tuần có ca đêm');
         $this->assertSame(4, $four->historyWeeks);

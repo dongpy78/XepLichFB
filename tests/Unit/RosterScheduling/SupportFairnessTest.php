@@ -212,7 +212,7 @@ class SupportFairnessTest extends TestCase
         $team = array_map(fn ($id) => $this->waiter($id, self::VILLA), range(1, 6));
         $requirements = [...$this->flexRequirements($days, self::VILLA, self::M6, 1, 2), ...$this->flexRequirements($days, self::VILLA, self::A2, 1, 2)];
         $coverage = array_map(fn ($d) => new Coverage($d, 14 * 60, 17 * 60, 1, 1, 'Lobby chiều', [self::A2]), $days);
-        $result = $this->solve($this->problem($team, $requirements, ['coverage' => $coverage, 'time_limit' => 3, 'support_history' => [1 => ['A2(L)' => 8]]]));
+        $result = $this->solve($this->problem($team, $requirements, ['coverage' => $coverage, 'time_limit' => 3, 'support_history' => [1 => ['A2(L)' => 8]], 'lobby_history_fairness' => true]));
         $report = $result->supportReport;
 
         $this->assertSame(['A2(L)'], $report['types']);

@@ -255,6 +255,19 @@ class CellLockHttpTest extends TestCase
         $run = \Botble\RestaurantRoster\Models\Run::query()->latest('id')->firstOrFail();
         $cell = collect($run->proposal['assignments'] ?? [])->first(fn ($r) => (int) $r['employee_id'] === $this->employee->getKey() && $r['date'] === '2030-01-09');
         $this->assertSame($m6->getKey(), (int) ($cell['shift_id'] ?? 0), 'Ca xin đã khóa: thuật toán giữ nguyên');
+
+        // Chạy tạo lịch + áp dụng 2 lần: mỗi người mỗi ngày đúng 1 ô, ca xin / OFF đã khóa không bị đổi.
+        foreach ([1, 2] as $round) {
+            $this->actingAs($this->user([], true))->postJson(route('roster.auto.run'), ['from' => '2030-01-07', 'to' => '2030-01-13', 'type' => 'generate'])
+                ->assertJson(['error' => false]);
+            $this->actingAs($this->user([], true))->postJson(route('roster.auto.apply', \Botble\RestaurantRoster\Models\Run::query()->latest('id')->value('id')))
+                ->assertJson(['error' => false]);
+        }
+
+        $this->assertSame(0, Shift::query()->selectRaw('employee_id, date, count(*) c')->groupBy('employee_id', 'date')->havingRaw('count(*) > 1')->get()->count(), 'Không có ô trùng');
+        $locked = Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-09')->first();
+        $this->assertSame([$m6->getKey(), Shift::LOCK_SHIFT_REQUEST], [(int) $locked->shift_template_id, $locked->lock_reason]);
+        $this->assertTrue(Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-08')->first()->isRecordedOff());
     }
 
     /** Cấp quản lý theo cờ của vị trí: thuật toán nhận đúng, xếp tay ngoài M6 / A2 thì ô tự khóa, bảng báo lệch sáng / chiều. */

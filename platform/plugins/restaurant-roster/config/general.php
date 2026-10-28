@@ -43,7 +43,8 @@ return [
         // Người đi hỗ trợ Lobby KHÔNG được tính vào định biên nhà hàng của ca đó.
         'max_support_per_outlet' => 1,
         // Ngày đông khách (thứ ISO: 6 = thứ Bảy): hạn chế xếp OFF vào những ngày này.
-        'busy_weekdays' => [6],
+        // Quản lý 28/10/2026: bỏ – nhân viên được OFF thứ 7 / Chủ nhật như ngày khác; OFF rải đều mọi ngày (trọng số off_spread).
+        'busy_weekdays' => [],
         // Khu trực thuộc một nhà hàng (vd Kid-Deline thuộc Gusto): nhân viên nhà hàng đó đứng khu này không tính là "ngoài outlet chính".
         'outlet_parents' => ['KID' => 'GUSTO'],
         // Ai được đứng khu trực thuộc mà không cần khai báo năng lực từng người (quản lý 22/10/2026: Kid-Deline = bất kỳ nữ Waiter của Gusto).
@@ -102,6 +103,9 @@ return [
         // Khoảng đánh giá công bằng (số tuần lịch sử): luân phiên OH(L), M9(L), M6(L), A2(L), Kid-Deline, ca đêm và cân bằng sáng / chiều.
         // Quản lý chọn lại được khi chạy xếp lịch (4 hoặc 8 tuần).
         'history_weeks' => 4,
+        // Công bằng Lobby (OH(L), M9(L), M6(L), A2(L)) theo lịch sử các tuần trước (quản lý 28/10/2026: bỏ – chỉ xét tuần đang xếp).
+        // Lịch sử vẫn dùng cho Night, Kid-Deline (K) và cân bằng sáng / chiều. true = như trước.
+        'lobby_history_fairness' => false,
         // Xếp lịch theo tuần (quản lý 25/10/2026): bỏ bước "Kỳ lịch & OFF" – OFF và ca nhân viên xin ghi thẳng trên Bảng xếp ca rồi chạy xếp tự động.
         // true = như trước: chỉ chạy khi kỳ lịch bao trọn phạm vi đã xác nhận "đã nhập xong OFF".
         'require_off_confirmation' => false,

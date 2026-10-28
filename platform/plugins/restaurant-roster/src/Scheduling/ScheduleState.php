@@ -20,7 +20,8 @@ use Carbon\CarbonImmutable;
  *   [2a] underNorm  ngày làm thiếu so với định mức (7 − số ngày OFF/tuần) – bắt buộc đúng số ngày OFF mỗi tuần
  *                   (xếp trước OFF liền nhau; ca nhận thêm tối đa flex_capacity người trên mục tiêu để có chỗ)
  *   [3a2] childBorrow số ca người outlet khác đứng khu trực thuộc (nữ Villa đứng Kid-Deline của Gusto) – chỉ khi Gusto thiếu người
- *   [3b] busyOff    số ngày OFF rơi vào ngày đông khách (mặc định thứ Bảy): thứ Bảy được đủ người trước các ngày khác
+ *   [3b] busyOff    số ngày OFF rơi vào ngày đông khách (busy_weekdays; mặc định tắt từ 28/10/2026 – OFF rải đều bằng offSpread)
+ *   [3b2] offSpread nhân viên OFF rải đều các ngày (tổng bình phương số người OFF theo outlet chính × ngày), kể cả thứ 7 / Chủ nhật
  *   [3c] nightRotation ca đêm luân phiên theo tuần: số tuần đêm (bình phương, có lịch sử) của nam waiter nhà hàng,
  *                   ca ngày lẫn trong tuần đêm, ca ngày của nhân viên outlet NIGHT (chỉ sang nhà hàng khi thiếu nam)
  *   [3f] lobbyMix   khung Lobby nhận nhiều loại ca (sáng OH(L) + M9): chia đều loại ca – mỗi sáng 1 OH(L) Nha Trang + 1 M9 Cam Ranh
@@ -1002,6 +1003,7 @@ final class ScheduleState
             'lobby_partial' => $m['lobby_partial'],
             'night_extra' => 0,
             'borrow_order' => $m['borrow_nonflex'],
+            'substitute_use' => $m['substitute'],
             // Cờ (L) không cần thiết bị phạt nhẹ để thuật toán chỉ giao hỗ trợ Lobby khi khung giờ cần người.
             'preference' => $m['support_flags'] + $m['non_home'] * 3 + $m['non_primary'] * 2 + $m['soft_conflicts'] * 6 + $m['changes'] * 4,
             'heavy' => $m['heavy'],
@@ -1132,7 +1134,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $this->femaleBalance(), 'male_balance' => $this->maleBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $this->femaleBalance(), 'male_balance' => $this->maleBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1326,7 +1328,7 @@ final class ScheduleState
         $shifts = $this->problem->shifts;
         $planned = isset($this->nightRotation[$employeeId]) && $this->problem->nightPlan;
         $flexPlanned = $employee->isNightFlex() && $this->problem->nightPlan;
-        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'borrow_nonflex' => 0, 'lobby_pref' => [], 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
+        $m = ['worked' => 0, 'hours' => 0.0, 'heavy' => 0, 'night' => 0, 'morning' => 0, 'afternoon' => 0, 'non_home' => 0, 'non_primary' => 0, 'substitute' => 0, 'soft_conflicts' => 0, 'changes' => 0, 'off_blocks' => 0, 'off_overlong' => 0, 'off_single' => 0, 'off_split' => 0, 'busy_off' => 0, 'under_norm' => 0, 'child_borrow' => 0, 'night_weeks' => 0, 'night_mixed' => 0, 'night_staff_day' => 0, 'night_plan_day' => 0, 'night_flex_planned' => 0, 'night_plan_gap' => 0, 'night_plan_extra' => 0, 'borrow_nonflex' => 0, 'lobby_pref' => [], 'over_norm' => 0, 'lobby' => 0, 'lobby_partial' => 0, 'kid' => 0, 'support_flags' => 0, 'shift_mix' => 0, 'shift_history' => 0, 'outlets' => [], 'support_types' => []];
 
         // Ca từng ngày trên cả dòng thời gian (kể cả ngày ngữ cảnh ngoài phạm vi).
         $work = [];
@@ -1434,6 +1436,11 @@ final class ScheduleState
 
             if ($o !== null && ($levels[$o][$s] ??= $employee->skillLevel($o, $s) ?? '') !== EmployeeSpec::PRIMARY) {
                 $m['non_primary']++;
+
+                // Người thay thế (chỉ "đủ điều kiện") làm ở outlet khác outlet chính: dùng sau người dự phòng / chuyên trách (mức chính).
+                if ($o !== $home && ($parents[$o] ?? null) !== $home) {
+                    $m['substitute']++;
+                }
             }
 
             if (isset($softRow[$date])) {
@@ -1883,6 +1890,66 @@ final class ScheduleState
 
     private ?int $managerTotal = null;
 
+    /**
+     * Nhân viên OFF rải đều theo ngày (quản lý 28/10/2026): Σ theo outlet chính × ngày của (số nhân viên không phải quản lý
+     * không có ca hôm đó)². Tổng số ngày OFF cố định → tổng bình phương nhỏ nhất khi OFF chia đều, không dồn vào một ngày
+     * (thứ 7 / Chủ nhật được OFF như ngày khác). OFF đã duyệt / ô khóa vẫn giữ (phần không đổi của tổng).
+     */
+    public function offSpread(): int
+    {
+        $sum = 0;
+
+        foreach ($this->staffTotals() as $outletId => $total) {
+            if ($total < 2) {
+                continue;
+            }
+
+            foreach ($this->scopeIndexes() as $i) {
+                $sum += max(0, $total - ($this->staffWorking[$outletId][$i] ?? 0)) ** 2;
+            }
+        }
+
+        return $sum;
+    }
+
+    /** @return array<int, int> [outlet chính] => số nhân viên không phải quản lý */
+    public function staffTotals(): array
+    {
+        if ($this->staffTotals === null) {
+            $this->staffTotals = [];
+
+            foreach ($this->problem->employees as $employee) {
+                if ($this->countsForOffSpread($employee)) {
+                    $this->staffTotals[$employee->homeOutletId] = ($this->staffTotals[$employee->homeOutletId] ?? 0) + 1;
+                }
+            }
+        }
+
+        return $this->staffTotals;
+    }
+
+    /**
+     * Tính vào OFF rải đều: nhân viên không phải quản lý (quản lý có managerOffSpread), không thuộc Night cứng / luân phiên
+     * (ngày OFF của họ theo khung Night: OFF sau đêm cuối, cụm đêm liền nhau – không kéo theo OFF rải đều).
+     */
+    public function countsForOffSpread(EmployeeSpec $employee): bool
+    {
+        return ! $employee->isManager && $employee->homeOutletId !== null && ! $employee->isNightCore()
+            && $employee->nightRole !== EmployeeSpec::NIGHT_ROTATION;
+    }
+
+    /** Số nhân viên (không phải quản lý) của outlet chính có ca ngày $i. */
+    public function staffWorkingAt(int $outletId, int $i): int
+    {
+        return $this->staffWorking[$outletId][$i] ?? 0;
+    }
+
+    /** @var array<int, int>|null */
+    private ?array $staffTotals = null;
+
+    /** @var array<int, array<int, int>> [outlet chính][dayIndex] => số nhân viên không phải quản lý đang có ca */
+    private array $staffWorking = [];
+
     /** @var array<int, int> [dayIndex] => số quản lý đang có ca */
     private array $managerWorking = [];
 
@@ -1964,6 +2031,8 @@ final class ScheduleState
     {
         if ($this->problem->employees[$employeeId]?->isManager ?? false) {
             $this->managerWorking[$i] = ($this->managerWorking[$i] ?? 0) + $delta;
+        } elseif (($spec = $this->problem->employees[$employeeId] ?? null) && $this->countsForOffSpread($spec)) {
+            $this->staffWorking[$spec->homeOutletId][$i] = ($this->staffWorking[$spec->homeOutletId][$i] ?? 0) + $delta;
         }
 
         if (($this->problem->employees[$employeeId]?->nightRole ?? null) === EmployeeSpec::NIGHT_ROTATION && $this->problem->shifts[$shiftId]->category() === 'night') {

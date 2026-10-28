@@ -109,7 +109,7 @@ class LobbyWeeklyRoundTest extends TestCase
         $this->assertLessThanOrEqual(1, max($counts), 'Không ai 2 ca OH(L) khi còn người chưa có: ' . json_encode($counts));
         $round = collect($result->supportReport['lobby_rounds'])->first(fn ($r) => $r['type'] === 'OH(L)');
         $this->assertCount(count(array_filter($counts, fn ($c) => $c === 0)), $round['missing']);
-        $this->assertStringContainsString('luân phiên tuần sau', $round['missing'][0] ?? '');
+        $this->assertStringContainsString('quản lý chỉnh tay', $round['missing'][0] ?? '', 'Lobby chỉ xét tuần đang xếp – không hứa luân phiên theo lịch sử');
     }
 
     /** Người nghỉ cả tuần không bị coi là "chưa nhận ca"; ô khóa và OFF đã duyệt giữ nguyên. */
@@ -134,7 +134,11 @@ class LobbyWeeklyRoundTest extends TestCase
         [$result] = $this->week(options: ['hard' => array_fill_keys(self::CR, [$day => 'Xin OFF'])]);
 
         $support = array_filter($result->assignments, fn ($r) => $r['date'] === $day && $r['support']);
-        $this->assertEqualsCanonicalizing([self::OH, self::M6, self::A2], array_values(array_unique(array_column($support, 'shift_id'))));
+        // Không có M9(L): Lobby phủ bằng 2 OH(L) phủ trọn ca, hoặc OH(L) + M6(L) 09–14h + A2(L) 14–17h bù đúng phần thiếu.
+        $types = array_count_values(array_column($support, 'shift_id'));
+        $this->assertArrayNotHasKey(self::M9, $types);
+        $this->assertTrue(($types[self::OH] ?? 0) >= 2 && ! isset($types[self::M6]) && ! isset($types[self::A2])
+            || (($types[self::OH] ?? 0) === 1 && isset($types[self::M6], $types[self::A2])), 'Ca hỗ trợ ngày Cam Ranh OFF: ' . json_encode($types));
         $this->assertSame([], array_filter($this->lobbyGaps($result), fn ($g) => $g['date'] === $day));
 
         // Ngày khác: chỉ dùng M6(L) / A2(L) khi Lobby chưa có đủ 2 người phủ trọn ca (OH(L) / M9) – không xếp ca hỗ trợ thừa khi đã đủ.

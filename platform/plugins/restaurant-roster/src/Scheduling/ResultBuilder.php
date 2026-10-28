@@ -351,8 +351,53 @@ final class ResultBuilder
                 }
             }
 
+            // Nhân viên (không phải quản lý) OFF theo outlet chính: số người OFF, trong đó OFF đã duyệt / ô khóa (không tự đổi).
+            $staffOff = [];
+
+            foreach ($state->staffTotals() as $o => $total) {
+                $names = [];
+                $kept = [];
+
+                foreach ($problem->employees as $id => $employee) {
+                    if (! $state->countsForOffSpread($employee) || $employee->homeOutletId !== $o || $state->shiftAt($id, $i)) {
+                        continue;
+                    }
+
+                    $names[] = $employee->name;
+
+                    if (isset($problem->hardUnavailable[$id][$date]) || $state->isFixed($id, $i)) {
+                        $kept[] = $employee->name;
+                    }
+                }
+
+                $staffOff[$o] = ['outlet' => $problem->outletName($o), 'total' => $total, 'off' => $names, 'kept' => $kept];
+            }
+
             $offCounts[$i] = count($off);
-            $days[] = ['date' => $date, 'managers_off' => $off, 'approved_off' => $approved, 'outlets' => $outlets, 'night' => $night];
+            $days[] = ['date' => $date, 'managers_off' => $off, 'approved_off' => $approved, 'outlets' => $outlets, 'night' => $night, 'staff_off' => $staffOff];
+        }
+
+        // Ngày OFF dồn bất thường theo outlet: số người OFF ≥ trung bình + 2 (và ≥ 3), hoặc số người còn làm quá ít.
+        foreach ($state->staffTotals() as $o => $total) {
+            $counts = array_map(fn ($day) => count($day['staff_off'][$o]['off'] ?? []), $days);
+
+            if ($total < 3 || ! $counts) {
+                continue;
+            }
+
+            $average = array_sum($counts) / count($counts);
+
+            foreach ($days as $k => $day) {
+                $row = $day['staff_off'][$o];
+                $count = count($row['off']);
+
+                if ($count >= max(3, (int) ceil($average) + 2)) {
+                    $warnings[] = ['code' => 'staff_off', 'date' => $day['date'], 'outlet_id' => $o, 'outlet_name' => $row['outlet'],
+                        'message' => sprintf('%s – %s: %d / %d nhân viên OFF (trung bình %.1f / ngày)%s.', date('d/m', strtotime($day['date'])), $row['outlet'],
+                            $count, $total, $average,
+                            $row['kept'] ? ', trong đó OFF đã duyệt / ô khóa: ' . implode(', ', $row['kept']) . ' (giữ nguyên – quản lý cân nhắc)' : ' – do giới hạn ngày làm / giờ nghỉ / Night / Lobby')];
+                }
+            }
         }
 
         if ($managers && $offCounts) {
@@ -867,7 +912,9 @@ final class ResultBuilder
                     }
 
                     $slots += $count;
-                    $label = $employee->name . ' (' . ($problem->supportHistory[$employeeId][Problem::supportTypeKey($problem->shifts[$shiftId]->code, 'lobby')] ?? 0) . ' lượt / ' . $problem->historyWeeks . ' tuần trước)';
+                    $label = $problem->rules->lobbyHistoryFairness
+                        ? $employee->name . ' (' . ($problem->supportHistory[$employeeId][Problem::supportTypeKey($problem->shifts[$shiftId]->code, 'lobby')] ?? 0) . ' lượt / ' . $problem->historyWeeks . ' tuần trước)'
+                        : $employee->name;
 
                     if ($count > 0) {
                         $given[] = $label . ($count > 1 ? " – {$count} ca" : '');
@@ -882,7 +929,7 @@ final class ResultBuilder
                 $result[] = [
                     'week' => $state->dates[$days[0]], 'type' => $code, 'slots' => $slots, 'given' => $given, 'away' => $away,
                     'missing' => array_map(fn ($m) => $m['name'] . ': ' . ($slots < count($given) + count($missing)
-                        ? "tuần có {$slots} ca {$code} cho " . (count($given) + count($missing)) . ' người – luân phiên tuần sau (ít lượt hơn được ưu tiên)'
+                        ? "tuần có {$slots} ca {$code} cho " . (count($given) + count($missing)) . ' người – quản lý chỉnh tay nếu muốn đổi người'
                         : implode('; ', $m['why'])), $missing),
                 ];
             }
@@ -976,6 +1023,17 @@ final class ResultBuilder
                 }
 
                 $peers = array_values(array_diff($eligible[$type] ?? [], [$employeeId]));
+
+                // Lobby chỉ xét tuần đang xếp: lý do theo số lượt trong tuần, không theo lịch sử.
+                if (! $isKid && ! $problem->rules->lobbyHistoryFairness) {
+                    $inWeek = $state->metricsFor($employeeId)['support_types'][$type] ?? 0;
+                    $reasons[] = ['date' => $state->dates[$i], 'employee_id' => $employeeId, 'type' => $type,
+                        'text' => sprintf('%s được xếp %s (%d lượt %s trong kỳ đang xếp; %d người khác đủ điều kiện); Lobby còn nhu cầu ở khung giờ này.',
+                            $employee->name, $type, $inWeek, $type, count($peers))];
+
+                    continue;
+                }
+
                 $past = $problem->supportHistory[$employeeId][$type] ?? 0;
                 $peerAverage = $peers ? round(array_sum(array_map(fn ($e) => $problem->supportHistory[$e][$type] ?? 0, $peers)) / count($peers), 1) : null;
                 $text = sprintf('%s được xếp %s: %d lượt %s trong %d tuần gần nhất', $employee->name, $type, $past, $type, $weeks)
