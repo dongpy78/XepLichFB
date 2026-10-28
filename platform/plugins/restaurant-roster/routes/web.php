@@ -97,6 +97,7 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
 
                 Route::post('night', 'NightStaffController@save')->name('night.save');
                 Route::post('night/reset', 'NightStaffController@reset')->name('night.reset');
+                Route::post('night/demand', 'NightStaffController@demand')->name('night.demand');
                 Route::post('night/propose', 'NightStaffController@propose')->name('night.propose');
                 Route::post('night/unapprove', 'NightStaffController@unapprove')->name('night.unapprove');
                 Route::post('night/{employee}/toggle', 'NightStaffController@toggle')->name('night.toggle')->wherePrimaryKey('employee');

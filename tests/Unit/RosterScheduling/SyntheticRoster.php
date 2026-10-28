@@ -146,6 +146,7 @@ trait SyntheticRoster
             baseline: $options['baseline'] ?? [],
             outletNames: [self::GUSTO => 'Gusto', self::VILLA => 'Villa', self::NIGHT => 'Night', self::ROOM => 'Room', self::LOBBY => 'Lobby', self::KID => 'Kid'],
             regularOff: $options['regular_off'] ?? [],
+            positionNames: $options['position_names'] ?? [self::WAITER => 'Waiter', 101 => 'Hostess', 200 => 'Captain'],
             coverage: $options['coverage'] ?? [],
             stationOutletId: self::LOBBY,
             lobbyHistory: $options['lobby_history'] ?? [],

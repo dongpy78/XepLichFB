@@ -274,6 +274,7 @@ class ProblemBuilder
         $regularOff = $this->birthdayOffs($employees, $days, $fixed, $hard);
 
         $requirements = $this->requirements($days, array_values(array_diff($targetOutletIds, [$stationOutletId])), $templates->pluck('id')->all());
+        $requirements = $this->applyNightDemand($requirements, $days, $nightStaff, $targetOutletIds);
 
         // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
         $historyWeeks = max(1, min(26, (int) ($overrides['history_weeks'] ?? config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))));
@@ -959,6 +960,50 @@ class ProblemBuilder
             app(RoomServiceStaffService::class)->outletId(),
             ...array_keys($this->outletParents($outlets)),
         ]))));
+    }
+
+    /**
+     * Nhu cầu Night theo ngày (quản lý chọn trên trang Nhân sự Night: ít khách 2, đông khách 3 người): thay tối thiểu / mục tiêu
+     * của định biên ca đêm ngày đó. Ngày chưa chọn giữ định biên Night mặc định. Không hạ nhu cầu ngầm: thiếu người thì báo thiếu.
+     *
+     * @param \Botble\RestaurantRoster\Scheduling\Requirement[] $requirements
+     * @return \Botble\RestaurantRoster\Scheduling\Requirement[]
+     */
+    private function applyNightDemand(array $requirements, array $days, NightStaffService $nightStaff, array $targetOutletIds): array
+    {
+        $demands = $nightStaff->demands(CarbonImmutable::parse(reset($days)), CarbonImmutable::parse(end($days)));
+        $outlets = array_values(array_intersect($nightStaff->nightOutletIds(), $targetOutletIds));
+
+        if (! $demands || ! $outlets) {
+            return $requirements;
+        }
+
+        $templates = $nightStaff->nightTemplates()->modelKeys();
+        $done = [];
+
+        foreach ($requirements as $k => $r) {
+            $staff = $demands[$r->date] ?? null;
+
+            if ($staff === null || isset($done[$r->date]) || ! in_array($r->outletId, $outlets, true) || ! in_array($r->shiftId, $templates, true)
+                || ($r->min <= 0 && $r->target <= 0)) {
+                continue;
+            }
+
+            $requirements[$k] = new \Botble\RestaurantRoster\Scheduling\Requirement($r->date, $r->outletId, $r->shiftId, $staff, $staff, $staff,
+                $r->minMale, $r->targetMale, $r->allowReduce, $r->positionMins, $r->minFemale, $r->targetFemale, $r->positionTargets, $r->countWindow, $r->sourceId);
+            $done[$r->date] = true;
+        }
+
+        // Ngày đã chọn nhu cầu nhưng chưa có định biên ca đêm: tạo ô Night (một outlet Night, một mẫu ca đêm).
+        if (count($outlets) === 1 && count($templates) === 1) {
+            foreach ($days as $date) {
+                if (isset($demands[$date]) && ! isset($done[$date])) {
+                    $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, $outlets[0], (int) $templates[0], $demands[$date], $demands[$date], $demands[$date]);
+                }
+            }
+        }
+
+        return $requirements;
     }
 
     /**

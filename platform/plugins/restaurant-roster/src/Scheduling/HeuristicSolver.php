@@ -55,6 +55,9 @@ final class HeuristicSolver implements SolverInterface
                 $stats['polished'] = $this->polishSwaps($state, microtime(true) + min(2, max(0.5, $problem->rules->timeLimitSeconds * 0.15)));
                 // Chỉnh Lobby: thay M6(L) / A2(L) bằng ca ưu tiên của người chưa có ca trong tuần (thêm tối đa 2 giây).
                 $stats['lobby_polished'] = $this->polishLobby($state, microtime(true) + 2);
+                // Duyệt lần lượt từng ngày (thứ Hai → Chủ nhật): ngày còn lệch Waiter M6 / A2 hoặc còn điểm phạt thì thử đổi ca các ô chưa khóa
+                // của ngày đó; đổi ca kéo theo kiểm tra giờ nghỉ với ngày kề (violation) và chấm lại toàn bộ lịch (cost) – chỉ nhận khi tốt hơn.
+                $stats['day_repaired'] = $this->repairDays($state, microtime(true) + 3);
             }
 
             return (new ResultBuilder())->build($state, $constructed, [
@@ -2176,6 +2179,76 @@ final class HeuristicSolver implements SolverInterface
                 $state->place($e, $i, (int) $o, $s, $f);
             }
         }
+    }
+
+    /**
+     * Kiểm tra & sửa tuần tự từng ngày: với mỗi ngày (theo thứ tự), mỗi ô ca ngày chưa khóa (không phải Night / Lobby (L))
+     * thử chuyển sang ca còn lại cùng outlet (M6 ↔ A2) hoặc đổi ca với người khác cùng outlet trong ngày; nhận khi điểm phạt
+     * toàn lịch giảm (OFF, Night, Lobby, giờ nghỉ, ô khóa là ràng buộc trong violation / cost nên không bị phá).
+     * Ngày có thay đổi thì kiểm tra lại ngày trước và sau (giờ nghỉ giữa hai ngày).
+     */
+    private function repairDays(ScheduleState $state, float $deadline): int
+    {
+        $improved = 0;
+        $current = $state->cost();
+        $days = $state->scopeIndexes();
+        $queue = $days;
+        $pairs = [];
+
+        foreach ($state->femalePairs() as [$i, $o, $am, $pm]) {
+            $pairs[$i][] = [$o, $am, $pm];
+        }
+
+        while ($queue && microtime(true) < $deadline) {
+            $i = array_shift($queue);
+            $changed = false;
+
+            foreach ($pairs[$i] ?? [] as [$o, $am, $pm]) {
+                foreach (array_keys($state->problem->employees) as $e) {
+                    if (microtime(true) > $deadline) {
+                        return $improved;
+                    }
+
+                    $slot = $state->plan[$e][$i] ?? null;
+
+                    if ($slot === null || $state->isFixed($e, $i)) {
+                        continue;
+                    }
+
+                    [$so, $ss, $sf] = ScheduleState::parseSlot($slot);
+
+                    if ($sf || $so !== $o || ! in_array($ss, [$am, $pm], true)) {
+                        continue;
+                    }
+
+                    // Chuyển sang ca còn lại.
+                    $other = ScheduleState::slotKey($o, $ss === $am ? $pm : $am);
+                    $metrics = $state->metricsSnapshot();
+
+                    if ($this->put($state, $e, $i, $other) && ($candidate = $state->cost()) < $current - 1e-6) {
+                        $current = $candidate;
+                        $improved++;
+                        $changed = true;
+
+                        continue;
+                    }
+
+                    $this->restore($state, $e, $i, $slot);
+                    $state->restoreMetrics($metrics);
+                }
+            }
+
+            if ($changed) {
+                // Đổi ca ảnh hưởng giờ nghỉ / chỉ tiêu tuần của ngày kề: kiểm tra lại ngày trước, ngày này, ngày sau.
+                foreach ([$i - 1, $i, $i + 1] as $d) {
+                    if (in_array($d, $days, true) && ! in_array($d, $queue, true)) {
+                        $queue[] = $d;
+                    }
+                }
+            }
+        }
+
+        return $improved;
     }
 
     private function polishSwaps(ScheduleState $state, float $deadline): int

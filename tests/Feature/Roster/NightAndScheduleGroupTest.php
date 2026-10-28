@@ -241,6 +241,65 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertNotNull($spec->skillLevel((int) $people['G4']->outlet_id, $this->templates['M6']->getKey()), 'Làm được ca của outlet chính');
     }
 
+    /**
+     * Nhu cầu Night theo ngày (quản lý 28/10/2026): ít khách 2, đông khách 3 người, chọn trên trang Nhân sự Night.
+     * Thuật toán xếp đúng số người từng ngày (≥ 1 Night cứng), không tự hạ nhu cầu; trang hiển thị cấu hình đang áp dụng.
+     */
+    public function test_night_demand_two_or_three_per_day(): void
+    {
+        $people = $this->restaurants();
+
+        foreach (['NC1', 'NC2'] as $code) {
+            $this->nightSkill($this->employee($code, 'NIGHT', extra: ['fixed_shift_template_id' => $this->templates['N']->getKey()]));
+        }
+
+        $planned = [$people['G1'], $people['G2'], $people['V1'], $people['V2']];
+        app(NightStaffService::class)->save(Carbon::parse(self::WEEK), array_map(fn ($e) => $e->getKey(), $planned), NightRotation::STATUS_APPROVED, 1);
+        $days = array_map(fn ($d) => Carbon::parse(self::WEEK)->addDays($d)->toDateString(), range(0, 6));
+        $quiet = [$days[0], $days[1], $days[2], $days[3]];
+        $busy = [$days[4], $days[5]]; // Chủ nhật để mặc định (định biên Night = 3)
+
+        // Qua trang Nhân sự Night (HTTP): đặt ít khách / đông khách, rồi mặc định.
+        $manager = $this->user();
+        $this->actingAs($manager)->post(route('roster.night.demand'), ['week' => self::WEEK, 'dates' => $quiet, 'staff' => 2])->assertSessionHasNoErrors()
+            ->assertRedirect(route('roster.night.index', ['week' => self::WEEK]));
+        $this->actingAs($manager)->post(route('roster.night.demand'), ['week' => self::WEEK, 'dates' => $busy, 'staff' => 3])->assertSessionHasNoErrors();
+        $this->actingAs($manager)->post(route('roster.night.demand'), ['week' => self::WEEK, 'dates' => [$days[6]], 'staff' => ''])->assertSessionHasNoErrors();
+        $this->actingAs($manager)->get(route('roster.night.index', ['week' => self::WEEK]))->assertOk()->assertSee('Ít khách – 2 người')->assertSee('Mặc định (3)', false);
+        $this->assertSame(array_fill_keys($quiet, 2) + array_fill_keys($busy, 3), app(NightStaffService::class)->demands(Carbon::parse($days[0]), Carbon::parse($days[6])));
+
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, ['time_limit_seconds' => 90, 'max_iterations' => 200000]);
+        $n = $this->templates['N']->getKey();
+        $need = [];
+
+        foreach ($problem->requirements as $r) {
+            if ($r->shiftId === $n) {
+                $need[$r->date] = $r->min;
+            }
+        }
+
+        ksort($need);
+        $this->assertSame([2, 2, 2, 2, 3, 3, 3], array_values($need), 'Nhu cầu Night đưa vào thuật toán');
+
+        $result = (new \Botble\RestaurantRoster\Scheduling\HeuristicSolver())->solve($problem);
+        $core = Employee::query()->whereIn('code', ['NC1', 'NC2'])->pluck('id')->all();
+
+        foreach ($days as $k => $date) {
+            $night = array_filter($result->assignments, fn ($r) => $r['date'] === $date && $r['shift_id'] === $n);
+            $this->assertCount($need[$date], $night, "{$date}: Night đúng {$need[$date]} người");
+            $this->assertNotEmpty(array_filter($night, fn ($r) => in_array($r['employee_id'], $core, true)), "{$date}: có Night cứng");
+        }
+
+        $checks = collect($result->supportReport['day_checks'])->keyBy('date');
+        $this->assertTrue($checks[$days[0]]['checks']['night']['ok']);
+        $this->assertStringContainsString('2 / 2', $checks[$days[0]]['checks']['night']['text']);
+        $this->assertSame(0, (int) ($result->solverMetadata['objective']['hard'] ?? 0));
+
+        // Bỏ chọn nhu cầu nằm ngoài 2 / 3 bị từ chối.
+        $this->expectException(\InvalidArgumentException::class);
+        app(NightStaffService::class)->setDemand([$days[0]], 5, 1);
+    }
+
     /** 9.1: danh sách luân phiên loại Night cứng, Room Service chuyên trách, người đã tắt luân phiên; nhận cả nam waiter outlet Night. */
     public function test_rotation_pool_excludes_core_room_service_and_disabled(): void
     {

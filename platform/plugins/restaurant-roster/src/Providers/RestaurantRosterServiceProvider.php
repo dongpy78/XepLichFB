@@ -166,7 +166,7 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'id' => 'cms-plugins-restaurant-roster-requirements',
                     'priority' => 6,
                     'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Định biên nhân sự',
+                    'name' => 'Định biên Night / Room Service / Kid',
                     'icon' => 'ti ti-users-group',
                     'route' => 'roster.requirements.index',
                     'permissions' => ['roster.settings'],

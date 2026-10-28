@@ -112,4 +112,34 @@ class OffSpreadTest extends TestCase
         $this->assertSame([self::VILLA, self::M6], $this->shiftOf($result, 1, $days[5]));
         $this->assertSame([self::VILLA, self::A2], $this->shiftOf($result, 2, $days[6]));
     }
+
+    /**
+     * OFF chia theo nhóm (outlet × vị trí): Junior Restaurant Captain (quản lý), Hostess, Waiter mỗi nhóm rải đều trong chính nhóm –
+     * Hostess ít người không bị dồn OFF cùng ngày (ngày nào cũng còn Hostess đi làm); quản lý OFF không dồn.
+     */
+    public function test_offs_spread_within_each_group(): void
+    {
+        $days = $this->days();
+        $hostessPosition = 101;
+        $managers = array_map(fn ($id) => new EmployeeSpec($id, "Captain #{$id}", 'male', self::VILLA, 48, 2, self::SKILLS, [], 'cam_ranh', 200,
+            isManager: true, managerShiftIds: [self::M6, self::A2]), range(31, 34));
+        $hostess = array_map(fn ($id) => new EmployeeSpec($id, "Hostess #{$id}", 'female', self::VILLA, 48, 2, self::SKILLS, [], 'cam_ranh', $hostessPosition), range(41, 43));
+        $problem = $this->problem([...$this->staff(10), ...$managers, ...$hostess], $this->open($days), $this->options());
+        $result = $this->solve($problem);
+        $offOf = fn (array $ids) => array_map(fn ($d) => count($ids) - count(array_filter($result->assignments, fn ($r) => $r['date'] === $d && $r['kind'] === 'shift' && in_array($r['employee_id'], $ids, true))), $days);
+
+        $hostessOff = $offOf(range(41, 43));
+        $this->assertSame(6, array_sum($hostessOff));
+        $this->assertLessThanOrEqual(1, max($hostessOff), 'Hostess: ngày nào cũng còn ≥ 2 người đi làm: ' . json_encode($hostessOff));
+
+        $waiterOff = $offOf(range(1, 10));
+        $this->assertLessThanOrEqual(2, max($waiterOff) - min($waiterOff), 'Waiter OFF đều: ' . json_encode($waiterOff));
+
+        $managerOff = $offOf(range(31, 34));
+        $this->assertLessThanOrEqual(2, max($managerOff), 'Quản lý OFF không dồn: ' . json_encode($managerOff));
+
+        $groups = array_column($result->supportReport['balance'][0]['staff_off'], 'outlet');
+        $this->assertEqualsCanonicalizing(['Villa · Waiter', 'Villa · Hostess'], $groups, 'Báo cáo OFF theo nhóm');
+        $this->assertHardConstraintsHold($problem, $result);
+    }
 }

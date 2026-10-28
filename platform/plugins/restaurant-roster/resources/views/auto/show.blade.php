@@ -75,6 +75,30 @@
         @endforeach
     </div>
 
+    @if ($dayChecks = $proposal['support_report']['day_checks'] ?? [])
+        @php($checkLabels = ['hard' => 'Điều kiện cứng', 'night' => 'Night', 'lobby' => 'Lobby', 'waiter' => 'Waiter M6/A2', 'other' => 'Định biên khác'])
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Kiểm tra từng ngày</h3></div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter table-sm">
+                    <thead><tr><th>Ngày</th><th>Kết quả</th>@foreach ($checkLabels as $label)<th>{{ $label }}</th>@endforeach</tr></thead>
+                    <tbody>
+                        @foreach ($dayChecks as $day)
+                            <tr>
+                                <td class="text-nowrap">{{ \Carbon\Carbon::parse($day['date'])->isoFormat('dd DD/MM') }}</td>
+                                <td>@if ($day['status'] === 'ok')<span class="badge bg-success text-white">Đạt</span>@else<span class="badge bg-warning text-white">Cần xem</span>@endif</td>
+                                @foreach (array_keys($checkLabels) as $key)
+                                    <td class="small {{ $day['checks'][$key]['ok'] ? '' : 'text-danger fw-semibold' }}">{{ $day['checks'][$key]['text'] }}</td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer small text-muted">Thuật toán duyệt lần lượt từng ngày: đổi ca các ô chưa khóa để đạt điều kiện, ngày có thay đổi được kiểm tra lại cùng ngày trước / sau. Mục đỏ: xem cảnh báo bên dưới.</div>
+        </div>
+    @endif
+
     @if ($hard)
         <div class="card mb-3 border-danger">
             <div class="card-header"><h3 class="card-title text-danger">Lỗi nghiêm trọng – vi phạm ràng buộc cứng</h3></div>
@@ -172,8 +196,8 @@
     @if (! empty($report['rows']))
         <div class="card mb-3">
             <div class="card-header">
-                <h3 class="card-title">Công bằng ca hỗ trợ Lobby / Kid-Deline và ca sáng / chiều</h3>
-                <span class="card-subtitle ms-2">kỳ này / {{ $report['history_weeks'] }} tuần trước</span>
+                <h3 class="card-title">Ca hỗ trợ Lobby / Kid-Deline và ca sáng / chiều</h3>
+                <span class="card-subtitle ms-2">Lobby: chỉ tuần đang xếp · Kid-Deline, sáng / chiều: kỳ này / {{ $report['history_weeks'] }} tuần trước</span>
             </div>
             <div class="table-responsive" style="max-height: 520px">
                 <table class="table table-sm table-vcenter card-table">
@@ -199,7 +223,7 @@
                                     <td class="text-center font-monospace {{ $can && ! $now ? 'text-warning' : '' }} {{ $can ? '' : 'text-muted' }}"
                                         title="{{ $can ? 'Đủ điều kiện' : 'Không đủ điều kiện theo cấu hình' }}">
                                         @if ($can || $now || ! empty($row['history'][$type]))
-                                            {{ $now }} <span class="text-muted small">/ {{ $row['history'][$type] ?? 0 }}</span>
+                                            {{ $now }}@unless (str_ends_with($type, '(L)'))<span class="text-muted small"> / {{ $row['history'][$type] ?? 0 }}</span>@endunless
                                         @else
                                             ·
                                         @endif
@@ -257,8 +281,8 @@
                     </details>
                 @endif
                 <div class="form-hint mt-2">
-                    Người ít lượt tích lũy (kỳ này + {{ $report['history_weeks'] }} tuần trước) của từng loại ca được ưu tiên khi đủ điều kiện và đi làm được.
-                    OFF đã cho và việc không đủ điều kiện không làm giảm ưu tiên. Lịch sử lấy từ lịch thực tế các tuần trước (ô đã xóa / đổi không được tính).
+                    Lobby (OH(L), M9(L), M6(L), A2(L)) chia trong tuần đang xếp: mỗi người một ca trước khi ai nhận ca thứ hai, không xét các tuần trước.
+                    Kid-Deline và cân bằng sáng / chiều có tính {{ $report['history_weeks'] }} tuần trước. OFF đã cho và việc không đủ điều kiện không làm giảm ưu tiên.
                 </div>
             </div>
         </div>
@@ -321,7 +345,7 @@
             <div class="card-header"><h3 class="card-title">Cân bằng theo ngày (quản lý / nữ waiter / nam waiter M6–A2, Night)</h3></div>
             <div class="table-responsive">
                 <table class="table card-table table-vcenter table-sm">
-                    <thead><tr><th>Ngày</th><th>Quản lý OFF</th><th>Nhân viên OFF (outlet chính)</th><th>Outlet: quản lý · nữ waiter · nam waiter (sáng / chiều)</th><th>Night</th></tr></thead>
+                    <thead><tr><th>Ngày</th><th>Quản lý OFF</th><th>Nhân viên OFF (theo nhóm)</th><th>Outlet: Waiter (sáng / chiều) · quản lý · nữ · nam</th><th>Night (thực tế / nhu cầu)</th></tr></thead>
                     <tbody>
                         @foreach ($balance as $day)
                             <tr>
@@ -334,10 +358,10 @@
                                 </td>
                                 <td class="small">
                                     @foreach ($day['outlets'] as $o)
-                                        <div><strong>{{ $o['outlet'] }}</strong> {{ $o['am'] }}/{{ $o['pm'] }}: QL {{ $o['managers'][0] }}/{{ $o['managers'][1] }} · nữ {{ $o['female'][0] }}/{{ $o['female'][1] }} · nam {{ $o['male'][0] }}/{{ $o['male'][1] }}</div>
+                                        <div class="{{ ($o['balanced'] ?? true) ? '' : 'text-danger' }}" title="{{ implode(', ', $o['waiter_away'] ?? []) }}"><strong>{{ $o['outlet'] }}</strong> {{ $o['am'] }}/{{ $o['pm'] }}: Waiter {{ $o['waiters'][0] ?? 0 }}/{{ $o['waiters'][1] ?? 0 }}@isset($o['waiter_total']) <span class="text-muted">(của {{ $o['waiter_total'] }})</span>@endisset · QL {{ $o['managers'][0] }}/{{ $o['managers'][1] }} · nữ {{ $o['female'][0] }}/{{ $o['female'][1] }} · nam {{ $o['male'][0] }}/{{ $o['male'][1] }}</div>
                                     @endforeach
                                 </td>
-                                <td class="small {{ count($day['night']) !== 3 ? 'text-danger fw-semibold' : '' }}">{{ count($day['night']) }}: {{ implode(', ', $day['night']) }}</td>
+                                <td class="small {{ count($day['night']) < ($day['night_need'] ?? 0) ? 'text-danger fw-semibold' : '' }}">{{ count($day['night']) }}/{{ $day['night_need'] ?? '–' }}: {{ implode(', ', $day['night']) }}</td>
                             </tr>
                         @endforeach
                     </tbody>

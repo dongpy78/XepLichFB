@@ -93,6 +93,28 @@ class NightStaffController extends BaseController
      * Reset lịch Night của tuần đang chọn (để chạy lại thuật toán): chỉ ca đêm do thuật toán xếp, còn nháp, chưa khóa;
      * danh sách luân phiên đề xuất (và đã duyệt nếu tích xác nhận). Lịch đã khóa / đã công bố / xếp tay được giữ.
      */
+    /** Nhu cầu Night theo ngày: ít khách 2 / đông khách 3 người, hoặc bỏ chọn (về mặc định). Áp dụng cho một ngày hoặc cả tuần. */
+    public function demand(Request $request)
+    {
+        $data = $request->validate([
+            'week' => ['required', 'date'],
+            'dates' => ['required', 'array', 'min:1', 'max:31'],
+            'dates.*' => ['date_format:Y-m-d'],
+            'staff' => ['nullable', 'in:2,3'],
+        ]);
+
+        try {
+            $count = $this->service->setDemand($data['dates'], isset($data['staff']) ? (int) $data['staff'] : null, Auth::id());
+        } catch (InvalidArgumentException $e) {
+            return $this->httpResponse()->setError()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))->setMessage($e->getMessage());
+        }
+
+        $label = isset($data['staff']) ? \Botble\RestaurantRoster\Models\NightDemand::LABELS[(int) $data['staff']] : 'mặc định (định biên Night)';
+
+        return $this->httpResponse()->setNextUrl(route('roster.night.index', ['week' => $data['week']]))
+            ->setMessage("Đã đặt nhu cầu Night {$label} cho {$count} ngày. Chạy lại \"Tạo lịch tự động\" để xếp theo nhu cầu mới.");
+    }
+
     public function reset(Request $request)
     {
         $data = $request->validate(['week' => ['required', 'date'], 'confirm' => ['accepted'], 'include_approved' => ['nullable', 'boolean']]);

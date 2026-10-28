@@ -288,17 +288,52 @@ Thao tác được ghi nhật ký. Tiếp tục?')">
     </div>
 
     <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Night từng ngày (lịch đã lưu)</h3></div>
+        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <h3 class="card-title">Night từng ngày – nhu cầu & lịch đã lưu</h3>
+            @if ($canEdit)
+                <form method="POST" action="{{ route('roster.night.demand') }}" class="d-flex flex-wrap gap-1">
+                    @csrf
+                    <input type="hidden" name="week" value="{{ $week->toDateString() }}">
+                    @foreach ($days as $d)
+                        <input type="hidden" name="dates[]" value="{{ $d['date']->toDateString() }}">
+                    @endforeach
+                    <span class="small text-muted me-1 align-self-center">Cả tuần:</span>
+                    <button class="btn btn-sm btn-outline-secondary" name="staff" value="2" type="submit">Ít khách – 2</button>
+                    <button class="btn btn-sm btn-outline-secondary" name="staff" value="3" type="submit">Đông khách – 3</button>
+                    <button class="btn btn-sm" name="staff" value="" type="submit" title="Bỏ chọn, dùng định biên Night mặc định">Mặc định</button>
+                </form>
+            @endif
+        </div>
+        <div class="card-body py-2 small text-muted">
+            Chọn nhu cầu từng ngày: <strong>ít khách 2 người</strong> hoặc <strong>đông khách 3 người</strong> (nam waiter, gồm Night cứng). Ngày chưa chọn dùng định biên Night mặc định.
+            Sau khi đổi, chạy lại "Tạo lịch tự động" cho tuần này. Thiếu người sẽ được báo rõ, không tự hạ nhu cầu.
+        </div>
         <div class="table-responsive">
             <table class="table table-sm table-vcenter mb-0">
                 <thead>
-                    <tr><th>Ngày</th><th>Cần</th><th>Night cứng</th><th>Luân phiên</th><th>Khác</th><th>Thực tế</th><th>Đánh giá</th></tr>
+                    <tr><th>Ngày</th><th>Nhu cầu</th><th>Night cứng</th><th>Luân phiên</th><th>Khác</th><th>Thực tế</th><th>Đánh giá</th></tr>
                 </thead>
                 <tbody>
                     @foreach ($days as $d)
                         <tr class="{{ $d['short'] || ($d['actual'] && ! $d['has_core']) ? 'table-danger' : '' }}">
                             <td>{{ $dayNames[$d['date']->dayOfWeekIso] }} {{ $d['date']->format('d/m') }}</td>
-                            <td>{{ $d['min'] }}</td>
+                            <td class="text-nowrap">
+                                @if ($canEdit)
+                                    <form method="POST" action="{{ route('roster.night.demand') }}" class="d-inline">
+                                        @csrf
+                                        <input type="hidden" name="week" value="{{ $week->toDateString() }}">
+                                        <input type="hidden" name="dates[]" value="{{ $d['date']->toDateString() }}">
+                                        <select name="staff" class="form-select form-select-sm d-inline-block w-auto" onchange="this.form.submit()" aria-label="Nhu cầu Night">
+                                            <option value="" @selected($d['demand'] === null)>Mặc định ({{ $d['default'] }})</option>
+                                            @foreach (\Botble\RestaurantRoster\Models\NightDemand::LABELS as $value => $label)
+                                                <option value="{{ $value }}" @selected($d['demand'] === $value)>{{ $label }}</option>
+                                            @endforeach
+                                        </select>
+                                    </form>
+                                @else
+                                    {{ $d['min'] }} {{ $d['demand'] ? '(' . \Botble\RestaurantRoster\Models\NightDemand::LABELS[$d['demand']] . ')' : '(mặc định)' }}
+                                @endif
+                            </td>
                             @foreach (['core', 'rotation', 'other'] as $role)
                                 <td class="small">{{ count($d['people'][$role]) }}@if ($d['people'][$role]) <span class="text-muted">· {{ implode(', ', $d['people'][$role]) }}</span>@endif</td>
                             @endforeach

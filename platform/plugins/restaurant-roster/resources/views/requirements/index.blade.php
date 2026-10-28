@@ -28,6 +28,15 @@
         @endforeach
     </div>
 
+    @if (config('plugins.restaurant-roster.general.scheduling.staffing_mode', 'balance') === 'balance')
+        <div class="alert alert-info">
+            Nhà hàng thông thường (Gusto, Villa…) không còn định biên: thuật toán cân bằng Waiter / quản lý M6 – A2 theo số người thực tế.
+            Trang này chỉ dùng cho <strong>Night, Room Service, Kid-Deline</strong>. Số người Night từng ngày (ít khách 2 / đông khách 3) chọn ở
+            <a href="{{ route('roster.night.index') }}">Nhân sự Night</a>; Lobby ở <a href="{{ route('roster.coverage.index') }}">Định biên quầy Lobby</a>.
+            Dòng cũ của nhà hàng thông thường được giữ nhưng không dùng khi xếp lịch.
+        </div>
+    @endif
+
     <div class="card mb-3">
         <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
             <div>

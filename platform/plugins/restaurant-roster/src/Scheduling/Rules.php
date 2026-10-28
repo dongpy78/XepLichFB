@@ -52,6 +52,9 @@ final class Rules
         'female_balance' => 2500,
         // Nam waiter chia đều ca sáng / chiều mỗi outlet × ngày (2 → 1/1, 4 → 2/2, tránh 3/1) – sau khi đã xếp Night.
         'male_balance' => 2500,
+        // Tổng Waiter (nam + nữ) M6 / A2 từng outlet × ngày, tính riêng Villa, Gusto: chẵn chia đều, lẻ lệch 1 (quản lý 28/10/2026).
+        // Trên cân bằng riêng nam / nữ: mỗi giới lệch 1 cùng chiều sẽ thành tổng lệch 2 – không chấp nhận khi đổi được.
+        'waiter_balance' => 3500,
         // Số quản lý (Junior Restaurant Captain trở lên) OFF mỗi ngày đều nhau: tổng bình phương số quản lý OFF theo ngày.
         'manager_off_spread' => 3000,
         // Nhân viên (không phải quản lý) OFF rải đều các ngày trong tuần, kể cả thứ 7 / Chủ nhật (quản lý 28/10/2026):

@@ -170,10 +170,27 @@ class StaffingRequirementController extends BaseController
         return view('plugins/restaurant-roster::requirements.form', [
             'model' => $model,
             'source' => $source,
-            'outlets' => Outlet::query()->wherePublished()->orderBy('order')->get(['id', 'code', 'name']),
+            'outlets' => $this->editableOutlets($model->outlet_id ? (int) $model->outlet_id : null),
             'templates' => ShiftTemplate::query()->wherePublished()->orderBy('order')->get(),
             'positions' => Position::query()->wherePublished()->orderBy('order')->get(['id', 'name', 'is_manager']),
         ]);
+    }
+
+    /**
+     * Chế độ "balance": nhà hàng thông thường không còn định biên – chỉ cho khai định biên Night, Room Service, khu trực thuộc (Kid-Deline).
+     * Dòng cũ của nhà hàng vẫn mở sửa / ngừng được (outlet đang chọn luôn có trong danh sách).
+     */
+    private function editableOutlets(?int $current)
+    {
+        $outlets = Outlet::query()->wherePublished()->orderBy('order')->get(['id', 'code', 'name']);
+
+        if (config('plugins.restaurant-roster.general.scheduling.staffing_mode', 'balance') !== 'balance') {
+            return $outlets;
+        }
+
+        $kept = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->staffedOutletIds();
+
+        return $outlets->filter(fn ($o) => in_array((int) $o->id, $kept, true) || (int) $o->id === $current)->values();
     }
 
     private function saved(Request $request, StaffingRequirement $model, string $message)

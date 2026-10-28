@@ -69,7 +69,8 @@ final class ResultBuilder
             explanation: $explanation,
             solverMetadata: $metadata,
             warnings: $warnings,
-            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing, 'borrows' => $borrows, 'balance' => $balance['days']],
+            supportReport: [...$this->supportReport($state), 'female_staffing' => $femaleStaffing, 'borrows' => $borrows, 'balance' => $balance['days'],
+                'day_checks' => $this->dayChecks($state, $balance['days'], $unfilled, $hardViolations)],
         );
     }
 
@@ -310,8 +311,8 @@ final class ResultBuilder
         $days = [];
         $warnings = [];
 
-        foreach ($state->femalePairs() as [$i, $o, $am, $pm]) {
-            $pairs[$i][] = [$o, $am, $pm];
+        foreach ($state->femalePairs() as [$i, $o, $am, $pm, $wAm, $wPm]) {
+            $pairs[$i][] = [$o, $am, $pm, $wAm, $wPm];
         }
 
         $offCounts = [];
@@ -333,13 +334,17 @@ final class ResultBuilder
 
             $outlets = [];
 
-            foreach ($pairs[$i] ?? [] as [$o, $am, $pm]) {
+            foreach ($pairs[$i] ?? [] as [$o, $am, $pm, $wAm, $wPm]) {
                 $manager = fn (int $s) => count(array_filter(array_keys($managers), fn ($id) => ($c = $state->shiftAt($id, $i)) && $c[0] === $o && $c[1] === $s));
+                $waiters = $this->waiterAvailability($state, $i, $o, $am, $pm);
                 $outlets[] = [
-                    'outlet' => $problem->outletName($o), 'am' => $problem->shifts[$am]->code, 'pm' => $problem->shifts[$pm]->code,
+                    'outlet_id' => $o, 'outlet' => $problem->outletName($o), 'am' => $problem->shifts[$am]->code, 'pm' => $problem->shifts[$pm]->code,
                     'managers' => [$manager($am), $manager($pm)],
                     'female' => [$state->femaleCount($i, $o, $am), $state->femaleCount($i, $o, $pm)],
                     'male' => [$state->maleCount($i, $o, $am), $state->maleCount($i, $o, $pm)],
+                    'waiters' => [$state->waiterCount($i, $o, $am), $state->waiterCount($i, $o, $pm)],
+                    'waiter_total' => $waiters['total'], 'waiter_away' => $waiters['away'], 'waiter_locked' => $waiters['locked'],
+                    'balanced' => $state->waiterPairPenalty($i, $o, $am, $pm, $wAm, $wPm) === 0,
                 ];
             }
 
@@ -351,6 +356,15 @@ final class ResultBuilder
                 }
             }
 
+            // Nhu cầu Night của ngày (2 ít khách / 3 đông khách hoặc định biên mặc định).
+            $nightNeed = 0;
+
+            foreach ($state->requirements[$i] ?? [] as $r) {
+                if ($problem->shifts[$r->shiftId]->category() === 'night') {
+                    $nightNeed += $r->min;
+                }
+            }
+
             // Nhân viên (không phải quản lý) OFF theo outlet chính: số người OFF, trong đó OFF đã duyệt / ô khóa (không tự đổi).
             $staffOff = [];
 
@@ -359,7 +373,7 @@ final class ResultBuilder
                 $kept = [];
 
                 foreach ($problem->employees as $id => $employee) {
-                    if (! $state->countsForOffSpread($employee) || $employee->homeOutletId !== $o || $state->shiftAt($id, $i)) {
+                    if (! $state->countsForOffSpread($employee) || ScheduleState::offGroup($employee) !== $o || $state->shiftAt($id, $i)) {
                         continue;
                     }
 
@@ -370,11 +384,22 @@ final class ResultBuilder
                     }
                 }
 
-                $staffOff[$o] = ['outlet' => $problem->outletName($o), 'total' => $total, 'off' => $names, 'kept' => $kept];
+                $staffOff[$o] = ['outlet' => $state->offGroupLabel($o), 'total' => $total, 'off' => $names, 'kept' => $kept];
             }
 
             $offCounts[$i] = count($off);
-            $days[] = ['date' => $date, 'managers_off' => $off, 'approved_off' => $approved, 'outlets' => $outlets, 'night' => $night, 'staff_off' => $staffOff];
+            $days[] = ['date' => $date, 'managers_off' => $off, 'approved_off' => $approved, 'outlets' => $outlets, 'night' => $night, 'night_need' => $nightNeed, 'staff_off' => $staffOff];
+
+            // Waiter M6 / A2 chưa cân bằng: nêu số người, ai không tham gia được và lý do (ô khóa, OFF, Night, Lobby…).
+            foreach ($outlets as $row) {
+                if (! $row['balanced']) {
+                    $warnings[] = ['code' => 'waiter_balance', 'date' => $date, 'outlet_id' => $row['outlet_id'], 'outlet_name' => $row['outlet'],
+                        'message' => sprintf('%s – %s: Waiter %s %d / %s %d (lệch %d).%s%s', date('d/m', strtotime($date)), $row['outlet'], $row['am'], $row['waiters'][0], $row['pm'], $row['waiters'][1],
+                            abs($row['waiters'][0] - $row['waiters'][1]),
+                            $row['waiter_locked'] ? ' Ô đã khóa / xếp tay không đổi được: ' . implode(', ', $row['waiter_locked']) . '.' : '',
+                            ' Không đổi được ca cho người còn lại mà không vi phạm giờ nghỉ / ngày làm / Lobby / Night – quản lý xem lại.')];
+                }
+            }
         }
 
         // Ngày OFF dồn bất thường theo outlet: số người OFF ≥ trung bình + 2 (và ≥ 3), hoặc số người còn làm quá ít.
@@ -392,7 +417,7 @@ final class ResultBuilder
                 $count = count($row['off']);
 
                 if ($count >= max(3, (int) ceil($average) + 2)) {
-                    $warnings[] = ['code' => 'staff_off', 'date' => $day['date'], 'outlet_id' => $o, 'outlet_name' => $row['outlet'],
+                    $warnings[] = ['code' => 'staff_off', 'date' => $day['date'], 'outlet_id' => (int) explode('|', $o)[0], 'outlet_name' => $row['outlet'],
                         'message' => sprintf('%s – %s: %d / %d nhân viên OFF (trung bình %.1f / ngày)%s.', date('d/m', strtotime($day['date'])), $row['outlet'],
                             $count, $total, $average,
                             $row['kept'] ? ', trong đó OFF đã duyệt / ô khóa: ' . implode(', ', $row['kept']) . ' (giữ nguyên – quản lý cân nhắc)' : ' – do giới hạn ngày làm / giờ nghỉ / Night / Lobby')];
@@ -414,6 +439,81 @@ final class ResultBuilder
         }
 
         return ['days' => $days, 'warnings' => $warnings];
+    }
+
+    /**
+     * Waiter của outlet (outlet chính) trong ngày: tổng số, người không làm M6 / A2 tại outlet và lý do, người đang ở ô khóa.
+     *
+     * @return array{total: int, away: string[], locked: string[]}
+     */
+    private function waiterAvailability(ScheduleState $state, int $i, int $o, int $am, int $pm): array
+    {
+        $problem = $state->problem;
+        $date = $state->dates[$i];
+        $total = 0;
+        $away = [];
+        $locked = [];
+
+        foreach ($problem->employees as $id => $employee) {
+            if ($employee->isManager || $employee->homeOutletId !== $o || ! ($employee->isFemaleStaff || $employee->countsAsMale())) {
+                continue;
+            }
+
+            $total++;
+            $cell = $state->shiftAt($id, $i);
+            $reason = match (true) {
+                $cell === null => isset($problem->hardUnavailable[$id][$date]) ? 'OFF đã duyệt' : 'OFF',
+                $problem->shifts[$cell[1]]->category() === 'night' => 'Night',
+                (bool) ($cell[3] ?? false) => 'Lobby (' . $problem->shifts[$cell[1]]->code . '(L))',
+                $cell[0] !== $o => 'làm ' . $problem->outletName($cell[0]),
+                ! in_array($cell[1], [$am, $pm], true) => 'ca ' . $problem->shifts[$cell[1]]->code,
+                default => null,
+            };
+
+            if ($reason !== null) {
+                $away[] = "{$employee->name} ({$reason})";
+            } elseif ($state->isFixed($id, $i)) {
+                $locked[] = "{$employee->name} ({$problem->shifts[$cell[1]]->code})";
+            }
+        }
+
+        return ['total' => $total, 'away' => $away, 'locked' => $locked];
+    }
+
+    /**
+     * Kiểm tra từng ngày (thứ tự trong tuần) sau khi xếp: OFF / ô khóa giữ nguyên, Night đủ nhu cầu, Lobby đủ định biên,
+     * Waiter M6 / A2 cân bằng từng outlet, không vi phạm điều kiện cứng. Ngày chỉ "Đạt" khi mọi mục đạt.
+     *
+     * @return array<int, array{date: string, status: string, checks: array<string, array{ok: bool, text: string}>}>
+     */
+    private function dayChecks(ScheduleState $state, array $balanceDays, array $unfilled, array $hardViolations): array
+    {
+        $result = [];
+
+        foreach ($balanceDays as $day) {
+            $date = $day['date'];
+            $hard = array_filter($hardViolations, fn ($v) => ($v['date'] ?? null) === $date);
+            $lobby = array_filter($unfilled, fn ($u) => $u['date'] === $date && isset($u['lobby']) && $u['level'] === 'min');
+            $other = array_filter($unfilled, fn ($u) => $u['date'] === $date && ! isset($u['lobby']) && $u['level'] === 'min'
+                && $u['shift_id'] !== null && ($state->problem->shifts[$u['shift_id']] ?? null)?->category() !== 'night');
+            $nightGaps = array_filter($unfilled, fn ($u) => $u['date'] === $date && $u['level'] === 'min' && ! isset($u['lobby'])
+                && ($u['shift_id'] === null || ($state->problem->shifts[$u['shift_id']] ?? null)?->category() === 'night'));
+            $nightOk = count($day['night']) >= $day['night_need'] && ! $nightGaps;
+            $unbalanced = array_values(array_filter($day['outlets'], fn ($o) => ! $o['balanced']));
+
+            $checks = [
+                'hard' => ['ok' => ! $hard, 'text' => $hard ? count($hard) . ' vi phạm điều kiện cứng' : 'Không trùng ca, không vi phạm điều kiện cứng, ô khóa / OFF đã duyệt giữ nguyên'],
+                'night' => ['ok' => $nightOk, 'text' => ($day['night_need'] ? sprintf('Night %d / %d người', count($day['night']), $day['night_need']) : 'Không có nhu cầu Night')
+                    . ($nightGaps ? ' – ' . implode('; ', array_map(fn ($u) => $u['shift_code'] . ' thiếu ' . $u['missing'], $nightGaps)) : '')],
+                'lobby' => ['ok' => ! $lobby, 'text' => $lobby ? 'Lobby thiếu người: ' . implode('; ', array_map(fn ($u) => sprintf('%s %d/%d', $u['shift_code'], $u['assigned'], $u['min']), $lobby)) : 'Lobby đủ định biên'],
+                'waiter' => ['ok' => ! $unbalanced, 'text' => implode(' · ', array_map(fn ($o) => sprintf('%s %d/%d', $o['outlet'], $o['waiters'][0], $o['waiters'][1]), $day['outlets'])) ?: 'Không có outlet cân bằng M6 / A2'],
+                'other' => ['ok' => ! $other, 'text' => $other ? count($other) . ' ô thiếu tối thiểu (Room Service / Kid-Deline…)' : 'Các định biên khác đủ'],
+            ];
+
+            $result[] = ['date' => $date, 'status' => array_filter($checks, fn ($c) => ! $c['ok']) ? 'warning' : 'ok', 'checks' => $checks];
+        }
+
+        return $result;
     }
 
     /**
@@ -834,7 +934,9 @@ final class ResultBuilder
 
             foreach ($eligible as $type) {
                 if (empty($m['support_types'][$type]) && $m['worked'] > 0) {
-                    $idle[$type][] = sprintf('%s (%d lượt / %d tuần trước)', $employee->name, $history[$type] ?? 0, $weeks);
+                    $idle[$type][] = str_ends_with($type, '(L)') && ! $problem->rules->lobbyHistoryFairness
+                        ? $employee->name
+                        : sprintf('%s (%d lượt / %d tuần trước)', $employee->name, $history[$type] ?? 0, $weeks);
                 }
             }
         }

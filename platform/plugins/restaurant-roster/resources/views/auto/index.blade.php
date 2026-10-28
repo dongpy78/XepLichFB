@@ -48,15 +48,6 @@
                                 @endforeach
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="auto-history">Khoảng đánh giá công bằng</label>
-                            <select class="form-select" id="auto-history" name="history_weeks">
-                                @foreach ([4, 8] as $weeks)
-                                    <option value="{{ $weeks }}" @selected($weeks === (int) config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))>{{ $weeks }} tuần gần nhất</option>
-                                @endforeach
-                            </select>
-                            <div class="form-hint">Luân phiên Kid-Deline, ca đêm và cân bằng sáng / chiều có tính lịch sử trong khoảng này. Lobby (OH(L), M9(L), M6(L), A2(L)) chỉ xét tuần đang xếp.</div>
-                        </div>
                         <div class="d-grid gap-2">
                             <button type="submit" name="type" value="generate" class="btn btn-primary">
                                 <x-core::icon name="ti ti-wand" /> Tạo lịch tự động

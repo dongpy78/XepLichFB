@@ -6,6 +6,7 @@ use Botble\Base\Enums\BaseStatusEnum;
 use Botble\RestaurantRoster\Models\ChangeLog;
 use Botble\RestaurantRoster\Models\Employee;
 use Botble\RestaurantRoster\Models\EmployeeSkill;
+use Botble\RestaurantRoster\Models\NightDemand;
 use Botble\RestaurantRoster\Models\NightRotation;
 use Botble\RestaurantRoster\Models\Outlet;
 use Botble\RestaurantRoster\Models\Shift;
@@ -709,6 +710,49 @@ class NightStaffService
     }
 
     /**
+     * Nhu cầu Night quản lý đã chọn cho từng ngày (2 = ít khách, 3 = đông khách); ngày chưa chọn không có trong kết quả.
+     *
+     * @return array<string, int> [Y-m-d] => số người
+     */
+    public function demands(CarbonInterface $from, CarbonInterface $to): array
+    {
+        return NightDemand::query()->whereDate('date', '>=', $from->toDateString())->whereDate('date', '<=', $to->toDateString())->get()
+            ->mapWithKeys(fn (NightDemand $d) => [$d->date->toDateString() => (int) $d->staff])->all();
+    }
+
+    /**
+     * Đặt nhu cầu Night cho các ngày: 2 hoặc 3 người; null = bỏ chọn, quay về mặc định (định biên Night).
+     *
+     * @param string[] $dates
+     */
+    public function setDemand(array $dates, ?int $staff, ?int $userId): int
+    {
+        if ($staff !== null && ! isset(NightDemand::LABELS[$staff])) {
+            throw new InvalidArgumentException('Nhu cầu Night chỉ chọn 2 (ít khách) hoặc 3 (đông khách) người.');
+        }
+
+        $count = 0;
+
+        DB::transaction(function () use ($dates, $staff, $userId, &$count): void {
+            foreach (array_unique($dates) as $date) {
+                $date = CarbonImmutable::parse($date)->toDateString();
+                $row = NightDemand::query()->whereDate('date', $date)->first();
+
+                if ($staff === null) {
+                    $count += $row ? (int) $row->delete() : 0;
+
+                    continue;
+                }
+
+                $row ? $row->update(['staff' => $staff, 'updated_by' => $userId]) : NightDemand::query()->create(['date' => $date, 'staff' => $staff, 'updated_by' => $userId]);
+                $count++;
+            }
+        });
+
+        return $count;
+    }
+
+    /**
      * Định biên Night từng ngày của tuần theo lịch đã lưu: cần (tối thiểu / mục tiêu), số người theo nhóm, thiếu / vượt.
      */
     public function dailyStaffing(CarbonInterface $week): array
@@ -723,6 +767,7 @@ class NightStaffService
             ->with('employee:id,name,night_role,fixed_shift_template_id', 'employee.fixedShift:id,start_time')->get()->groupBy(fn (Shift $s) => $s->date->toDateString());
         $days = [];
         $perPerson = array_fill_keys($planned, 0);
+        $demands = $this->demands($weekStart, $weekStart->addDays(6));
 
         foreach (CarbonPeriod::create($weekStart, $weekStart->addDays(6)) as $day) {
             $date = $day->toDateString();
@@ -735,6 +780,13 @@ class NightStaffService
                         $target += $r->target;
                     }
                 }
+            }
+
+            // Nhu cầu quản lý chọn (ít khách 2 / đông khách 3) thay cho định biên Night mặc định của ngày đó.
+            $default = $min;
+
+            if (isset($demands[$date])) {
+                [$min, $target] = [$demands[$date], $demands[$date]];
             }
 
             $people = ['core' => [], 'rotation' => [], 'other' => []];
@@ -753,7 +805,7 @@ class NightStaffService
             }
 
             $actual = array_sum(array_map('count', $people));
-            $days[$date] = ['date' => $day, 'min' => $min, 'target' => $target, 'people' => $people, 'actual' => $actual,
+            $days[$date] = ['date' => $day, 'min' => $min, 'target' => $target, 'default' => $default, 'demand' => $demands[$date] ?? null, 'people' => $people, 'actual' => $actual,
                 'short' => max(0, $min - $actual), 'over' => max(0, $actual - max($target, $min)), 'has_core' => (bool) $people['core']];
         }
 
