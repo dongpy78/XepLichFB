@@ -76,7 +76,9 @@
     </div>
 
     @if ($dayChecks = $proposal['support_report']['day_checks'] ?? [])
-        @php($checkLabels = ['hard' => 'Điều kiện cứng', 'night' => 'Night', 'lobby' => 'Lobby', 'waiter' => 'Waiter M6/A2', 'other' => 'Định biên khác'])
+        @php
+            $checkLabels = ['hard' => 'Điều kiện cứng', 'night' => 'Night', 'lobby' => 'Lobby', 'waiter' => 'Waiter M6/A2', 'other' => 'Định biên khác'];
+        @endphp
         <div class="card mb-3">
             <div class="card-header"><h3 class="card-title">Kiểm tra từng ngày</h3></div>
             <div class="table-responsive">

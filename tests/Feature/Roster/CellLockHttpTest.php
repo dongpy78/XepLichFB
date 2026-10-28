@@ -255,6 +255,8 @@ class CellLockHttpTest extends TestCase
         $run = \Botble\RestaurantRoster\Models\Run::query()->latest('id')->firstOrFail();
         $cell = collect($run->proposal['assignments'] ?? [])->first(fn ($r) => (int) $r['employee_id'] === $this->employee->getKey() && $r['date'] === '2030-01-09');
         $this->assertSame($m6->getKey(), (int) ($cell['shift_id'] ?? 0), 'Ca xin đã khóa: thuật toán giữ nguyên');
+        // Trang kết quả mở được (bảng kiểm tra từng ngày).
+        $this->actingAs($this->user([], true))->get(route('roster.auto.show', $run->getKey()))->assertOk()->assertSee('Kiểm tra từng ngày');
 
         // Chạy tạo lịch + áp dụng 2 lần: mỗi người mỗi ngày đúng 1 ô, ca xin / OFF đã khóa không bị đổi.
         foreach ([1, 2] as $round) {
