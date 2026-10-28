@@ -25,8 +25,9 @@ return [
         'max_daily_hours' => 12,
         'max_consecutive_days' => 6,
         // Giới hạn thời gian mỗi lần chạy (giây) – giữ dưới timeout của web server.
-        'time_limit_seconds' => 20,
-        'max_iterations' => 400000,
+        // 28/10/2026: 30 giây (hosting chậm hơn máy thử) – thêm khoảng 10 giây cho các bước dời OFF / kiểm tra từng ngày.
+        'time_limit_seconds' => 30,
+        'max_iterations' => 600000,
         'seed' => 20261012,
         // Ca có outlet cố định: ca này luôn được tính cho outlet đó, bất kể outlet chính của nhân viên.
         'shift_outlet' => [
@@ -76,6 +77,10 @@ return [
         // Vẫn giữ định biên của Lobby (định biên phủ), Night, Room Service, Kid-Deline. "requirements" = dùng Định biên nhân sự như trước.
         'staffing_mode' => 'balance',
         'open_shift_codes' => ['M6', 'A2'],
+        // Mỗi ca mở (M6, A2) của nhà hàng nên có ≥ 1 nam waiter và ≥ 1 nữ waiter làm trực tiếp (quản lý 28/10/2026: không để ca
+        // không có nam / nữ, outlet không có người). Là mục tiêu (thiếu được báo), không phải tối thiểu cứng: chỉ áp khi outlet có
+        // từ 2 người của giới đó; Night, Lobby, OFF đã duyệt vẫn ưu tiên trước.
+        'open_slot_gender_presence' => true,
         'cross_outlet_transfer' => 'auto',
         // Năng lực tự suy từ hồ sơ (quản lý 25/10/2026): outlet chính → làm được mọi ca của outlet đó; nữ waiter outlet nhà hàng → hỗ trợ Lobby;
         // nam waiter Villa / Gusto / Night bật "Luân phiên Night" → làm được ca đêm. Mục "Ngoại lệ năng lực" chỉ để khai thêm ngoài mặc định.

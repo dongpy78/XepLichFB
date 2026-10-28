@@ -300,6 +300,29 @@ class NightAndScheduleGroupTest extends TestCase
         app(NightStaffService::class)->setDemand([$days[0]], 5, 1);
     }
 
+    /** Ca mở M6 / A2 của nhà hàng: mục tiêu ≥ 1 nam và ≥ 1 nữ waiter mỗi ca (outlet có từ 2 người của giới đó); Night không bị đổi. */
+    public function test_open_slots_target_one_male_and_one_female(): void
+    {
+        $this->restaurants();
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $gusto = $this->outlets['GUSTO']->getKey();
+        $night = $this->outlets['NIGHT']->getKey();
+
+        foreach ($problem->requirements as $r) {
+            if ($r->outletId === $gusto && in_array($r->shiftId, [$this->templates['M6']->getKey(), $this->templates['A2']->getKey()], true)) {
+                $this->assertSame([0, 0, 1, 1], [$r->min, $r->target, $r->targetMale, $r->targetFemale], "{$r->date}: ca mở Gusto");
+            }
+
+            if ($r->outletId === $night) {
+                $this->assertSame(0, $r->targetFemale, 'Night không có mục tiêu nữ');
+            }
+        }
+
+        config(['plugins.restaurant-roster.general.scheduling.open_slot_gender_presence' => false]);
+        $plain = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $this->assertSame([], array_filter($plain->requirements, fn ($r) => $r->outletId === $gusto && $r->targetMale > 0), 'Tắt được bằng cấu hình');
+    }
+
     /** 9.1: danh sách luân phiên loại Night cứng, Room Service chuyên trách, người đã tắt luân phiên; nhận cả nam waiter outlet Night. */
     public function test_rotation_pool_excludes_core_room_service_and_disabled(): void
     {

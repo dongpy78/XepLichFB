@@ -275,6 +275,7 @@ class ProblemBuilder
 
         $requirements = $this->requirements($days, array_values(array_diff($targetOutletIds, [$stationOutletId])), $templates->pluck('id')->all());
         $requirements = $this->applyNightDemand($requirements, $days, $nightStaff, $targetOutletIds);
+        $requirements = $this->applyGenderPresence($requirements, $specs);
 
         // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
         $historyWeeks = max(1, min(26, (int) ($overrides['history_weeks'] ?? config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))));
@@ -1000,6 +1001,56 @@ class ProblemBuilder
                 if (isset($demands[$date]) && ! isset($done[$date])) {
                     $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, $outlets[0], (int) $templates[0], $demands[$date], $demands[$date], $demands[$date]);
                 }
+            }
+        }
+
+        return $requirements;
+    }
+
+    /**
+     * Ca mở M6 / A2 của nhà hàng (chế độ balance): mục tiêu ≥ 1 nam waiter và ≥ 1 nữ waiter làm trực tiếp mỗi ca
+     * (outlet có từ 2 người của giới đó). Thiếu là "thiếu mục tiêu" – được báo, không phải tối thiểu cứng.
+     *
+     * @param \Botble\RestaurantRoster\Scheduling\Requirement[] $requirements
+     * @param EmployeeSpec[] $specs
+     * @return \Botble\RestaurantRoster\Scheduling\Requirement[]
+     */
+    private function applyGenderPresence(array $requirements, array $specs): array
+    {
+        if (config('plugins.restaurant-roster.general.scheduling.staffing_mode', 'balance') !== 'balance'
+            || ! config('plugins.restaurant-roster.general.scheduling.open_slot_gender_presence', true)) {
+            return $requirements;
+        }
+
+        $codes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.open_shift_codes', ['M6', 'A2']));
+        $openShiftIds = ShiftTemplate::query()->get()->filter(fn ($t) => in_array(strtoupper((string) $t->code), $codes, true))->modelKeys();
+        $staffed = $this->staffedOutletIds();
+        $males = [];
+        $females = [];
+
+        foreach ($specs as $e) {
+            if ($e->isManager || $e->homeOutletId === null || $e->isNightCore()) {
+                continue;
+            }
+
+            if ($e->isFemaleStaff) {
+                $females[$e->homeOutletId] = ($females[$e->homeOutletId] ?? 0) + 1;
+            } elseif ($e->countsAsMale()) {
+                $males[$e->homeOutletId] = ($males[$e->homeOutletId] ?? 0) + 1;
+            }
+        }
+
+        foreach ($requirements as $k => $r) {
+            if (in_array($r->outletId, $staffed, true) || ! in_array($r->shiftId, $openShiftIds, true) || $r->min > 0 || $r->target > 0) {
+                continue;
+            }
+
+            $male = ($males[$r->outletId] ?? 0) >= 2 ? 1 : 0;
+            $female = ($females[$r->outletId] ?? 0) >= 2 ? 1 : 0;
+
+            if ($male || $female) {
+                $requirements[$k] = new \Botble\RestaurantRoster\Scheduling\Requirement($r->date, $r->outletId, $r->shiftId, 0, 0, $r->max, 0, $male, $r->allowReduce,
+                    $r->positionMins, 0, $female, $r->positionTargets, $r->countWindow, $r->sourceId);
             }
         }
 

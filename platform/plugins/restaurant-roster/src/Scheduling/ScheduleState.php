@@ -1959,17 +1959,19 @@ final class ScheduleState
         return $this->staffTotals;
     }
 
+    /** Nhóm chia OFF: outlet chính × vị trí × giới tính (nữ Waiter và nam Waiter rải OFF riêng – không để nữ OFF dồn một ngày). */
     public static function offGroup(EmployeeSpec $employee): string
     {
-        return $employee->homeOutletId . '|' . ($employee->positionId ?? 0);
+        return $employee->homeOutletId . '|' . ($employee->positionId ?? 0) . '|' . ($employee->gender ?? '');
     }
 
-    /** Tên nhóm chia OFF, vd "Villa · Waiter". */
+    /** Tên nhóm chia OFF, vd "Villa · Waiter nữ". */
     public function offGroupLabel(string $group): string
     {
-        [$o, $p] = array_map('intval', explode('|', $group));
+        [$o, $p, $g] = array_pad(explode('|', $group), 3, '');
 
-        return $this->problem->outletName($o) . ($p ? ' · ' . ($this->problem->positionNames[$p] ?? '') : '');
+        return $this->problem->outletName((int) $o) . ((int) $p ? ' · ' . ($this->problem->positionNames[(int) $p] ?? '') : '')
+            . (['female' => ' nữ', 'male' => ' nam'][$g] ?? '');
     }
 
     /**

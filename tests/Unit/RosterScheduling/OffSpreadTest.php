@@ -51,10 +51,18 @@ class OffSpreadTest extends TestCase
         $offs = $this->offsPerDay($result, $days, 14);
 
         $this->assertSame(28, array_sum($offs), 'Ai cũng đủ 2 ngày OFF');
-        $this->assertLessThanOrEqual(2, max($offs) - min($offs), 'OFF / ngày lệch tối đa 2: ' . json_encode($offs));
+        // OFF rải đều trong từng nhóm giới tính (7 nữ, 7 nam – mỗi nhóm lệch tối đa 2), tổng lệch tối đa 3.
+        foreach (['nữ' => 1, 'nam' => 0] as $label => $parity) {
+            $ids = array_values(array_filter(range(1, 14), fn ($id) => $id % 2 === $parity));
+            $group = array_map(fn ($d) => count($ids) - count(array_filter($result->assignments, fn ($r) => $r['date'] === $d && $r['kind'] === 'shift' && in_array($r['employee_id'], $ids, true))), $days);
+            $this->assertLessThanOrEqual(2, max($group) - min($group), "OFF {$label} / ngày: " . json_encode($group));
+        }
+
+        $this->assertLessThanOrEqual(3, max($offs) - min($offs), 'OFF / ngày: ' . json_encode($offs));
         $this->assertGreaterThanOrEqual(2, $offs[5], 'Thứ 7 có người OFF: ' . json_encode($offs));
         $this->assertGreaterThanOrEqual(2, $offs[6], 'Chủ nhật có người OFF: ' . json_encode($offs));
-        $this->assertLessThanOrEqual(2, abs($offs[5] - $offs[6]), 'OFF cuối tuần chia giữa thứ 7 và Chủ nhật: ' . json_encode($offs));
+        // Chủ nhật chỉ ghép cặp OFF được với thứ 7 (cặp trong tuần) nên thường ít hơn một chút – lệch tối đa 3.
+        $this->assertLessThanOrEqual(3, abs($offs[5] - $offs[6]), 'OFF cuối tuần chia giữa thứ 7 và Chủ nhật: ' . json_encode($offs));
         $this->assertSame([], array_filter($result->warnings, fn ($w) => $w['code'] === 'staff_off'), 'Không có ngày OFF dồn bất thường');
         $this->assertHardConstraintsHold($problem, $result);
     }
@@ -139,7 +147,7 @@ class OffSpreadTest extends TestCase
         $this->assertLessThanOrEqual(2, max($managerOff), 'Quản lý OFF không dồn: ' . json_encode($managerOff));
 
         $groups = array_column($result->supportReport['balance'][0]['staff_off'], 'outlet');
-        $this->assertEqualsCanonicalizing(['Villa · Waiter', 'Villa · Hostess'], $groups, 'Báo cáo OFF theo nhóm');
+        $this->assertEqualsCanonicalizing(['Villa · Waiter nữ', 'Villa · Waiter nam', 'Villa · Hostess nữ'], $groups, 'Báo cáo OFF theo nhóm (outlet × vị trí × giới)');
         $this->assertHardConstraintsHold($problem, $result);
     }
 }

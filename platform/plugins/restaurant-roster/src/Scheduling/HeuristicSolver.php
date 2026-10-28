@@ -57,6 +57,8 @@ final class HeuristicSolver implements SolverInterface
                 $stats['lobby_polished'] = $this->polishLobby($state, microtime(true) + 2);
                 // Duyệt lần lượt từng ngày (thứ Hai → Chủ nhật): ngày còn lệch Waiter M6 / A2 hoặc còn điểm phạt thì thử đổi ca các ô chưa khóa
                 // của ngày đó; đổi ca kéo theo kiểm tra giờ nghỉ với ngày kề (violation) và chấm lại toàn bộ lịch (cost) – chỉ nhận khi tốt hơn.
+                // Dời cặp ngày OFF của từng người sang vị trí khác trong tuần khi lịch tốt hơn (OFF rải đều, ca có đủ nam / nữ).
+                $stats['off_relocated'] = $this->relocateOffs($state, microtime(true) + 4);
                 $stats['day_repaired'] = $this->repairDays($state, microtime(true) + 3);
             }
 
@@ -2179,6 +2181,131 @@ final class HeuristicSolver implements SolverInterface
                 $state->place($e, $i, (int) $o, $s, $f);
             }
         }
+    }
+
+    /**
+     * Dời ngày OFF tự xếp của một người sang ngày khác trong tuần (giữ số ngày OFF): bỏ OFF ở ngày cũ – xếp lại ca tốt nhất
+     * người đó làm được, đặt OFF ở ngày mới. Thử từng cặp ngày liền nhau (2 ngày OFF / tuần) hoặc từng ngày (1 ngày OFF);
+     * chỉ nhận khi điểm phạt toàn lịch giảm. Ngày OFF đã duyệt, ô khóa, Night (ca đêm) không bị đụng.
+     * Bước này gỡ chỗ kẹt của tìm kiếm: dời OFF cần đổi nhiều ô cùng lúc nên tìm kiếm ngẫu nhiên khó tự tìm ra.
+     */
+    private function relocateOffs(ScheduleState $state, float $deadline): int
+    {
+        $improved = 0;
+        $current = $state->cost();
+        $problem = $state->problem;
+        $weeks = [];
+
+        foreach ($state->scopeIndexes() as $i) {
+            $weeks[$state->weekKey($i)][] = $i;
+        }
+
+        $employeeIds = array_keys($problem->employees);
+        shuffle($employeeIds);
+
+        foreach ($employeeIds as $e) {
+            $employee = $problem->employees[$e];
+
+            if ($employee->daysOffPerWeek < 1 || $employee->isNightCore() || $employee->nightRole === EmployeeSpec::NIGHT_ROTATION) {
+                continue;
+            }
+
+            foreach ($weeks as $days) {
+                if (microtime(true) > $deadline) {
+                    return $improved;
+                }
+
+                $free = array_values(array_filter($days, fn ($i) => ! $state->isFixed($e, $i) && ! isset($problem->hardUnavailable[$e][$state->dates[$i]])));
+                $offs = array_values(array_filter($free, fn ($i) => ($state->plan[$e][$i] ?? null) === null));
+                $slots = array_values(array_unique(array_filter(array_map(fn ($i) => $state->plan[$e][$i] ?? null, $free))));
+
+                // Chỉ ca ngày tại outlet (không dời quanh ca đêm / Lobby (L)).
+                $slots = array_values(array_filter($slots, function ($slot) use ($problem) {
+                    [, $s, $f] = ScheduleState::parseSlot($slot);
+
+                    return ! $f && $problem->shifts[$s]->category() !== 'night';
+                }));
+
+                if (! $offs || ! $slots || count($offs) > 2) {
+                    continue;
+                }
+
+                $size = count($offs);
+                $candidates = [];
+
+                foreach ($free as $k => $i) {
+                    $block = $size === 2 ? [$i, $free[$k + 1] ?? null] : [$i];
+
+                    if (in_array(null, $block, true) || ($size === 2 && $block[1] !== $i + 1) || $block === $offs) {
+                        continue;
+                    }
+
+                    $candidates[] = $block;
+                }
+
+                shuffle($candidates);
+
+                foreach ($candidates as $block) {
+                    if (microtime(true) > $deadline) {
+                        return $improved;
+                    }
+
+                    // Ngày mới phải đang là ca ngày (không phải ca đêm / Lobby) để đổi sang OFF.
+                    if (array_filter($block, fn ($i) => ! in_array($state->plan[$e][$i] ?? null, $slots, true))) {
+                        continue;
+                    }
+
+                    $metrics = $state->metricsSnapshot();
+                    $journal = [];
+
+                    foreach ($block as $i) {
+                        $journal[] = [$e, $i, $state->plan[$e][$i] ?? null];
+                        $state->remove($e, $i);
+                    }
+
+                    $ok = true;
+
+                    foreach (array_diff($offs, $block) as $i) {
+                        $journal[] = [$e, $i, null];
+                        $best = null;
+                        $bestCost = PHP_FLOAT_MAX;
+
+                        foreach ($slots as $slot) {
+                            if ($this->put($state, $e, $i, $slot)) {
+                                $cost = $state->cost();
+
+                                if ($cost < $bestCost) {
+                                    [$best, $bestCost] = [$slot, $cost];
+                                }
+
+                                $state->remove($e, $i);
+                            }
+                        }
+
+                        if ($best === null || ! $this->put($state, $e, $i, $best)) {
+                            $ok = false;
+
+                            break;
+                        }
+                    }
+
+                    if ($ok && ($candidate = $state->cost()) < $current - 1e-6) {
+                        $current = $candidate;
+                        $improved++;
+
+                        break;
+                    }
+
+                    foreach (array_reverse($journal) as [$emp, $d, $slot]) {
+                        $this->restore($state, $emp, $d, $slot);
+                    }
+
+                    $state->restoreMetrics($metrics);
+                }
+            }
+        }
+
+        return $improved;
     }
 
     /**

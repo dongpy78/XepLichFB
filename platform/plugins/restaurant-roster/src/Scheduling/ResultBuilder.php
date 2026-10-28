@@ -416,7 +416,8 @@ final class ResultBuilder
                 $row = $day['staff_off'][$o];
                 $count = count($row['off']);
 
-                if ($count >= max(3, (int) ceil($average) + 2)) {
+                // Dồn bất thường: ≥ trung bình + 2, hoặc từ một nửa nhóm trở lên cùng OFF (nhóm nhỏ, vd nữ Waiter 6 người – 3 OFF).
+                if ($count >= max(3, (int) ceil($average) + 2) || ($count >= 3 && $count * 2 >= $total)) {
                     $warnings[] = ['code' => 'staff_off', 'date' => $day['date'], 'outlet_id' => (int) explode('|', $o)[0], 'outlet_name' => $row['outlet'],
                         'message' => sprintf('%s – %s: %d / %d nhân viên OFF (trung bình %.1f / ngày)%s.', date('d/m', strtotime($day['date'])), $row['outlet'],
                             $count, $total, $average,
@@ -500,13 +501,29 @@ final class ResultBuilder
                 && ($u['shift_id'] === null || ($state->problem->shifts[$u['shift_id']] ?? null)?->category() === 'night'));
             $nightOk = count($day['night']) >= $day['night_need'] && ! $nightGaps;
             $unbalanced = array_values(array_filter($day['outlets'], fn ($o) => ! $o['balanced']));
+            // Ca mở thiếu nam / nữ waiter (mục tiêu ≥ 1 nam, ≥ 1 nữ mỗi ca).
+            $missingGender = [];
+            $i = $state->index[$date] ?? null;
+
+            foreach ($i === null ? [] : ($state->requirements[$i] ?? []) as $r) {
+                $where = $state->problem->outletName($r->outletId) . ' ' . $state->problem->shifts[$r->shiftId]->code;
+
+                if ($r->targetMale > 0 && $state->maleCount($i, $r->outletId, $r->shiftId) < $r->targetMale) {
+                    $missingGender[] = "{$where} không có nam";
+                }
+
+                if ($r->targetFemale > 0 && $state->femaleCount($i, $r->outletId, $r->shiftId) < $r->targetFemale) {
+                    $missingGender[] = "{$where} không có nữ";
+                }
+            }
 
             $checks = [
                 'hard' => ['ok' => ! $hard, 'text' => $hard ? count($hard) . ' vi phạm điều kiện cứng' : 'Không trùng ca, không vi phạm điều kiện cứng, ô khóa / OFF đã duyệt giữ nguyên'],
                 'night' => ['ok' => $nightOk, 'text' => ($day['night_need'] ? sprintf('Night %d / %d người', count($day['night']), $day['night_need']) : 'Không có nhu cầu Night')
                     . ($nightGaps ? ' – ' . implode('; ', array_map(fn ($u) => $u['shift_code'] . ' thiếu ' . $u['missing'], $nightGaps)) : '')],
                 'lobby' => ['ok' => ! $lobby, 'text' => $lobby ? 'Lobby thiếu người: ' . implode('; ', array_map(fn ($u) => sprintf('%s %d/%d', $u['shift_code'], $u['assigned'], $u['min']), $lobby)) : 'Lobby đủ định biên'],
-                'waiter' => ['ok' => ! $unbalanced, 'text' => implode(' · ', array_map(fn ($o) => sprintf('%s %d/%d', $o['outlet'], $o['waiters'][0], $o['waiters'][1]), $day['outlets'])) ?: 'Không có outlet cân bằng M6 / A2'],
+                'waiter' => ['ok' => ! $unbalanced && ! $missingGender, 'text' => (implode(' · ', array_map(fn ($o) => sprintf('%s %d/%d', $o['outlet'], $o['waiters'][0], $o['waiters'][1]), $day['outlets'])) ?: 'Không có outlet cân bằng M6 / A2')
+                    . ($missingGender ? ' – ' . implode('; ', $missingGender) : '')],
                 'other' => ['ok' => ! $other, 'text' => $other ? count($other) . ' ô thiếu tối thiểu (Room Service / Kid-Deline…)' : 'Các định biên khác đủ'],
             ];
 
