@@ -66,7 +66,7 @@
                             <div class="small text-muted">{{ $snapshots->period($snapshot) }} · {{ $snapshot['scope_label'] }} · {{ $snapshots->caption($snapshot) }}</div>
                         </div>
                         <div class="d-flex flex-wrap gap-2">
-                            <a class="btn btn-sm btn-primary" href="{{ $exportUrl('png') }}" data-download><x-core::icon name="ti ti-photo" /> Tải ảnh PNG{{ count($parts) > 1 ? ' (phần 1)' : '' }}</a>
+                            <a class="btn btn-sm btn-primary" href="{{ $exportUrl('png') }}" data-download><x-core::icon name="ti ti-photo" /> Tải ảnh PNG</a>
                             <a class="btn btn-sm" href="{{ $exportUrl('xlsx') }}" data-download><x-core::icon name="ti ti-file-spreadsheet" /> Tải Excel</a>
                             <a class="btn btn-sm" href="{{ $exportUrl('pdf') }}" data-download><x-core::icon name="ti ti-file-type-pdf" /> Tải PDF</a>
                         </div>
@@ -104,22 +104,12 @@
                 </div>
 
                 <div class="card" id="png">
-                    <div class="card-header"><h3 class="card-title">Ảnh PNG để gửi Zalo ({{ count($parts) }} ảnh)</h3></div>
-                    <div class="card-body">
-                        <p class="small text-muted">Mỗi khu (outlet / nhóm lịch) một ảnh; khu đông người được chia mỗi ảnh tối đa {{ \Botble\RestaurantRoster\Services\ScheduleExportService::PNG_ROWS_PER_PART }} người. Mỗi ảnh đều có tiêu đề, khoảng ngày, phiên bản và tiêu đề cột.</p>
-                        <div class="row g-3">
-                            @foreach ($parts as $part)
-                                <div class="col-md-6">
-                                    <div class="border rounded p-2">
-                                        <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <strong>Phần {{ $part['part'] }}/{{ $part['total'] }} · {{ $part['section'] }}</strong>
-                                            <a class="btn btn-sm btn-primary" href="{{ $exportUrl('png', ['part' => $part['part']]) }}" data-download>Tải ảnh</a>
-                                        </div>
-                                        <img src="{{ $exportUrl('png', ['part' => $part['part'], 'inline' => 1]) }}" alt="Phần {{ $part['part'] }}" class="img-fluid border" loading="lazy">
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title">Ảnh PNG để gửi Zalo</h3>
+                        <a class="btn btn-sm btn-primary" href="{{ $exportUrl('png') }}" data-download><x-core::icon name="ti ti-download" /> Tải ảnh</a>
+                    </div>
+                    <div class="card-body text-center">
+                        <img src="{{ $exportUrl('png', ['inline' => 1]) }}" alt="Lịch làm việc tuần" class="img-fluid border rounded" loading="lazy">
                     </div>
                 </div>
             @endif

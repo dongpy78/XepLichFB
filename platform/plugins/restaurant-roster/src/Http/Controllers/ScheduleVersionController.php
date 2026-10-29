@@ -43,7 +43,6 @@ class ScheduleVersionController extends RosterController
             'snapshot' => $snapshot,
             'status' => $grid['publication']['status'],
             'statusLabels' => ScheduleSnapshotService::STATUS_LABELS,
-            'parts' => $snapshot ? app(ScheduleExportService::class)->pngParts($snapshot) : [],
             'canDraft' => $canDraft,
             'snapshots' => app(ScheduleSnapshotService::class),
         ]);
@@ -51,7 +50,7 @@ class ScheduleVersionController extends RosterController
 
     public function export(Request $request)
     {
-        $request->validate(['format' => ['required', 'in:png,xlsx,pdf'], 'part' => ['nullable', 'integer', 'min:1']]);
+        $request->validate(['format' => ['required', 'in:png,xlsx,pdf']]);
 
         try {
             [$snapshot] = $this->resolve($request);
@@ -61,7 +60,7 @@ class ScheduleVersionController extends RosterController
             [$content, $mime, $name] = match ($request->input('format')) {
                 'xlsx' => [$exporter->xlsx($snapshot), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', $snapshots->filename($snapshot, 'xlsx')],
                 'pdf' => [$exporter->pdf($snapshot), 'application/pdf', $snapshots->filename($snapshot, 'pdf')],
-                'png' => $this->png($exporter, $snapshots, $snapshot, $request->integer('part') ?: 1),
+                'png' => [$exporter->png($snapshot), 'image/png', $snapshots->filename($snapshot, 'png')],
             };
         } catch (RuntimeException $e) {
             return $this->httpResponse()->setError()->setMessage($e->getMessage())->setNextUrl(route('roster.schedule.index', $request->only('week', 'outlet_id')));
@@ -74,13 +73,6 @@ class ScheduleVersionController extends RosterController
             'Content-Disposition' => $disposition . '; filename="' . $name . '"',
             'Cache-Control' => 'no-store, private',
         ]);
-    }
-
-    private function png(ScheduleExportService $exporter, ScheduleSnapshotService $snapshots, array $snapshot, int $part): array
-    {
-        $total = count($exporter->pngParts($snapshot));
-
-        return [$exporter->png($snapshot, $part), 'image/png', $snapshots->filename($snapshot, 'png', $total > 1 ? min($part, $total) : null)];
     }
 
     /**

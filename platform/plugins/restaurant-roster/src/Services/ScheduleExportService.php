@@ -18,9 +18,6 @@ use RuntimeException;
  */
 class ScheduleExportService
 {
-    /** Số nhân viên tối đa mỗi ảnh PNG (để chữ đủ lớn khi xem trên điện thoại). */
-    public const PNG_ROWS_PER_PART = 25;
-
     public function __construct(private readonly ScheduleSnapshotService $snapshots)
     {
     }
@@ -134,135 +131,209 @@ class ScheduleExportService
     // ------------------------------------------------------------------ PNG
 
     /**
-     * Chia ảnh: theo khu (outlet / nhóm lịch), khu nhiều người thì chia mỗi phần tối đa PNG_ROWS_PER_PART người.
-     *
-     * @return array<int, array{section: string, rows: array, start: int, part: int, total: int}>
+     * Ảnh PNG: một ảnh duy nhất cho cả tuần (quản lý 30/10/2026 – không chia phần), thiết kế theo màu thương hiệu
+     * (navy + vàng gold), mỗi loại ca một màu (sáng / trưa / chiều / đêm), OFF xám, nghỉ phép hồng; dòng xen kẽ dễ dò.
      */
-    public function pngParts(array $snapshot): array
+    public function png(array $snapshot): string
     {
-        $parts = [];
-        $n = 0;
+        $sections = array_values(array_filter($snapshot['sections'], fn ($s) => $s['rows']));
 
-        foreach ($snapshot['sections'] as $section) {
-            $chunks = array_chunk($section['rows'], self::PNG_ROWS_PER_PART);
-
-            foreach ($chunks as $k => $rows) {
-                $parts[] = ['section' => $section['label'] . (count($chunks) > 1 ? sprintf(' (%d/%d)', $k + 1, count($chunks)) : ''), 'rows' => $rows, 'start' => $n];
-                $n += count($rows);
-            }
-        }
-
-        $total = count($parts);
-
-        return array_map(fn ($p, $i) => [...$p, 'part' => $i + 1, 'total' => $total], $parts, array_keys($parts));
-    }
-
-    public function png(array $snapshot, int $part = 1): string
-    {
-        $parts = $this->pngParts($snapshot);
-
-        if (! $parts) {
+        if (! $sections) {
             throw new RuntimeException('Tuần này chưa có nhân viên nào trên bảng xếp ca.');
         }
 
-        $p = $parts[max(1, min($part, count($parts))) - 1];
         [$regular, $bold] = $this->fonts();
         $days = $snapshot['days'];
         $draft = ! isset($snapshot['version']);
+        $rows = array_merge(...array_map(fn ($s) => $s['rows'], $sections));
 
-        // Kích thước (px): đủ lớn để đọc rõ trên điện thoại khi gửi Zalo.
-        $pad = 32;
-        $rowH = 46;
-        $colNo = 76;
-        $colName = max(300, min(440, 30 + $this->textWidth($bold, 19, $this->longestText($p['rows'], 'name'))));
-        $colPos = max(200, min(340, 30 + $this->textWidth($regular, 16, $this->longestText($p['rows'], 'position'))));
-        $colDay = 128;
-        $width = $pad * 2 + $colNo + $colName + $colPos + $colDay * count($days);
-        $headerTop = 150;
-        $height = $headerTop + $rowH * (2 + count($p['rows'])) + 90;
+        // Kích thước (px) – đủ lớn để đọc rõ trên điện thoại khi gửi Zalo.
+        $pad = 40;
+        $bannerH = 176;
+        $headH = 70;
+        $sectionH = 50;
+        $rowH = 64;
+        $colNo = 64;
+        $colName = max(340, min(480, 44 + max($this->textWidth($bold, 19, $this->longestText($rows, 'name')), $this->textWidth($regular, 14, $this->longestText($rows, 'position')))));
+        $colDay = 136;
+        $tableW = $colNo + $colName + $colDay * count($days);
+        $width = $pad * 2 + $tableW;
+        $tableTop = $bannerH + 30;
+        $tableH = $headH + $sectionH * count($sections) + $rowH * count($rows);
+        $height = $tableTop + $tableH + 120;
 
         $img = imagecreatetruecolor($width, $height);
-        $white = imagecolorallocate($img, 255, 255, 255);
-        $ink = imagecolorallocate($img, 25, 28, 30);
-        $muted = imagecolorallocate($img, 95, 105, 120);
-        $line = imagecolorallocate($img, 205, 212, 222);
-        $head = imagecolorallocate($img, 232, 238, 246);
-        $sectionBg = imagecolorallocate($img, 252, 239, 217);
-        $offBg = imagecolorallocate($img, 238, 238, 238);
-        $red = imagecolorallocate($img, 192, 57, 43);
-        $navy = imagecolorallocate($img, 10, 37, 64);
-        imagefilledrectangle($img, 0, 0, $width, $height, $white);
+        imagealphablending($img, true);
+        $c = fn (string $hex) => imagecolorallocate($img, hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2)));
+        $bg = $c('F4F6FA');
+        $white = $c('FFFFFF');
+        $navy = $c('0A2540');
+        $navyDeep = $c('061A30');
+        $gold = $c('E0A96D');
+        $goldWash = $c('FDF3E7');
+        $ink = $c('1B2330');
+        $muted = $c('6B7686');
+        $line = $c('E3E8EF');
+        $zebra = $c('F8FAFC');
+        $weekendHead = $c('E4EBF5');
+        $red = $c('D64545');
+        imagefilledrectangle($img, 0, 0, $width, $height, $bg);
 
-        imagettftext($img, 30, 0, $pad, 58, $draft ? $red : $navy, $bold, 'LỊCH LÀM VIỆC TUẦN' . ($draft ? ' – BẢN NHÁP' : ''));
-        imagettftext($img, 18, 0, $pad, 94, $ink, $regular, $this->snapshots->period($snapshot) . ' · ' . $snapshot['scope_label']);
-        imagettftext($img, 15, 0, $pad, 124, $draft ? $red : $muted, $regular, $this->snapshots->caption($snapshot)
-            . ($p['total'] > 1 ? sprintf(' · Phần %d/%d', $p['part'], $p['total']) : ''));
+        // Băng tiêu đề navy + vạch vàng.
+        imagefilledrectangle($img, 0, 0, $width, $bannerH, $navy);
+        imagefilledrectangle($img, 0, $bannerH - 6, $width, $bannerH, $gold);
+        imagefilledrectangle($img, $pad, 40, $pad + 8, 112, $gold);
+        imagettftext($img, 34, 0, $pad + 26, 76, $white, $bold, 'LỊCH LÀM VIỆC TUẦN');
+        imagettftext($img, 20, 0, $pad + 26, 112, $gold, $bold, $this->snapshots->period($snapshot));
+        imagettftext($img, 14, 0, $pad + 26, 144, $c('B9C6D8'), $regular, $this->fit($regular, 14, $snapshot['scope_label'] . ' · ' . $this->snapshots->caption($snapshot), $width - $pad * 2 - 260));
 
+        // Nhãn phiên bản / bản nháp góc phải.
+        $tag = $draft ? 'BẢN NHÁP' : 'PHIÊN BẢN v' . $snapshot['version'];
+        $tagW = $this->textWidth($bold, 18, $tag) + 44;
+        $this->pill($img, $width - $pad - $tagW, 52, $width - $pad, 98, $draft ? $red : $gold);
+        imagettftext($img, 18, 0, $width - $pad - $tagW + 22, 83, $draft ? $white : $navyDeep, $bold, $tag);
+
+        // Thẻ bảng (nền trắng, viền nhẹ).
         $x0 = $pad;
-        $x1 = $width - $pad;
-        $y = $headerTop;
+        $x1 = $pad + $tableW;
+        $this->roundRect($img, $x0 - 1, $tableTop - 1, $x1 + 1, $tableTop + $tableH + 1, 14, $line);
+        $this->roundRect($img, $x0, $tableTop, $x1, $tableTop + $tableH, 14, $white);
 
-        // Hàng tiêu đề cột.
-        imagefilledrectangle($img, $x0, $y, $x1, $y + $rowH, $head);
-        $this->cellText($img, $bold, 16, $ink, $x0, $colNo, $y, $rowH, 'STT', true);
-        $this->cellText($img, $bold, 16, $ink, $x0 + $colNo, $colName, $y, $rowH, 'Họ và tên');
-        $this->cellText($img, $bold, 16, $ink, $x0 + $colNo + $colName, $colPos, $y, $rowH, 'Chức vụ');
+        // Hàng tiêu đề: "Thứ" đậm + ngày nhỏ; thứ 7 / CN nền đậm hơn.
+        $y = $tableTop;
+        $this->roundRect($img, $x0, $y, $x1, $y + $headH, 14, $c('EEF2F8'));
+        imagefilledrectangle($img, $x0, $y + 14, $x1, $y + $headH, $c('EEF2F8'));
+        $this->cellText($img, $bold, 15, $muted, $x0, $colNo, $y, $headH, '#', true);
+        $this->cellText($img, $bold, 16, $navy, $x0 + $colNo, $colName, $y, $headH, 'NHÂN VIÊN');
 
         foreach ($days as $k => $day) {
-            $this->cellText($img, $bold, 16, $ink, $x0 + $colNo + $colName + $colPos + $colDay * $k, $colDay, $y, $rowH, $day['label'], true);
-        }
+            $cx = $x0 + $colNo + $colName + $colDay * $k;
+            [$dow, $date] = array_pad(explode(' ', $day['label'], 2), 2, '');
 
-        $y += $rowH;
-        // Hàng tên khu.
-        imagefilledrectangle($img, $x0, $y, $x1, $y + $rowH, $sectionBg);
-        $this->cellText($img, $bold, 17, $navy, $x0, $x1 - $x0, $y, $rowH, mb_strtoupper($p['section']));
-        $y += $rowH;
-
-        foreach ($p['rows'] as $i => $row) {
-            foreach ($row['cells'] as $k => $cell) {
-                if (! empty($row['offs'][$k])) {
-                    $cx = $x0 + $colNo + $colName + $colPos + $colDay * $k;
-                    imagefilledrectangle($img, $cx, $y, $cx + $colDay, $y + $rowH, $offBg);
+            if (in_array($dow, ['T7', 'CN'], true)) {
+                if ($k === count($days) - 1) {
+                    // Cột cuối: giữ góc bo tròn của thẻ bảng.
+                    $this->roundRect($img, $cx, $y, $cx + $colDay, $y + $headH, 14, $weekendHead);
+                    imagefilledrectangle($img, $cx, $y + 14, $cx + $colDay, $y + $headH, $weekendHead);
+                    imagefilledrectangle($img, $cx, $y, $cx + $colDay - 14, $y + $headH, $weekendHead);
+                } else {
+                    imagefilledrectangle($img, $cx, $y, $cx + $colDay, $y + $headH, $weekendHead);
                 }
             }
 
-            $this->cellText($img, $regular, 16, $muted, $x0, $colNo, $y, $rowH, (string) ($p['start'] + $i + 1), true);
-            $this->cellText($img, $bold, 19, $ink, $x0 + $colNo, $colName, $y, $rowH, $row['name']);
-            $this->cellText($img, $regular, 16, $muted, $x0 + $colNo + $colName, $colPos, $y, $rowH, $row['position']);
+            $this->cellText($img, $bold, 18, $navy, $cx, $colDay, $y - 12, $headH, $dow, true);
+            $this->cellText($img, $regular, 13, $muted, $cx, $colDay, $y + 14, $headH, $date, true);
+        }
 
-            foreach ($row['cells'] as $k => $cell) {
-                $this->cellText($img, $bold, ! empty($row['offs'][$k]) ? 16 : 18, ! empty($row['offs'][$k]) ? $muted : $ink,
-                    $x0 + $colNo + $colName + $colPos + $colDay * $k, $colDay, $y, $rowH, $cell, true);
+        $y += $headH;
+        $n = 0;
+
+        foreach ($sections as $section) {
+            // Băng tên khu: nền vàng nhạt + vạch vàng trái.
+            imagefilledrectangle($img, $x0, $y, $x1, $y + $sectionH, $goldWash);
+            imagefilledrectangle($img, $x0, $y, $x0 + 6, $y + $sectionH, $gold);
+            $this->cellText($img, $bold, 17, $navy, $x0 + 16, $x1 - $x0 - 16, $y, $sectionH, mb_strtoupper($section['label']) . '  ·  ' . count($section['rows']) . ' người');
+            $y += $sectionH;
+
+            foreach ($section['rows'] as $i => $row) {
+                if ($i % 2 === 1) {
+                    imagefilledrectangle($img, $x0, $y, $x1, $y + $rowH, $zebra);
+                }
+
+                imageline($img, $x0, $y, $x1, $y, $line);
+                $this->cellText($img, $regular, 15, $muted, $x0, $colNo, $y, $rowH, (string) ++$n, true);
+                // Tên đậm + chức vụ nhỏ bên dưới.
+                imagettftext($img, 19, 0, $x0 + $colNo + 12, $y + 30, $ink, $bold, $this->fit($bold, 19, $row['name'], $colName - 24));
+                imagettftext($img, 13, 0, $x0 + $colNo + 12, $y + 52, $muted, $regular, $this->fit($regular, 13, $row['position'], $colName - 24));
+
+                foreach ($row['cells'] as $k => $cell) {
+                    if ($cell === '') {
+                        continue;
+                    }
+
+                    $cx = $x0 + $colNo + $colName + $colDay * $k;
+                    [$fill, $text] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
+                    $this->pill($img, $cx + 12, $y + 13, $cx + $colDay - 12, $y + $rowH - 13, $c($fill));
+                    $this->cellText($img, $bold, mb_strlen($cell) > 6 ? 14 : 17, $c($text), $cx, $colDay, $y, $rowH, $cell, true);
+                }
+
+                $y += $rowH;
+            }
+        }
+
+        // Đường kẻ dọc nhẹ giữa các ngày.
+        foreach (range(0, count($days)) as $k) {
+            $cx = $x0 + $colNo + $colName + $colDay * $k;
+            imageline($img, $cx, $tableTop + $headH, $cx, $tableTop + $tableH, $line);
+        }
+
+        // Chú thích: chip màu từng ca + OFF.
+        $lx = $pad;
+        $ly = $tableTop + $tableH + 36;
+        imagettftext($img, 15, 0, $lx, $ly + 20, $muted, $bold, 'Chú thích');
+        $lx += $this->textWidth($bold, 15, 'Chú thích') + 24;
+
+        foreach ([...$snapshot['legend'], 'OFF' => 'nghỉ'] as $code => $time) {
+            [$fill, $text] = $this->shiftColors($snapshot, (string) $code, $code === 'OFF');
+            $chipW = $this->textWidth($bold, 15, (string) $code) + 28;
+
+            if ($lx + $chipW + $this->textWidth($regular, 14, (string) $time) + 30 > $width - $pad) {
+                break;
             }
 
-            $y += $rowH;
+            $this->pill($img, $lx, $ly, $lx + $chipW, $ly + 30, $c($fill));
+            imagettftext($img, 15, 0, $lx + 14, $ly + 22, $c($text), $bold, (string) $code);
+            imagettftext($img, 14, 0, $lx + $chipW + 10, $ly + 21, $muted, $regular, (string) $time);
+            $lx += $chipW + $this->textWidth($regular, 14, (string) $time) + 34;
         }
 
-        // Lưới.
-        $top = $headerTop;
-        foreach (range(0, 2 + count($p['rows'])) as $r) {
-            imageline($img, $x0, $top + $rowH * $r, $x1, $top + $rowH * $r, $line);
-        }
-        $xs = [$x0, $x0 + $colNo, $x0 + $colNo + $colName, $x0 + $colNo + $colName + $colPos];
-        foreach (range(1, count($days)) as $k) {
-            $xs[] = $x0 + $colNo + $colName + $colPos + $colDay * $k;
-        }
-        foreach ($xs as $x) {
-            imageline($img, $x, $top, $x, $top + $rowH, $line);
-            imageline($img, $x, $top + $rowH * 2, $x, $y, $line);
-        }
-        imageline($img, $x0, $top + $rowH, $x0, $top + $rowH * 2, $line);
-        imageline($img, $x1, $top + $rowH, $x1, $top + $rowH * 2, $line);
-
-        // Chú thích ca.
-        $legend = 'Chú thích: ' . implode(' · ', array_map(fn ($code, $time) => "{$code} {$time}", array_keys($snapshot['legend']), $snapshot['legend'])) . ' · OFF: nghỉ';
-        imagettftext($img, 14, 0, $pad, $y + 40, $muted, $regular, $this->fit($regular, 14, $legend, $width - $pad * 2));
+        imagettftext($img, 13, 0, $pad, $ly + 64, $c('9AA4B2'), $regular, 'Selectum Noa · F&B · Xếp lịch nhà hàng');
 
         ob_start();
         imagepng($img, null, 6);
         imagedestroy($img);
 
         return (string) ob_get_clean();
+    }
+
+    /**
+     * Màu ô ca theo giờ bắt đầu (lấy từ chú thích): sáng xanh dương, trưa xanh ngọc, chiều cam, đêm tím; OFF xám; nghỉ phép hồng.
+     *
+     * @return array{0: string, 1: string} [nền, chữ] (hex)
+     */
+    private function shiftColors(array $snapshot, string $cell, bool $off): array
+    {
+        if ($off) {
+            return $cell === 'OFF' ? ['E9ECF1', '7A8494'] : ['FCE4EC', 'AD1457'];
+        }
+
+        $code = (string) preg_replace('/[(+].*$/u', '', $cell);
+        $hour = isset($snapshot['legend'][$code]) ? (int) substr((string) $snapshot['legend'][$code], 0, 2) : null;
+
+        return match (true) {
+            $hour === null => ['E8EEF6', '0A2540'],
+            $hour >= 19 || $hour < 4 => ['E8E3FB', '4527A0'],
+            $hour < 8 => ['DCEBFF', '0B4F9C'],
+            $hour < 12 => ['D7F2EC', '0B6E5A'],
+            default => ['FFE9CF', '9A4B00'],
+        };
+    }
+
+    private function roundRect($img, int $x1, int $y1, int $x2, int $y2, int $r, int $color): void
+    {
+        $r = max(0, min($r, (int) (($x2 - $x1) / 2), (int) (($y2 - $y1) / 2)));
+        imagefilledrectangle($img, $x1 + $r, $y1, $x2 - $r, $y2, $color);
+        imagefilledrectangle($img, $x1, $y1 + $r, $x2, $y2 - $r, $color);
+
+        foreach ([[$x1 + $r, $y1 + $r], [$x2 - $r, $y1 + $r], [$x1 + $r, $y2 - $r], [$x2 - $r, $y2 - $r]] as [$cx, $cy]) {
+            imagefilledellipse($img, $cx, $cy, $r * 2, $r * 2, $color);
+        }
+    }
+
+    /** Viên thuốc (bo tròn hai đầu). */
+    private function pill($img, int $x1, int $y1, int $x2, int $y2, int $color): void
+    {
+        $this->roundRect($img, $x1, $y1, $x2, $y2, (int) (($y2 - $y1) / 2), $color);
     }
 
     // ------------------------------------------------------------------ helpers

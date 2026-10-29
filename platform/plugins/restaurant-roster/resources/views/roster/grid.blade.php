@@ -64,7 +64,7 @@
             <div class="d-flex flex-wrap gap-1">
                 <a class="btn btn-sm" href="{{ route('roster.schedule.index', $pubQuery) }}"><x-core::icon name="ti ti-eye" /> Xem lịch đã công bố{{ $publication['count'] > 1 ? ' (' . $publication['count'] . ' bản)' : '' }}</a>
                 @if ($latestVersion)
-                    <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.index', $pubQuery) }}#png" title="Ảnh có thể chia nhiều phần – xem và tải từng ảnh">Tải ảnh PNG</a>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.export', [...$pubQuery, 'format' => 'png']) }}">Tải ảnh PNG</a>
                     <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.export', [...$pubQuery, 'format' => 'xlsx']) }}">Tải Excel</a>
                     <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.export', [...$pubQuery, 'format' => 'pdf']) }}">Tải PDF</a>
                 @endif

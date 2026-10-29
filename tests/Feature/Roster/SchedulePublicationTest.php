@@ -10,7 +10,6 @@ use Botble\RestaurantRoster\Models\ScheduleVersion;
 use Botble\RestaurantRoster\Models\Shift;
 use Botble\RestaurantRoster\Models\ShiftTemplate;
 use Botble\RestaurantRoster\Providers\RestaurantRosterServiceProvider;
-use Botble\RestaurantRoster\Services\ScheduleExportService;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -261,23 +260,21 @@ class SchedulePublicationTest extends TestCase
         $this->actingAs($this->user())->get(route('roster.schedule.index', ['week' => self::WEEK, 'version' => 1]))->assertOk()->assertSee('phiên bản v1');
     }
 
-    /** Bảng dài: ảnh chia nhiều phần theo khu, mỗi phần ≤ 25 người, không mất ai; mỗi phần tải riêng được. */
-    public function test_png_split_into_parts_without_losing_rows(): void
+    /** Bảng dài (65 người, 2 khu): MỘT ảnh duy nhất chứa đủ mọi người – ảnh cao theo số người, không chia phần. */
+    public function test_png_is_one_image_with_everyone(): void
     {
         $this->staff(60, 'VILLA');
         $this->staff(5, 'GUSTO');
         $this->publish()->assertJson(['error' => false]);
 
-        $snapshot = ScheduleVersion::query()->firstOrFail()->snapshot;
-        $parts = app(ScheduleExportService::class)->pngParts($snapshot);
-        $this->assertCount(4, $parts, 'Villa 60 người → 3 ảnh, Gusto → 1 ảnh');
-        $this->assertSame(65, array_sum(array_map(fn ($p) => count($p['rows']), $parts)), 'Không mất nhân viên');
-        $this->assertLessThanOrEqual(ScheduleExportService::PNG_ROWS_PER_PART, max(array_map(fn ($p) => count($p['rows']), $parts)));
-        $this->assertSame([4, 4], [$parts[0]['total'], $parts[3]['part']]);
+        $png = $this->export('png')->assertOk();
+        $this->assertStringContainsString('Lich-lam-viec-2030-01-07_2030-01-13-v1.png', (string) $png->headers->get('Content-Disposition'), 'Không có -phan-');
+        [$width, $height] = getimagesizefromstring($png->getContent());
+        $this->assertGreaterThan(1300, $width);
+        $this->assertGreaterThan(65 * 60, $height, 'Đủ chỗ cho 65 dòng nhân viên + 2 khu trong một ảnh');
 
-        $part3 = $this->export('png', ['part' => 3])->assertOk();
-        $this->assertStringContainsString('-v1-phan-3.png', (string) $part3->headers->get('Content-Disposition'));
-        $this->assertNotFalse(getimagesizefromstring($part3->getContent()));
+        $this->actingAs($this->user())->get(route('roster.schedule.index', ['week' => self::WEEK]))->assertOk()
+            ->assertSee('Ảnh PNG để gửi Zalo')->assertDontSee('Phần 1/');
     }
 
     /** Phân quyền ở backend: chỉ xem → không công bố, không tải bản nháp; vẫn tải được lịch đã công bố. */
