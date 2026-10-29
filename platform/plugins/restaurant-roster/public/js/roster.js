@@ -91,9 +91,49 @@ $(() => {
         load()
     })
 
+    // Công bố lịch tuần: xem trước (tuần, phạm vi, số nhân viên, lỗi chặn công bố) → xác nhận → công bố (lưu phiên bản chính thức).
+    const publishWithPreview = ($button) => {
+        Botble.showButtonLoading($button)
+        $.ajax({ url: urls.publishPreviewUrl, method: 'GET', data: { ...state }, headers: { Accept: 'application/json' } })
+            .done((response) => {
+                Botble.hideButtonLoading($button)
+                const d = response.data || {}
+
+                if (d.problems && d.problems.length) {
+                    Botble.showError(`Chưa công bố được – cần sửa ${d.problems.length} lỗi: ${d.problems.slice(0, 6).join(' · ')}${d.problems.length > 6 ? ' …' : ''}`)
+
+                    return
+                }
+
+                const text = [
+                    `Công bố lịch tuần ${d.week}?`,
+                    `Phạm vi: ${d.scope}`,
+                    `Nhân viên có lịch: ${d.employees}${d.empty ? ` (${d.empty} người chưa có ca nào)` : ''}`,
+                    `Trạng thái hiện tại: ${d.status}`,
+                    '',
+                    `Lịch sẽ thành phiên bản chính thức v${d.next_version} (nếu có thay đổi) để tải PNG / Excel / PDF gửi nhân viên.`,
+                ].join('\n')
+
+                if (window.confirm(text)) {
+                    Botble.showButtonLoading($button)
+                    request('POST', urls.publishUrl).always(() => Botble.hideButtonLoading($button))
+                }
+            })
+            .fail((xhr) => {
+                Botble.hideButtonLoading($button)
+                Botble.handleError(xhr)
+            })
+    }
+
     $app.on('click', '[data-roster-action]', (event) => {
         const $button = $(event.currentTarget)
         const confirmText = $button.data('confirm')
+
+        if ($button.data('roster-action') === 'publish') {
+            publishWithPreview($button)
+
+            return
+        }
 
         if (confirmText && !window.confirm(confirmText)) {
             return

@@ -18,6 +18,10 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 'permission' => 'roster.index',
             ]);
 
+            // Lịch tuần đã công bố: xem phiên bản, tải PNG / Excel / PDF (bản nháp: kiểm tra quyền sửa lịch trong controller).
+            Route::get('schedule', ['as' => 'schedule.index', 'uses' => 'ScheduleVersionController@show', 'permission' => 'roster.index']);
+            Route::get('schedule/export', ['as' => 'schedule.export', 'uses' => 'ScheduleVersionController@export', 'permission' => 'roster.index']);
+
             Route::get('statistics', [
                 'as' => 'statistics',
                 'uses' => 'StatisticsController@index',
@@ -29,6 +33,7 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 Route::post('lock', 'RosterController@lock')->name('lock');
                 Route::post('copy-previous-week', 'RosterController@copyPreviousWeek')->name('copy-previous-week');
                 Route::post('publish', 'RosterController@publish')->name('publish');
+                Route::get('publish-preview', 'RosterController@publishPreview')->name('publish-preview');
                 Route::post('clear-week', 'RosterController@clearWeek')->name('clear-week');
                 Route::post('clear-cells', 'RosterController@clearCells')->name('clear-cells');
                 Route::post('clear-undo', 'RosterController@undoClear')->name('clear-undo');

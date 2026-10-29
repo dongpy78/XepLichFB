@@ -40,6 +40,42 @@
     </div>
 @endif
 
+@if (! empty($grid['publication']))
+    @php
+        $publication = $grid['publication'];
+        $pubQuery = array_filter(['week' => $grid['weekStart']->toDateString(), 'outlet_id' => $grid['outletId'] ?: null]);
+        $pubBadge = ['draft' => 'bg-secondary', 'published' => 'bg-success', 'changed' => 'bg-warning'][$publication['status']];
+        $pubLabel = \Botble\RestaurantRoster\Services\ScheduleSnapshotService::STATUS_LABELS[$publication['status']];
+        $latestVersion = $publication['latest'];
+    @endphp
+    {{-- Lịch tuần: trạng thái công bố, xem bản chính thức, tải PNG / Excel / PDF (của bản công bố gần nhất). --}}
+    <div class="card mb-3 roster-publication">
+        <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center justify-content-between">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <strong><x-core::icon name="ti ti-calendar-share" /> Lịch tuần:</strong>
+                <span class="badge {{ $pubBadge }} text-white">{{ $pubLabel }}</span>
+                @if ($latestVersion)
+                    <span class="small text-muted">Bản công bố gần nhất v{{ $latestVersion->version }} · {{ $latestVersion->published_at?->format('d/m H:i') }}{{ $latestVersion->published_by_name ? ' · ' . $latestVersion->published_by_name : '' }}</span>
+                @endif
+                @if ($publication['status'] === 'changed')
+                    <span class="small text-warning fw-semibold">Lịch đã sửa sau khi công bố – file tải vẫn là v{{ $latestVersion->version }}; công bố lại để có bản mới.</span>
+                @endif
+            </div>
+            <div class="d-flex flex-wrap gap-1">
+                <a class="btn btn-sm" href="{{ route('roster.schedule.index', $pubQuery) }}"><x-core::icon name="ti ti-eye" /> Xem lịch đã công bố{{ $publication['count'] > 1 ? ' (' . $publication['count'] . ' bản)' : '' }}</a>
+                @if ($latestVersion)
+                    <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.index', $pubQuery) }}#png" title="Ảnh có thể chia nhiều phần – xem và tải từng ảnh">Tải ảnh PNG</a>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.export', [...$pubQuery, 'format' => 'xlsx']) }}">Tải Excel</a>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ route('roster.schedule.export', [...$pubQuery, 'format' => 'pdf']) }}">Tải PDF</a>
+                @endif
+                @if ($canManage && $publication['status'] !== 'published')
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ route('roster.schedule.index', [...$pubQuery, 'version' => 'draft']) }}" title="Lịch đang chỉnh sửa – file ghi rõ BẢN NHÁP">Tải bản nháp</a>
+                @endif
+            </div>
+        </div>
+    </div>
+@endif
+
 <div class="row row-cards mb-3 roster-kpis">
     <div class="col-6 col-lg-3">
         <div class="card card-sm"><div class="card-body">

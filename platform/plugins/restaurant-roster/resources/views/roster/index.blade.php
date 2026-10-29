@@ -18,6 +18,7 @@
         data-off-record-url="{{ route('roster.off-record') }}"
         data-shift-request-url="{{ route('roster.shift-request') }}"
         data-grid-merge-url="{{ route('roster.grid-merge') }}"
+        data-publish-preview-url="{{ route('roster.publish-preview') }}"
         data-week="{{ $grid['weekStart']->toDateString() }}"
     >
         <div class="card mb-3">
@@ -69,7 +70,7 @@
                         <button type="button" class="btn btn-outline-danger" data-roster-action="clear" data-confirm="Xóa tất cả ca NHÁP (chưa công bố) trong tuần này?">
                             <x-core::icon name="ti ti-eraser" /> Xóa ca nháp
                         </button>
-                        <button type="button" class="btn btn-primary" data-roster-action="publish" data-confirm="Công bố toàn bộ ca nháp trong tuần này?">
+                        <button type="button" class="btn btn-primary" data-roster-action="publish" title="Kiểm tra lỗi, xác nhận rồi công bố – lưu phiên bản lịch chính thức để tải PNG / Excel / PDF">
                             <x-core::icon name="ti ti-send" /> Công bố lịch tuần
                         </button>
                     </div>

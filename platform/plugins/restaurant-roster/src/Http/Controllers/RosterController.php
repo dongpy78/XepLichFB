@@ -258,15 +258,17 @@ class RosterController extends BaseController
             ->where('status', Shift::STATUS_DRAFT);
 
         // Kiểm tra cả tuần trước khi công bố: không ai bị xếp trùng giờ / thiếu giờ nghỉ / làm vào ngày OFF đã duyệt,
-        // và không outlet nào thiếu tối thiểu vì đã cho mượn người (outlet nguồn).
-        if ((clone $drafts)->exists() && ($problems = $this->publishProblems($weekStart, $weekEnd))) {
+        // và không outlet nào thiếu tối thiểu vì đã cho mượn người (outlet nguồn). Lỗi nghiêm trọng → không công bố, không tự sửa lịch.
+        if ($problems = $this->publishProblems($weekStart, $weekEnd)) {
             return $this->gridResponse($request, 'Chưa công bố – cần sửa trước: ' . implode(' · ', array_slice($problems, 0, 6))
                 . (count($problems) > 6 ? ' … (+' . (count($problems) - 6) . ')' : ''))->setError();
         }
 
         $count = 0;
+        $version = null;
+        $unchanged = false;
 
-        DB::transaction(function () use ($drafts, $request, &$count): void {
+        DB::transaction(function () use ($drafts, $request, $weekStart, &$count, &$version, &$unchanged): void {
             $now = now();
             $logs = (clone $drafts)->get(['employee_id', 'date'])->map(fn (Shift $s) => [
                 'employee_id' => $s->employee_id, 'date' => $s->date->toDateString(), 'action' => 'publish',
@@ -277,9 +279,45 @@ class RosterController extends BaseController
             foreach (array_chunk($logs, 200) as $chunk) {
                 ChangeLog::query()->insert($chunk);
             }
+
+            // Phiên bản lịch chính thức: bản chụp bảng xếp ca sau khi công bố. Giống hệt phiên bản gần nhất → không tạo bản trùng.
+            $grid = $this->buildGrid($request);
+            $latest = \Botble\RestaurantRoster\Models\ScheduleVersion::latestFor($weekStart->toDateString(), $this->scopeOutletId($request));
+
+            if ($latest && $latest->hash === $this->snapshots()->hash($grid['snapshot'])) {
+                $unchanged = true;
+                $version = $latest;
+
+                return;
+            }
+
+            $version = $this->snapshots()->store($grid['snapshot'], $request->user()?->getKey(), trim((string) ($request->user()?->name ?? '')) ?: null);
         });
 
-        return $this->gridResponse($request, $count ? "Đã công bố {$count} ca." : 'Không có ca nháp nào cần công bố.');
+        return $this->gridResponse($request, $unchanged
+            ? sprintf('Lịch tuần đã công bố (phiên bản v%d) – không có thay đổi mới.', $version->version)
+            : sprintf('Đã công bố lịch tuần – phiên bản v%d%s. Tải PNG / Excel / PDF ở mục "Lịch tuần".', $version->version, $count ? " ({$count} ca nháp đã chuyển công bố)" : ''));
+    }
+
+    /**
+     * Xem trước khi công bố (hộp xác nhận): tuần, phạm vi, số nhân viên có lịch, lỗi nghiêm trọng (chặn công bố) và trạng thái hiện tại.
+     */
+    public function publishPreview(Request $request)
+    {
+        [$weekStart, $weekEnd] = $this->weekRange($request);
+        $grid = $this->buildGrid($request);
+        $withShifts = count(array_filter($grid['rows'], fn ($row) => array_filter($row['cells'], fn ($shift) => $shift?->isWorking())));
+        $empty = count($grid['rows']) - $withShifts;
+
+        return $this->httpResponse()->setData([
+            'week' => sprintf('%s – %s', $weekStart->format('d/m/Y'), $weekEnd->format('d/m/Y')),
+            'scope' => $grid['snapshot']['scope_label'],
+            'employees' => $withShifts,
+            'empty' => $empty,
+            'problems' => $this->publishProblems($weekStart, $weekEnd),
+            'status' => \Botble\RestaurantRoster\Services\ScheduleSnapshotService::STATUS_LABELS[$grid['publication']['status']],
+            'next_version' => ($grid['publication']['latest']?->version ?? 0) + 1,
+        ]);
     }
 
     /**
@@ -980,7 +1018,7 @@ class RosterController extends BaseController
         $outlets = Outlet::query()->orderBy('order')->get(['id', 'name', 'code']);
         $parents = config('plugins.restaurant-roster.general.scheduling.outlet_parents', []);
 
-        return [
+        $grid = [
             'stats' => [
                 'onDuty' => $statistics->onDuty($weekStart->copy(), $outlets, $weekShifts),
                 'rules' => $statistics->rules(),
@@ -1012,6 +1050,37 @@ class RosterController extends BaseController
                 ->first(),
             'rules' => config('plugins.restaurant-roster.general.rules', []),
         ];
+
+        // Lịch tuần: bản chụp hiện tại so với phiên bản công bố gần nhất → Bản nháp / Đã công bố / Có thay đổi chưa công bố.
+        $grid['snapshot'] = $this->snapshots()->fromGrid($grid, $this->scopeOutletId($request), $this->scopeLabel($request, $merge));
+        $latest = \Botble\RestaurantRoster\Models\ScheduleVersion::latestFor($weekStart->toDateString(), $this->scopeOutletId($request));
+        $grid['publication'] = [
+            'status' => $this->snapshots()->status($grid['snapshot'], $latest),
+            'latest' => $latest,
+            'count' => \Botble\RestaurantRoster\Models\ScheduleVersion::query()->whereDate('week_start', $weekStart->toDateString())
+                ->where('scope_outlet_id', $this->scopeOutletId($request))->count(),
+        ];
+
+        return $grid;
+    }
+
+    protected function snapshots(): \Botble\RestaurantRoster\Services\ScheduleSnapshotService
+    {
+        return app(\Botble\RestaurantRoster\Services\ScheduleSnapshotService::class);
+    }
+
+    /** Phạm vi lịch công bố: 0 = toàn bộ bảng; outlet đang lọc trên bảng xếp ca. */
+    protected function scopeOutletId(Request $request): int
+    {
+        return $request->integer('outlet_id');
+    }
+
+    protected function scopeLabel(Request $request, ?array $merge = null): string
+    {
+        $outletId = $this->scopeOutletId($request);
+        $label = $outletId ? (string) (Outlet::query()->whereKey($outletId)->value('name') ?: 'Outlet #' . $outletId) : 'Toàn bộ bảng xếp ca';
+
+        return $merge ? $label . ' (' . $merge['active_code'] . ' + ' . $merge['closed_code'] . ' hiển thị chung)' : $label;
     }
 
     protected function employeeQuery(Request $request, ?array $merge = null): Builder
