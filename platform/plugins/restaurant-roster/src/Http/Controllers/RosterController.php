@@ -9,7 +9,6 @@ use Botble\Base\Supports\Breadcrumb;
 use Botble\RestaurantRoster\Models\ChangeLog;
 use Botble\RestaurantRoster\Models\Employee;
 use Botble\RestaurantRoster\Models\Outlet;
-use Botble\RestaurantRoster\Models\OutletDay;
 use Botble\RestaurantRoster\Models\Position;
 use Botble\RestaurantRoster\Models\Run;
 use Botble\RestaurantRoster\Models\Shift;
@@ -985,6 +984,7 @@ class RosterController extends BaseController
             'weekEnd' => $weekEnd,
             'weekLabel' => sprintf('Tuần %d · %s – %s', $weekStart->isoWeek(), $weekStart->format('d/m'), $weekEnd->format('d/m/Y')),
             'merge' => $merge,
+            'mergeOutlets' => $this->mergeOutlets()->mapWithKeys(fn (Outlet $o) => [(int) $o->getKey() => (string) ($o->code ?: $o->name)])->all(),
             'days' => $days,
             'rows' => $rows,
             'dayTotals' => $dayTotals,
@@ -1021,47 +1021,64 @@ class RosterController extends BaseController
             ->when($outletId, fn (Builder $query) => $query->whereIn('outlet_id', $outletIds));
     }
 
+    /** @return \Illuminate\Support\Collection<int, Outlet> Hai nhà hàng hiển thị chung được (transfer_outlets: Gusto, Villa) */
+    protected function mergeOutlets()
+    {
+        $codes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']));
+
+        return Outlet::query()->whereIn('code', $codes)->orderBy('order')->get();
+    }
+
     /**
-     * Chế độ gộp Villa + Gusto: bật khi đúng một trong hai nhà hàng (transfer_outlets) không hoạt động CẢ TUẦN đang xem –
-     * outlet ngừng hoạt động (Nhà hàng / Outlet) hoặc mọi ngày trong tuần được đánh dấu "Đóng cửa" ở Ngày đặc biệt – còn nhà hàng
-     * kia mở ít nhất một ngày. Không suy ra từ việc không có nhân viên / không có ca. Đóng một vài ngày → vẫn hiển thị riêng.
+     * Hiển thị chung Villa + Gusto của tuần (quản lý bật trên Bảng xếp ca): CHỈ đổi cách hiển thị – dồn nhân viên hai nhà hàng vào
+     * khu của nhà hàng được chọn, xếp theo cấp bậc. Thuật toán xếp lịch, outlet chính, lịch đã xếp không đổi.
      *
      * @return array{active_id: int, closed_id: int, active_code: string, closed_code: string, section: array}|null
      */
     protected function restaurantMerge(Carbon $weekStart, Carbon $weekEnd): ?array
     {
-        $codes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']));
-        $outlets = Outlet::query()->whereIn('code', $codes)->get();
+        $outlets = $this->mergeOutlets();
+        $chosen = \Illuminate\Support\Facades\DB::table('roster_grid_merges')->whereDate('week_start', $weekStart->toDateString())->value('outlet_id');
+        $active = $chosen ? $outlets->firstWhere('id', (int) $chosen) : null;
 
-        if ($outlets->count() !== 2) {
+        if ($outlets->count() !== 2 || ! $active) {
             return null;
         }
 
-        $closedDays = OutletDay::query()->whereIn('outlet_id', $outlets->modelKeys())->where('is_closed', true)
-            ->whereDate('date', '>=', $weekStart->toDateString())->whereDate('date', '<=', $weekEnd->toDateString())
-            ->get()->groupBy('outlet_id')->map(fn ($days) => $days->map(fn (OutletDay $d) => $d->date->toDateString())->unique()->count());
-        $closed = $outlets->filter(fn (Outlet $o) => $o->status?->getValue() !== BaseStatusEnum::PUBLISHED || ($closedDays[$o->getKey()] ?? 0) >= 7);
-
-        if ($closed->count() !== 1) {
-            return null;
-        }
-
-        $closedOutlet = $closed->first();
-        $active = $outlets->first(fn (Outlet $o) => $o->getKey() !== $closedOutlet->getKey());
+        $other = $outlets->first(fn (Outlet $o) => $o->getKey() !== $active->getKey());
         $group = \Botble\RestaurantRoster\Models\ScheduleGroup::query()->where('outlet_id', $active->getKey())->where('is_active', true)->orderBy('order')->first();
 
         return [
             'active_id' => (int) $active->getKey(),
-            'closed_id' => (int) $closedOutlet->getKey(),
+            'closed_id' => (int) $other->getKey(),
             'active_code' => (string) ($active->code ?: $active->name),
-            'closed_code' => (string) ($closedOutlet->code ?: $closedOutlet->name),
+            'closed_code' => (string) ($other->code ?: $other->name),
             'section' => [
                 'key' => $group ? 'g' . $group->id : 'o' . $active->getKey(),
-                'label' => sprintf('%s – gộp nhân viên %s (đóng cửa cả tuần)', $group?->name ?: ($active->code ?: $active->name), $closedOutlet->code ?: $closedOutlet->name),
+                'label' => sprintf('%s – hiển thị chung nhân viên %s + %s', $group?->name ?: ($active->code ?: $active->name), $active->code ?: $active->name, $other->code ?: $other->name),
                 'order' => $group ? (int) $group->order : (int) ($active->order ?? 99999),
                 'stat_outlet_id' => (int) $active->getKey(),
             ],
         ];
+    }
+
+    /** Bật / tắt hiển thị chung Villa + Gusto cho tuần đang xem (outlet_id = khu hiển thị chung; trống = hiển thị riêng). */
+    public function gridMerge(Request $request)
+    {
+        $allowed = $this->mergeOutlets()->modelKeys();
+        $data = $request->validate(['outlet_id' => ['nullable', 'integer', Rule::in($allowed)]]);
+        [$weekStart] = $this->weekRange($request);
+        $table = \Illuminate\Support\Facades\DB::table('roster_grid_merges');
+        $table->whereDate('week_start', $weekStart->toDateString())->delete();
+
+        if (! empty($data['outlet_id'])) {
+            $table->insert(['week_start' => $weekStart->toDateString(), 'outlet_id' => (int) $data['outlet_id'], 'created_by' => $request->user()?->getKey(),
+                'created_at' => now(), 'updated_at' => now()]);
+        }
+
+        return $this->gridResponse($request, empty($data['outlet_id'])
+            ? 'Đã trở về hiển thị riêng Villa / Gusto.'
+            : 'Đã hiển thị chung nhân viên Villa + Gusto trong một khu cho tuần này (chỉ đổi cách hiển thị – lịch, outlet, xếp tự động không đổi).');
     }
 
     /**

@@ -548,17 +548,25 @@ class NightAndScheduleGroupTest extends TestCase
         return array_keys($positions);
     }
 
+    private function setMerge(?string $outlet): void
+    {
+        $this->actingAs($this->user())->postJson(route('roster.grid-merge'), ['week' => self::WEEK, 'outlet_id' => $outlet ? $this->outlets[$outlet]->getKey() : null])
+            ->assertJson(['error' => false]);
+    }
+
     /**
-     * Gusto đóng cửa cả tuần (Ngày đặc biệt): nhân viên Villa + Gusto gộp một khu Villa, xếp theo cấp bậc (quản lý trước Waiter),
-     * mỗi người một hàng, người Gusto có nhãn GUSTO; outlet chính, nhóm hiển thị, ô khóa không đổi.
+     * Quản lý bấm "Gộp vào VILLA": nhân viên Villa + Gusto hiển thị chung một khu Villa, xếp theo cấp bậc (quản lý trước Waiter),
+     * mỗi người một hàng, người Gusto có nhãn GUSTO, có thông báo cho mọi người; outlet chính, nhóm hiển thị, ô khóa không đổi.
      */
-    public function test_grid_merges_villa_and_gusto_when_gusto_closed_all_week(): void
+    public function test_grid_shows_villa_and_gusto_together_when_manager_merges(): void
     {
         $people = $this->twoRestaurants();
-        $this->closeAllWeek('GUSTO');
+        $this->assertStringContainsString('Gộp vào VILLA', $this->gridHtml(), 'Nút gộp cho quản lý');
+        $this->setMerge('VILLA');
         $html = $this->gridHtml();
 
-        $this->assertStringContainsString('VILLA – GỘP NHÂN VIÊN GUSTO (ĐÓNG CỬA CẢ TUẦN)', $html);
+        $this->assertStringContainsString('VILLA – HIỂN THỊ CHUNG NHÂN VIÊN VILLA + GUSTO', $html);
+        $this->assertStringContainsString('hiển thị chung trong khu', $html, 'Thông báo cho mọi người');
         $this->assertStringNotContainsString('<span class="roster-section__name">GUSTO</span>', $html, 'Không còn khu Gusto riêng');
         $order = $this->rowOrder($html, $people);
         $this->assertEqualsCanonicalizing(['VC', 'GC'], array_slice($order, 0, 2), 'Cấp quản lý đứng đầu khu gộp: ' . implode(',', $order));
@@ -572,41 +580,49 @@ class NightAndScheduleGroupTest extends TestCase
         // Lọc outlet Villa trong chế độ gộp: có cả người Gusto.
         $filtered = $this->gridHtml(['outlet_id' => $this->outlets['VILLA']->getKey()]);
         $this->assertStringContainsString('data-employee-name="' . $people['GW2']->name . '"', $filtered);
+
+        // Tuần khác không bị ảnh hưởng.
+        $next = (string) $this->actingAs($this->user())->getJson(route('roster.grid', ['week' => '2030-03-11']))->json('data.html');
+        $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $next);
     }
 
-    /** Villa ngừng hoạt động (trạng thái outlet): gộp vào khu Gusto. */
-    public function test_grid_merges_into_gusto_when_villa_inactive(): void
+    /** Gộp vào GUSTO; "Hiển thị riêng" trở về hai khu như cũ. */
+    public function test_grid_merge_into_gusto_and_back_to_separate(): void
     {
         $people = $this->twoRestaurants();
-        $this->outlets['VILLA']->update(['status' => 'draft']);
+        $this->setMerge('GUSTO');
         $html = $this->gridHtml();
 
-        $this->assertStringContainsString('GUSTO – GỘP NHÂN VIÊN VILLA (ĐÓNG CỬA CẢ TUẦN)', $html);
+        $this->assertStringContainsString('GUSTO – HIỂN THỊ CHUNG NHÂN VIÊN GUSTO + VILLA', $html);
         $this->assertStringNotContainsString('<span class="roster-section__name">VILLA</span>', $html);
         $this->assertEqualsCanonicalizing(['VC', 'GC'], array_slice($this->rowOrder($html, $people), 0, 2));
+
+        $this->setMerge(null);
+        $html = $this->gridHtml();
+        $this->assertStringContainsString('<span class="roster-section__name">VILLA</span>', $html);
+        $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $html);
+        $this->assertStringNotContainsString('HIỂN THỊ CHUNG NHÂN VIÊN', $html);
+        $this->rowOrder($html, $people);
     }
 
-    /** Cả hai mở, hoặc chỉ đóng vài ngày: hiển thị riêng từng outlet như trước; mở lại thì tự hết gộp. */
-    public function test_grid_keeps_separate_sections_when_both_open_or_partially_closed(): void
+    /**
+     * Chỉ đổi giao diện: gộp không ảnh hưởng thuật toán (bài toán xếp lịch giống hệt); ngược lại, ngày đóng cửa / outlet ngừng
+     * hoạt động không tự gộp bảng – quản lý tự bật.
+     */
+    public function test_grid_merge_is_display_only(): void
     {
-        $people = $this->twoRestaurants();
-        $separate = function () use ($people): void {
-            $html = $this->gridHtml();
-            $this->assertStringContainsString('<span class="roster-section__name">VILLA</span>', $html);
-            $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $html);
-            $this->assertStringNotContainsString('GỘP NHÂN VIÊN', $html);
-            $this->rowOrder($html, $people);
-        };
+        $this->twoRestaurants();
+        $build = fn () => app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $before = $build();
+        $this->setMerge('VILLA');
+        $after = $build();
 
-        $separate();
-        $this->closeAllWeek('GUSTO', 3);
-        $separate();
+        $this->assertEquals($before->requirements, $after->requirements, 'Định biên / chỗ ca không đổi');
+        $this->assertEquals($before->employees, $after->employees, 'Nhân viên, outlet, năng lực không đổi');
 
-        // Đóng cả tuần → gộp; xóa ngày đóng cửa → tự về hiển thị riêng.
+        $this->setMerge(null);
         $this->closeAllWeek('GUSTO');
-        $this->assertStringContainsString('GỘP NHÂN VIÊN GUSTO', $this->gridHtml());
-        \Botble\RestaurantRoster\Models\OutletDay::query()->delete();
-        $separate();
+        $this->assertStringNotContainsString('HIỂN THỊ CHUNG NHÂN VIÊN', $this->gridHtml(), 'Đóng cửa không tự gộp bảng');
     }
 
     /** Đổi Waiter Gusto ⇄ Villa (chức năng có sẵn): outlet chính và nhóm hiển thị cùng đổi, bảng hiện đúng khu; có nhật ký. */

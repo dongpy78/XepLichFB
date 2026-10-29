@@ -99,10 +99,13 @@ $(() => {
             return
         }
 
-        const url = { copy: urls.copyUrl, publish: urls.publishUrl, clear: urls.clearUrl, swap: urls.swapUrl }[$button.data('roster-action')]
+        const action = $button.data('roster-action')
+        const url = { copy: urls.copyUrl, publish: urls.publishUrl, clear: urls.clearUrl, swap: urls.swapUrl, merge: urls.gridMergeUrl }[action]
+        // Hiển thị chung Villa + Gusto: outlet khu hiển thị chung (trống = hiển thị riêng).
+        const payload = action === 'merge' ? { outlet_id: $button.data('merge-outlet') || '' } : {}
 
         Botble.showButtonLoading($button)
-        request('POST', url).always(() => Botble.hideButtonLoading($button))
+        request('POST', url, payload).always(() => Botble.hideButtonLoading($button))
     })
 
     // Xóa lịch theo hàng (1 nhân viên cả tuần) hoặc cột (1 ngày của outlet chính) để xếp tay lại.

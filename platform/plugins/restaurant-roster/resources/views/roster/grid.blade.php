@@ -17,6 +17,29 @@
     </div>
 @endif
 
+@if (! empty($grid['merge']))
+    {{-- Thông báo cho mọi người xem bảng: tuần này Villa + Gusto hiển thị chung một khu (chỉ đổi cách hiển thị). --}}
+    <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+            <x-core::icon name="ti ti-arrows-join" />
+            Tuần này nhân viên <strong>{{ $grid['merge']['active_code'] }} + {{ $grid['merge']['closed_code'] }}</strong> hiển thị chung trong khu
+            <strong>{{ $grid['merge']['active_code'] }}</strong>, xếp theo cấp bậc. Người có nhãn <span class="badge bg-azure-lt">{{ $grid['merge']['closed_code'] }}</span>
+            vẫn thuộc outlet {{ $grid['merge']['closed_code'] }} – chỉ đổi cách hiển thị, lịch và xếp tự động không đổi.
+        </div>
+        @if ($canManage)
+            <button type="button" class="btn btn-sm" data-roster-action="merge" data-merge-outlet="">Hiển thị riêng</button>
+        @endif
+    </div>
+@elseif ($canManage && count($grid['mergeOutlets'] ?? []) === 2)
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3 small text-muted">
+        <span><x-core::icon name="ti ti-arrows-join" /> Hiển thị chung nhân viên {{ implode(' + ', $grid['mergeOutlets']) }} trong một khu (tuần này):</span>
+        @foreach ($grid['mergeOutlets'] as $id => $code)
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-roster-action="merge" data-merge-outlet="{{ $id }}"
+                data-confirm="Hiển thị chung nhân viên {{ implode(' + ', $grid['mergeOutlets']) }} trong khu {{ $code }} cho tuần này? Chỉ đổi cách hiển thị – lịch, outlet chính và xếp tự động không đổi.">Gộp vào {{ $code }}</button>
+        @endforeach
+    </div>
+@endif
+
 <div class="row row-cards mb-3 roster-kpis">
     <div class="col-6 col-lg-3">
         <div class="card card-sm"><div class="card-body">
@@ -132,7 +155,7 @@
                                             <span class="badge bg-dark-lt" title="{{ $role[1] }}">{{ $role[0] }}</span>
                                         @endif
                                         @if (! empty($row['merged_from']))
-                                            <span class="badge bg-azure-lt" title="Outlet chính {{ $row['merged_from'] }} (đóng cửa cả tuần) – đang hiển thị chung, outlet chính không đổi">{{ $row['merged_from'] }}</span>
+                                            <span class="badge bg-azure-lt" title="Outlet chính {{ $row['merged_from'] }} – đang hiển thị chung, outlet chính không đổi">{{ $row['merged_from'] }}</span>
                                         @endif
                                         @if ($row['room_service'])
                                             <span class="badge bg-orange-lt" title="Có thể làm Room Service (hồ sơ nhân viên) – được tự xếp vào Room Service">RS</span>

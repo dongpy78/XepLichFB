@@ -32,6 +32,7 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 Route::post('clear-week', 'RosterController@clearWeek')->name('clear-week');
                 Route::post('clear-cells', 'RosterController@clearCells')->name('clear-cells');
                 Route::post('clear-undo', 'RosterController@undoClear')->name('clear-undo');
+                Route::post('grid-merge', 'RosterController@gridMerge')->name('grid-merge');
             });
 
             // Gỡ OFF đã cho / xử lý ô "cần xem xét": quyền ghi / gỡ OFF.
