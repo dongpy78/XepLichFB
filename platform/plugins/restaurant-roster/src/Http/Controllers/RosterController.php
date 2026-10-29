@@ -9,6 +9,7 @@ use Botble\Base\Supports\Breadcrumb;
 use Botble\RestaurantRoster\Models\ChangeLog;
 use Botble\RestaurantRoster\Models\Employee;
 use Botble\RestaurantRoster\Models\Outlet;
+use Botble\RestaurantRoster\Models\OutletDay;
 use Botble\RestaurantRoster\Models\Position;
 use Botble\RestaurantRoster\Models\Run;
 use Botble\RestaurantRoster\Models\Shift;
@@ -851,7 +852,7 @@ class RosterController extends BaseController
 
         // Khu vực trên bảng = nhóm hiển thị lịch (đang bật) của nhân viên, không có thì theo outlet chính.
         // Trong khu vực: thứ tự quản lý đặt → vị trí → mã nhân viên. Nhóm hiển thị không đổi outlet làm việc.
-        $section = function (Employee $employee): array {
+        $baseSection = function (Employee $employee): array {
             $group = $employee->scheduleGroup;
 
             return $group && $group->is_active
@@ -860,11 +861,25 @@ class RosterController extends BaseController
                     'stat_outlet_id' => $employee->outlet_id ? (int) $employee->outlet_id : null];
         };
 
-        $employees = $this->employeeQuery($request)
+        // Chỉ một nhà hàng (Villa / Gusto) hoạt động cả tuần: gộp nhân viên hai nhà hàng vào khu của nhà hàng đang mở (chỉ hiển thị,
+        // không đổi outlet chính); trong khu gộp xếp theo cấp bậc (thứ tự vị trí) rồi mã nhân viên.
+        $merge = $this->restaurantMerge($weekStart, $weekEnd);
+        $section = function (Employee $employee) use ($baseSection, $merge): array {
+            $base = $baseSection($employee);
+
+            if ($merge && in_array($base['stat_outlet_id'], [$merge['active_id'], $merge['closed_id']], true)) {
+                return [...$merge['section'], 'merged' => true];
+            }
+
+            return $base;
+        };
+
+        $employees = $this->employeeQuery($request, $merge)
             ->with(['position:id,name,order', 'outlet:id,name,code,order', 'fixedShift:id,code,start_time', 'scheduleGroup'])
             ->get()
-            ->sortBy(fn (Employee $employee) => sprintf('%05d|%s|%05d|%05d|%s', $section($employee)['order'], $section($employee)['key'],
-                $employee->schedule_order ?? 99999, $employee->position->order ?? 99999, $employee->code))
+            ->sortBy(fn (Employee $employee) => ($s = $section($employee)) && ! empty($s['merged'])
+                ? sprintf('%05d|%s|%05d|%05d|%s', $s['order'], $s['key'], $employee->position->order ?? 99999, $employee->schedule_order ?? 99999, $employee->code)
+                : sprintf('%05d|%s|%05d|%05d|%s', $s['order'], $s['key'], $employee->schedule_order ?? 99999, $employee->position->order ?? 99999, $employee->code))
             ->values();
 
         // Lấy thêm 7 ngày trước tuần đang xem để kiểm tra ngày làm liên tục và giờ nghỉ đầu tuần.
@@ -941,6 +956,8 @@ class RosterController extends BaseController
                 'check' => $check,
                 'section' => $section($employee),
                 'room_service' => (bool) $employee->can_room_service,
+                // Khu gộp: người của nhà hàng đang đóng cửa (outlet chính không đổi) – hiện nhãn outlet để không nhầm.
+                'merged_from' => $merge && (int) $employee->outlet_id === $merge['closed_id'] ? $merge['closed_code'] : null,
             ];
         }
 
@@ -967,6 +984,7 @@ class RosterController extends BaseController
             'weekStart' => $weekStart,
             'weekEnd' => $weekEnd,
             'weekLabel' => sprintf('Tuần %d · %s – %s', $weekStart->isoWeek(), $weekStart->format('d/m'), $weekEnd->format('d/m/Y')),
+            'merge' => $merge,
             'days' => $days,
             'rows' => $rows,
             'dayTotals' => $dayTotals,
@@ -987,11 +1005,63 @@ class RosterController extends BaseController
         ];
     }
 
-    protected function employeeQuery(Request $request): Builder
+    protected function employeeQuery(Request $request, ?array $merge = null): Builder
     {
+        $outletId = $request->integer('outlet_id');
+
+        // Lọc theo nhà hàng đang mở khi đang gộp: lấy cả nhân viên của nhà hàng đóng cửa (bảng, sao chép tuần, công bố, xóa ca nháp như nhau).
+        if ($outletId && $merge === null) {
+            $merge = $this->restaurantMerge(...$this->weekRange($request));
+        }
+
+        $outletIds = $merge && in_array($outletId, [$merge['active_id'], $merge['closed_id']], true) ? [$merge['active_id'], $merge['closed_id']] : [$outletId];
+
         return Employee::query()
             ->where('status', BaseStatusEnum::PUBLISHED)
-            ->when($request->integer('outlet_id'), fn (Builder $query, int $outletId) => $query->where('outlet_id', $outletId));
+            ->when($outletId, fn (Builder $query) => $query->whereIn('outlet_id', $outletIds));
+    }
+
+    /**
+     * Chế độ gộp Villa + Gusto: bật khi đúng một trong hai nhà hàng (transfer_outlets) không hoạt động CẢ TUẦN đang xem –
+     * outlet ngừng hoạt động (Nhà hàng / Outlet) hoặc mọi ngày trong tuần được đánh dấu "Đóng cửa" ở Ngày đặc biệt – còn nhà hàng
+     * kia mở ít nhất một ngày. Không suy ra từ việc không có nhân viên / không có ca. Đóng một vài ngày → vẫn hiển thị riêng.
+     *
+     * @return array{active_id: int, closed_id: int, active_code: string, closed_code: string, section: array}|null
+     */
+    protected function restaurantMerge(Carbon $weekStart, Carbon $weekEnd): ?array
+    {
+        $codes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']));
+        $outlets = Outlet::query()->whereIn('code', $codes)->get();
+
+        if ($outlets->count() !== 2) {
+            return null;
+        }
+
+        $closedDays = OutletDay::query()->whereIn('outlet_id', $outlets->modelKeys())->where('is_closed', true)
+            ->whereDate('date', '>=', $weekStart->toDateString())->whereDate('date', '<=', $weekEnd->toDateString())
+            ->get()->groupBy('outlet_id')->map(fn ($days) => $days->map(fn (OutletDay $d) => $d->date->toDateString())->unique()->count());
+        $closed = $outlets->filter(fn (Outlet $o) => $o->status?->getValue() !== BaseStatusEnum::PUBLISHED || ($closedDays[$o->getKey()] ?? 0) >= 7);
+
+        if ($closed->count() !== 1) {
+            return null;
+        }
+
+        $closedOutlet = $closed->first();
+        $active = $outlets->first(fn (Outlet $o) => $o->getKey() !== $closedOutlet->getKey());
+        $group = \Botble\RestaurantRoster\Models\ScheduleGroup::query()->where('outlet_id', $active->getKey())->where('is_active', true)->orderBy('order')->first();
+
+        return [
+            'active_id' => (int) $active->getKey(),
+            'closed_id' => (int) $closedOutlet->getKey(),
+            'active_code' => (string) ($active->code ?: $active->name),
+            'closed_code' => (string) ($closedOutlet->code ?: $closedOutlet->name),
+            'section' => [
+                'key' => $group ? 'g' . $group->id : 'o' . $active->getKey(),
+                'label' => sprintf('%s – gộp nhân viên %s (đóng cửa cả tuần)', $group?->name ?: ($active->code ?: $active->name), $closedOutlet->code ?: $closedOutlet->name),
+                'order' => $group ? (int) $group->order : (int) ($active->order ?? 99999),
+                'stat_outlet_id' => (int) $active->getKey(),
+            ],
+        ];
     }
 
     /**

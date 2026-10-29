@@ -494,4 +494,140 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertStringContainsString('N cố định', $html);
         $this->assertStringContainsString('>RS<', $html);
     }
+
+    /** Villa + Gusto mỗi bên: 1 quản lý (cấp cao) và 2 Waiter; một ca đã khóa của Gusto. @return array<string, Employee> */
+    private function twoRestaurants(): array
+    {
+        $captain = Position::query()->create(['name' => 'Junior Restaurant Captain', 'is_manager' => true, 'order' => 1, 'status' => 'published']);
+        $this->waiter->update(['order' => 5]);
+        $people = [];
+
+        foreach (['VILLA', 'GUSTO'] as $outlet) {
+            $people[$outlet[0] . 'W1'] = $this->employee($outlet[0] . 'W1', $outlet);
+            $people[$outlet[0] . 'W2'] = $this->employee($outlet[0] . 'W2', $outlet, 'female');
+            $people[$outlet[0] . 'C'] = $this->employee($outlet[0] . 'C', $outlet, extra: ['position_id' => $captain->getKey()]);
+        }
+
+        Shift::query()->create(['employee_id' => $people['GW1']->getKey(), 'date' => self::WEEK, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['M6']->getKey(),
+            'outlet_id' => $this->outlets['GUSTO']->getKey(), 'status' => 'draft', 'is_locked' => true, 'lock_reason' => Shift::LOCK_CONFIRMED,
+            'start_at' => self::WEEK . ' 06:00:00', 'end_at' => self::WEEK . ' 14:00:00', 'hours' => 8]);
+
+        return $people;
+    }
+
+    private function closeAllWeek(string $outlet, int $days = 7): void
+    {
+        foreach (range(0, $days - 1) as $d) {
+            $date = Carbon::parse(self::WEEK)->addDays($d)->toDateString();
+            $query = \Botble\RestaurantRoster\Models\OutletDay::query()->where('outlet_id', $this->outlets[$outlet]->getKey())->whereDate('date', $date);
+
+            if (! $query->exists()) {
+                \Botble\RestaurantRoster\Models\OutletDay::query()->create(['outlet_id' => $this->outlets[$outlet]->getKey(), 'date' => $date, 'is_closed' => true]);
+            }
+        }
+    }
+
+    private function gridHtml(array $query = []): string
+    {
+        return (string) $this->actingAs($this->user())->getJson(route('roster.grid', ['week' => self::WEEK, ...$query]))->assertJson(['error' => false])->json('data.html');
+    }
+
+    /** Thứ tự xuất hiện các nhân viên trong bảng (mỗi người đúng 1 hàng). */
+    private function rowOrder(string $html, array $people): array
+    {
+        $positions = [];
+
+        foreach ($people as $code => $employee) {
+            // Mỗi hàng có 7 ô ngày mang tên nhân viên: đúng 7 lần = đúng một hàng (không nhân đôi).
+            $this->assertSame(7, substr_count($html, 'data-employee-name="' . $employee->name . '"'), "{$code}: xuất hiện đúng 1 hàng");
+            $positions[$code] = strpos($html, 'data-employee-name="' . $employee->name . '"');
+        }
+
+        asort($positions);
+
+        return array_keys($positions);
+    }
+
+    /**
+     * Gusto đóng cửa cả tuần (Ngày đặc biệt): nhân viên Villa + Gusto gộp một khu Villa, xếp theo cấp bậc (quản lý trước Waiter),
+     * mỗi người một hàng, người Gusto có nhãn GUSTO; outlet chính, nhóm hiển thị, ô khóa không đổi.
+     */
+    public function test_grid_merges_villa_and_gusto_when_gusto_closed_all_week(): void
+    {
+        $people = $this->twoRestaurants();
+        $this->closeAllWeek('GUSTO');
+        $html = $this->gridHtml();
+
+        $this->assertStringContainsString('VILLA – GỘP NHÂN VIÊN GUSTO (ĐÓNG CỬA CẢ TUẦN)', $html);
+        $this->assertStringNotContainsString('<span class="roster-section__name">GUSTO</span>', $html, 'Không còn khu Gusto riêng');
+        $order = $this->rowOrder($html, $people);
+        $this->assertEqualsCanonicalizing(['VC', 'GC'], array_slice($order, 0, 2), 'Cấp quản lý đứng đầu khu gộp: ' . implode(',', $order));
+        $this->assertStringContainsString('bg-azure-lt', $html, 'Nhãn outlet cho người Gusto');
+
+        $this->assertSame($this->outlets['GUSTO']->getKey(), (int) $people['GW1']->fresh()->outlet_id, 'Outlet chính không đổi');
+        $this->assertSame($this->groups['GUSTO']->getKey(), (int) $people['GW1']->fresh()->schedule_group_id, 'Nhóm hiển thị không đổi');
+        $this->assertTrue((bool) Shift::query()->where('employee_id', $people['GW1']->getKey())->value('is_locked'), 'Ô khóa giữ nguyên');
+        $this->assertSame(1, Shift::query()->count(), 'Không tạo thêm ô lịch');
+
+        // Lọc outlet Villa trong chế độ gộp: có cả người Gusto.
+        $filtered = $this->gridHtml(['outlet_id' => $this->outlets['VILLA']->getKey()]);
+        $this->assertStringContainsString('data-employee-name="' . $people['GW2']->name . '"', $filtered);
+    }
+
+    /** Villa ngừng hoạt động (trạng thái outlet): gộp vào khu Gusto. */
+    public function test_grid_merges_into_gusto_when_villa_inactive(): void
+    {
+        $people = $this->twoRestaurants();
+        $this->outlets['VILLA']->update(['status' => 'draft']);
+        $html = $this->gridHtml();
+
+        $this->assertStringContainsString('GUSTO – GỘP NHÂN VIÊN VILLA (ĐÓNG CỬA CẢ TUẦN)', $html);
+        $this->assertStringNotContainsString('<span class="roster-section__name">VILLA</span>', $html);
+        $this->assertEqualsCanonicalizing(['VC', 'GC'], array_slice($this->rowOrder($html, $people), 0, 2));
+    }
+
+    /** Cả hai mở, hoặc chỉ đóng vài ngày: hiển thị riêng từng outlet như trước; mở lại thì tự hết gộp. */
+    public function test_grid_keeps_separate_sections_when_both_open_or_partially_closed(): void
+    {
+        $people = $this->twoRestaurants();
+        $separate = function () use ($people): void {
+            $html = $this->gridHtml();
+            $this->assertStringContainsString('<span class="roster-section__name">VILLA</span>', $html);
+            $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $html);
+            $this->assertStringNotContainsString('GỘP NHÂN VIÊN', $html);
+            $this->rowOrder($html, $people);
+        };
+
+        $separate();
+        $this->closeAllWeek('GUSTO', 3);
+        $separate();
+
+        // Đóng cả tuần → gộp; xóa ngày đóng cửa → tự về hiển thị riêng.
+        $this->closeAllWeek('GUSTO');
+        $this->assertStringContainsString('GỘP NHÂN VIÊN GUSTO', $this->gridHtml());
+        \Botble\RestaurantRoster\Models\OutletDay::query()->delete();
+        $separate();
+    }
+
+    /** Đổi Waiter Gusto ⇄ Villa (chức năng có sẵn): outlet chính và nhóm hiển thị cùng đổi, bảng hiện đúng khu; có nhật ký. */
+    public function test_swap_waiters_moves_outlet_and_schedule_group(): void
+    {
+        $people = $this->twoRestaurants();
+
+        $this->actingAs($this->user())->postJson(route('roster.swap-waiters'), ['week' => self::WEEK])->assertJson(['error' => false]);
+
+        $this->assertSame([$this->outlets['GUSTO']->getKey(), $this->groups['GUSTO']->getKey()],
+            [(int) $people['VW1']->fresh()->outlet_id, (int) $people['VW1']->fresh()->schedule_group_id], 'Waiter Villa → Gusto');
+        $this->assertSame([$this->outlets['VILLA']->getKey(), $this->groups['VILLA']->getKey()],
+            [(int) $people['GW1']->fresh()->outlet_id, (int) $people['GW1']->fresh()->schedule_group_id], 'Waiter Gusto → Villa');
+        $this->assertSame($this->outlets['VILLA']->getKey(), (int) $people['VC']->fresh()->outlet_id, 'Quản lý không đổi');
+        $this->assertTrue((bool) Shift::query()->where('employee_id', $people['GW1']->getKey())->value('is_locked'), 'Lịch đã xếp giữ nguyên');
+        $this->assertNotNull(ChangeLog::query()->where('employee_id', $people['VW1']->getKey())->where('action', 'outlet_swap')->first());
+
+        $html = $this->gridHtml();
+        $villaAt = strpos($html, '<span class="roster-section__name">VILLA</span>');
+        $gustoAt = strpos($html, '<span class="roster-section__name">GUSTO</span>');
+        $row = strpos($html, 'data-employee-name="' . $people['GW1']->name . '"');
+        $this->assertTrue($row > $villaAt && ($gustoAt < $villaAt || $row < $gustoAt), 'GW1 nay hiện trong khu Villa');
+    }
 }

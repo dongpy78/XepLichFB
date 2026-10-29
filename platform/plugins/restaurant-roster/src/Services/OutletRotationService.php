@@ -52,13 +52,22 @@ class OutletRotationService
 
             $now = now();
             $logs = [];
+            // Nhóm hiển thị trên Bảng xếp ca đi theo outlet: người đang ở nhóm của outlet cũ chuyển sang nhóm của outlet mới
+            // (không thì vẫn hiện ở khu cũ dù đã đổi outlet). Người ở nhóm khác (vd Trainer) giữ nguyên nhóm.
+            $groups = \Botble\RestaurantRoster\Models\ScheduleGroup::query()->whereIn('outlet_id', array_keys($swap))->where('is_active', true)
+                ->orderBy('order')->get()->groupBy('outlet_id')->map(fn ($g) => (int) $g->first()->getKey());
 
             foreach ($employees as $employee) {
                 $from = (int) $employee->outlet_id;
                 $to = $swap[$from];
                 $counts[$from === $a->getKey() ? 'a_to_b' : 'b_to_a']++;
+                $values = ['outlet_id' => $to];
 
-                $employee->update(['outlet_id' => $to]);
+                if ($employee->schedule_group_id && (int) $employee->schedule_group_id === ($groups[$from] ?? null) && isset($groups[$to])) {
+                    $values['schedule_group_id'] = $groups[$to];
+                }
+
+                $employee->update($values);
 
                 $logs[] = [
                     'employee_id' => $employee->getKey(),

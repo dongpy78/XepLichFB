@@ -125,11 +125,14 @@
                                     @endif
                                 </div>
                                 @php $nightRole = $employee->isNightCore() ? 'core' : $employee->night_role; @endphp
-                                @if ($employee->position->name || $nightRole || $row['room_service'] || $employee->is_trainee)
+                                @if ($employee->position->name || $nightRole || $row['room_service'] || ! empty($row['merged_from']) || $employee->is_trainee)
                                     <div class="roster-staff__meta">
                                         {{ $employee->position->name }}
                                         @if ($role = $nightRoles[$nightRole] ?? null)
                                             <span class="badge bg-dark-lt" title="{{ $role[1] }}">{{ $role[0] }}</span>
+                                        @endif
+                                        @if (! empty($row['merged_from']))
+                                            <span class="badge bg-azure-lt" title="Outlet chính {{ $row['merged_from'] }} (đóng cửa cả tuần) – đang hiển thị chung, outlet chính không đổi">{{ $row['merged_from'] }}</span>
                                         @endif
                                         @if ($row['room_service'])
                                             <span class="badge bg-orange-lt" title="Có thể làm Room Service (hồ sơ nhân viên) – được tự xếp vào Room Service">RS</span>
