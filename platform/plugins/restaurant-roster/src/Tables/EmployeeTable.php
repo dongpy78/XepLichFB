@@ -44,6 +44,14 @@ class EmployeeTable extends TableAbstract
                     ->getValueUsing(fn (FormattedColumn $column) => $column->getItem()->fixedShift?->code
                         ? '<span class="badge bg-warning-lt">' . e($column->getItem()->fixedShift->code) . '</span>'
                         : '—'),
+                FormattedColumn::make('room_service_fixed')
+                    ->title('Night / Room Service')
+                    ->orderable(false)
+                    ->getValueUsing(fn (FormattedColumn $column) => implode(' ', array_filter([
+                        $column->getItem()->isNightCore() ? '<span class="badge bg-dark-lt">N cố định</span>' : null,
+                        $column->getItem()->room_service_fixed ? '<span class="badge bg-orange-lt">RS cố định</span>'
+                            : ($column->getItem()->can_room_service ? '<span class="badge bg-orange-lt">RS hỗ trợ</span>' : null),
+                    ])) ?: '&mdash;'),
                 FormattedColumn::make('gender')
                     ->title('Giới tính')
                     ->width(100)
@@ -91,8 +99,8 @@ class EmployeeTable extends TableAbstract
             ])
             ->queryUsing(function ($query): void {
                 $query
-                    ->select(['id', 'code', 'name', 'gender', 'fixed_shift_template_id', 'outlet_id', 'position_id', 'employment_type', 'weekly_hours', 'status'])
-                    ->with(['outlet:id,name', 'position:id,name', 'fixedShift:id,code']);
+                    ->select(['id', 'code', 'name', 'gender', 'fixed_shift_template_id', 'outlet_id', 'position_id', 'employment_type', 'weekly_hours', 'status', 'night_role', 'can_room_service', 'room_service_fixed'])
+                    ->with(['outlet:id,name', 'position:id,name', 'fixedShift:id,code,start_time']);
             });
     }
 }

@@ -395,32 +395,177 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertTrue(Shift::query()->where('employee_id', $people['G2']->getKey())->whereDate('date', $off)->first()->isRecordedOff(), 'OFF đã duyệt giữ nguyên');
     }
 
-    /**
-     * Room Service: chỉ người bật "Có thể làm Room Service" trong hồ sơ được tự xếp; người không bật (kể cả có dòng năng lực Room Service)
-     * thì không; người bật duy nhất OFF đã duyệt → thiếu Room Service được cảnh báo, không lấy người chưa bật.
-     */
-    public function test_room_service_only_for_flagged_staff(): void
+    /** Room Service M6 + A2 (mỗi ca đúng 1 người); RS cố định M6 (Gusto, ca cứng M6), RS cố định A2 (Villa, ca cứng A2), 2 người hỗ trợ, 1 người không bật. */
+    private function roomServiceTeam(): array
     {
-        $people = $this->restaurants();
-        $room = $this->roomService();
-        $m6 = $this->templates['M6']->getKey();
-        $flagged = $this->employee('RS1', 'GUSTO', 'female', ['can_room_service' => true]);
-        $unflagged = $this->employee('RS2', 'GUSTO', 'female');
-        EmployeeSkill::query()->create(['employee_id' => $unflagged->getKey(), 'outlet_id' => $room, 'level' => 'primary']);
+        $this->restaurants();
+        $room = $this->outlets['ROOM']->getKey();
+        StaffingRequirement::query()->create(['outlet_id' => $room, 'shift_template_id' => $this->templates['A2']->getKey(),
+            'status' => 'active', 'min_staff' => 1, 'target_staff' => 1, 'max_staff' => 1, 'is_confirmed' => true]);
+        $this->roomService();
+
+        return [
+            'room' => $room,
+            'fixedM6' => $this->employee('RSM', 'GUSTO', 'female', ['room_service_fixed' => true, 'fixed_shift_template_id' => $this->templates['M6']->getKey()]),
+            'fixedA2' => $this->employee('RSA', 'VILLA', 'male', ['room_service_fixed' => true, 'fixed_shift_template_id' => $this->templates['A2']->getKey()]),
+            'support1' => $this->employee('SP1', 'GUSTO', 'female', ['can_room_service' => true]),
+            'support2' => $this->employee('SP2', 'VILLA', 'female', ['can_room_service' => true]),
+            'none' => $this->employee('NO1', 'GUSTO', 'female'),
+        ];
+    }
+
+    private function recordOff(Employee $employee, string $date): void
+    {
+        app(\Botble\RestaurantRoster\Services\OffRequestService::class)->record([$employee->getKey()], ['date_from' => $date, 'date_to' => $date, 'type' => 'off_request'], 1);
+    }
+
+    /** @return array<string, array<int, int>> [date] => [shift_id => employee_id] tại Room Service */
+    private function roomCells(\Botble\RestaurantRoster\Scheduling\SolveResult $result, int $room): array
+    {
+        $cells = [];
+
+        foreach ($result->assignments as $r) {
+            if ($r['kind'] === 'shift' && $r['outlet_id'] === $room) {
+                $cells[$r['date']][$r['shift_id']][] = $r['employee_id'];
+            }
+        }
+
+        return $cells;
+    }
+
+    /**
+     * Hồ sơ: RS cố định chỉ làm Room Service đúng ca cứng (không sang outlet khác); người hỗ trợ đủ điều kiện thay; người không bật
+     * (kể cả có dòng Ngoại lệ năng lực Room Service) thì không. Không ai OFF → Room Service chỉ có người cố định, không thêm người hỗ trợ.
+     */
+    public function test_room_service_fixed_staff_first_and_support_only_when_needed(): void
+    {
+        $t = $this->roomServiceTeam();
+        EmployeeSkill::query()->create(['employee_id' => $t['none']->getKey(), 'outlet_id' => $t['room'], 'level' => 'primary']);
+        [$m6, $a2] = [$this->templates['M6']->getKey(), $this->templates['A2']->getKey()];
 
         $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
-        $this->assertSame('primary', $problem->employees[$flagged->getKey()]->skillLevel($room, $m6));
-        $this->assertNull($problem->employees[$unflagged->getKey()]->skillLevel($room, $m6), 'Không bật thì không làm Room Service, kể cả có dòng năng lực');
-        $this->assertNull($problem->employees[$people['G1']->getKey()]->skillLevel($room, $m6));
+        $spec = fn (string $k) => $problem->employees[$t[$k]->getKey()];
+        $this->assertSame('primary', $spec('fixedM6')->skillLevel($t['room'], $m6));
+        $this->assertNull($spec('fixedM6')->skillLevel($t['room'], $a2), 'Cố định ca M6 – không làm A2');
+        $this->assertNull($spec('fixedM6')->skillLevel($this->outlets['GUSTO']->getKey(), $m6), 'Cố định không sang outlet khác');
+        $this->assertSame('eligible', $spec('support1')->skillLevel($t['room'], $m6), 'Hỗ trợ: đủ điều kiện thay');
+        $this->assertNull($spec('none')->skillLevel($t['room'], $m6), 'Không bật thì không làm Room Service');
 
-        $off = Carbon::parse(self::WEEK)->addDays(4)->toDateString();
-        app(\Botble\RestaurantRoster\Services\OffRequestService::class)->record([$flagged->getKey()], ['date_from' => $off, 'date_to' => $off, 'type' => 'off_request'], 1);
         $result = $this->solve();
-        $atRoom = array_filter($result->assignments, fn ($r) => $r['kind'] === 'shift' && $r['outlet_id'] === $room);
+        $cells = $this->roomCells($result, $t['room']);
+        $atRoom = array_unique(array_merge(...array_map(fn ($day) => array_merge(...array_values($day)), array_values($cells))));
+        $this->assertSame([], array_values(array_diff($atRoom, [$t['fixedM6']->getKey(), $t['fixedA2']->getKey(), $t['support1']->getKey(), $t['support2']->getKey()])));
 
-        $this->assertSame([$flagged->getKey()], array_values(array_unique(array_column($atRoom, 'employee_id'))), 'Chỉ người bật được xếp Room Service');
-        $this->assertNotEmpty(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $off && $u['outlet_id'] === $room && $u['level'] === 'min'),
-            'Ngày người bật OFF: cảnh báo thiếu Room Service');
+        // Ngày người cố định đi làm: Room Service là người cố định; người hỗ trợ không được thêm vào.
+        foreach ($cells as $date => $byShift) {
+            foreach ($byShift as $shift => $ids) {
+                $this->assertCount(1, $ids, "{$date}: mỗi ca Room Service đúng 1 người");
+            }
+
+            $fixedM6Works = collect($result->assignments)->first(fn ($r) => $r['employee_id'] === $t['fixedM6']->getKey() && $r['date'] === $date && $r['kind'] === 'shift');
+
+            if ($fixedM6Works) {
+                $this->assertSame([$t['fixedM6']->getKey()], $byShift[$m6] ?? [], "{$date}: M6 là người cố định");
+            }
+        }
+
+        // Người cố định không làm ở outlet khác.
+        $this->assertSame([], array_filter($result->assignments, fn ($r) => in_array($r['employee_id'], [$t['fixedM6']->getKey(), $t['fixedA2']->getKey()], true)
+            && $r['kind'] === 'shift' && $r['outlet_id'] !== $t['room']));
+        $this->assertSame(0, (int) ($result->solverMetadata['objective']['hard'] ?? 0));
+    }
+
+    /** Cố định M6 OFF một ngày, cố định A2 OFF ngày khác: mỗi ca chỉ tìm người hỗ trợ cho đúng ca đó; không lấy người chưa bật. */
+    public function test_room_service_support_replaces_fixed_staff_per_shift(): void
+    {
+        $t = $this->roomServiceTeam();
+        [$m6, $a2] = [$this->templates['M6']->getKey(), $this->templates['A2']->getKey()];
+        $offM6 = Carbon::parse(self::WEEK)->addDays(1)->toDateString();
+        $offA2 = Carbon::parse(self::WEEK)->addDays(3)->toDateString();
+        $this->recordOff($t['fixedM6'], $offM6);
+        $this->recordOff($t['fixedA2'], $offA2);
+
+        $result = $this->solve();
+        $cells = $this->roomCells($result, $t['room']);
+        $supports = [$t['support1']->getKey(), $t['support2']->getKey()];
+
+        $this->assertCount(1, $cells[$offM6][$m6] ?? [], 'Ca M6 có người thay');
+        $this->assertContains(($cells[$offM6][$m6] ?? [0])[0], $supports, 'M6: người hỗ trợ thay');
+        $this->assertContains(($cells[$offA2][$a2] ?? [0])[0], $supports, 'A2: người hỗ trợ thay');
+        $this->assertSame([$t['fixedA2']->getKey()], $cells[$offM6][$a2] ?? [], 'Ngày M6 thiếu: A2 vẫn là người cố định');
+        $this->assertSame([], array_filter($result->unfilledRequirements, fn ($u) => $u['outlet_id'] === $t['room'] && $u['level'] === 'min'), 'Không thiếu Room Service');
+        $this->assertSame(0, (int) ($result->solverMetadata['objective']['hard'] ?? 0), 'Không ai bị 2 ca / thiếu giờ nghỉ');
+    }
+
+    /** Người hỗ trợ đều OFF hoặc có ô khóa ca khác: không ghi đè ô khóa, không lấy người chưa bật – cảnh báo thiếu Room Service. */
+    public function test_room_service_shortage_warned_when_no_support_available(): void
+    {
+        $t = $this->roomServiceTeam();
+        $m6 = $this->templates['M6']->getKey();
+        $day = Carbon::parse(self::WEEK)->addDays(2)->toDateString();
+        $this->recordOff($t['fixedM6'], $day);
+        $this->recordOff($t['support1'], $day);
+        $locked = Shift::query()->create(['employee_id' => $t['support2']->getKey(), 'date' => $day, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['A2']->getKey(),
+            'outlet_id' => $this->outlets['VILLA']->getKey(), 'status' => 'draft', 'is_locked' => true, 'lock_reason' => Shift::LOCK_CONFIRMED,
+            'start_at' => "{$day} 14:00:00", 'end_at' => "{$day} 22:00:00", 'hours' => 8]);
+
+        $result = $this->solve();
+        $cells = $this->roomCells($result, $t['room']);
+
+        $this->assertSame([], $cells[$day][$m6] ?? [], 'Không ai thay M6');
+        $kept = collect($result->assignments)->first(fn ($r) => $r['employee_id'] === $t['support2']->getKey() && $r['date'] === $day);
+        $this->assertSame([$this->outlets['VILLA']->getKey(), $this->templates['A2']->getKey()], [$kept['outlet_id'], $kept['shift_id']], 'Ô khóa của người hỗ trợ giữ nguyên');
+        $this->assertNotEmpty(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['outlet_id'] === $t['room'] && $u['level'] === 'min'),
+            'Cảnh báo thiếu Room Service');
+        $this->assertTrue((bool) $locked->fresh()->is_locked);
+    }
+
+    /** Quản lý tự đổi người cố định sang người hỗ trợ trên bảng: ô tự khóa, chạy lại xếp tự động giữ nguyên. */
+    public function test_manual_room_service_change_is_kept(): void
+    {
+        $t = $this->roomServiceTeam();
+        $m6 = $this->templates['M6']->getKey();
+        $day = Carbon::parse(self::WEEK)->addDays(4)->toDateString();
+
+        // Quản lý ghi M6(RS) cho người hỗ trợ (ký hiệu RS = làm tại Room Service) thay cho người cố định.
+        $this->actingAs($this->user())->postJson(route('roster.assign'), ['employee_id' => $t['support1']->getKey(), 'date' => $day, 'action' => 'notation',
+            'notation' => 'M6(RS)', 'week' => self::WEEK])->assertJson(['error' => false]);
+        $cell = Shift::query()->where('employee_id', $t['support1']->getKey())->whereDate('date', $day)->firstOrFail();
+        $this->assertSame([$t['room'], true], [(int) $cell->outlet_id, (bool) $cell->is_locked], 'Ô Room Service xếp tay tự khóa');
+
+        $result = $this->solve();
+        $kept = collect($result->assignments)->first(fn ($r) => $r['employee_id'] === $t['support1']->getKey() && $r['date'] === $day);
+        $this->assertSame($m6, $kept['shift_id'] ?? null, 'Chạy lại xếp tự động giữ ô quản lý đã xếp');
+    }
+
+    /** Hồ sơ nhân viên: hai lựa chọn Room Service, lưu được, có nhãn trên bảng xếp ca và danh sách nhân viên. */
+    public function test_room_service_profile_options_and_badges(): void
+    {
+        $t = $this->roomServiceTeam();
+        $user = $this->user();
+        $html = html_entity_decode($this->actingAs($user)->get(route('roster.employees.edit', $t['fixedM6']->getKey()))->assertOk()->getContent());
+        $this->assertStringContainsString('Nhân viên Room Service cố định', $html);
+        $this->assertStringContainsString('Có thể hỗ trợ Room Service', $html);
+
+        $grid = $this->actingAs($user)->getJson(route('roster.grid', ['week' => self::WEEK]))->json('data.html');
+        $this->assertStringContainsString('RS cố định', $grid);
+        $this->assertStringContainsString('RS hỗ trợ', $grid);
+    }
+
+    /** Migration 30/10: người chuyên trách Room Service (module cũ) → RS cố định. */
+    public function test_migration_marks_old_room_service_leads_as_fixed(): void
+    {
+        $lead = $this->employee('RL2', 'NIGHT', extra: ['can_room_service' => true]);
+        $backup = $this->employee('RB2', 'GUSTO', extra: ['can_room_service' => true]);
+        \Illuminate\Support\Facades\DB::table('roster_room_service_staff')->insert([
+            ['employee_id' => $lead->getKey(), 'role' => 'lead', 'shift_template_id' => $this->templates['M6']->getKey(), 'effective_from' => '2026-01-01', 'effective_to' => null, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['employee_id' => $backup->getKey(), 'role' => 'backup', 'shift_template_id' => null, 'effective_from' => '2026-01-01', 'effective_to' => null, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        (require base_path('platform/plugins/restaurant-roster/database/migrations/2026_10_30_000001_add_room_service_fixed_to_employees.php'))->up();
+
+        $this->assertSame([true, false], [$lead->fresh()->room_service_fixed, $lead->fresh()->can_room_service]);
+        $this->assertSame([false, true], [$backup->fresh()->room_service_fixed, $backup->fresh()->can_room_service]);
     }
 
     /**
@@ -468,7 +613,7 @@ class NightAndScheduleGroupTest extends TestCase
         // Botble mã hóa chữ có dấu trong nhãn form: so khớp sau khi giải mã.
         $html = html_entity_decode($this->actingAs($user)->get(route('roster.employees.edit', $people['G1']->getKey()))->assertOk()->getContent());
         $this->assertStringContainsString('Night cố định', $html);
-        $this->assertStringContainsString('Có thể làm Room Service', $html);
+        $this->assertStringContainsString('Có thể hỗ trợ Room Service', $html);
         $this->assertStringNotContainsString('Tham gia luân phiên Night', $html);
         $this->assertStringContainsString('Nhóm hiển thị trên Bảng xếp ca', $html);
     }
@@ -492,7 +637,7 @@ class NightAndScheduleGroupTest extends TestCase
 
         $html = $this->actingAs($this->user())->getJson(route('roster.grid', ['week' => self::WEEK]))->json('data.html');
         $this->assertStringContainsString('N cố định', $html);
-        $this->assertStringContainsString('>RS<', $html);
+        $this->assertStringContainsString('RS hỗ trợ', $html);
     }
 
     /** Villa + Gusto mỗi bên: 1 quản lý (cấp cao) và 2 Waiter; một ca đã khóa của Gusto. @return array<string, Employee> */

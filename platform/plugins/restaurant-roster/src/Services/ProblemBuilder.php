@@ -145,8 +145,10 @@ class ProblemBuilder
                 }
             }
 
-            // Room Service: chỉ người bật "Có thể làm Room Service" (hồ sơ). Người không bật không bao giờ được tự xếp vào Room Service,
-            // kể cả có dòng Ngoại lệ năng lực. Ca cứng trong hồ sơ vẫn áp dụng (vd chuyên trách ca M6).
+            // Room Service (hồ sơ, quản lý 30/10/2026): "cố định" → luôn làm Room Service (đặt cuối vòng lặp); "có thể hỗ trợ" → đủ điều kiện
+            // thay thế (mức "đủ điều kiện", làm ngoài outlet chính bị phạt) nên chỉ được xếp khi ca Room Service thiếu người (sức chứa ca
+            // = định biên, ca đã có người cố định thì không còn chỗ). Người không bật không bao giờ được tự xếp vào Room Service,
+            // kể cả có dòng Ngoại lệ năng lực. Ca cứng trong hồ sơ vẫn áp dụng.
             if ($roomOutletId) {
                 foreach (array_keys($skills) as $key) {
                     if ((int) explode(':', $key)[0] === $roomOutletId) {
@@ -154,8 +156,8 @@ class ProblemBuilder
                     }
                 }
 
-                if ($employee->can_room_service) {
-                    $skills["{$roomOutletId}:0"] = EmployeeSpec::PRIMARY;
+                if ($employee->can_room_service && ! $employee->room_service_fixed) {
+                    $skills["{$roomOutletId}:0"] = (int) $employee->outlet_id === $roomOutletId ? EmployeeSpec::PRIMARY : EmployeeSpec::ELIGIBLE;
 
                     if ($fixedShiftId) {
                         $fixed[] = "{$roomOutletId}:{$fixedShiftId}";
@@ -212,7 +214,7 @@ class ProblemBuilder
 
             // Nhân viên đa năng: thuộc outlet Night, không phải Night cố định – được mượn sang nhà hàng trước tiên.
             $isFlex = in_array((int) $employee->outlet_id, $nightOutletIds, true) && ! $isNightCore;
-            $canTransfer = ! isset($managerPositions[(int) $employee->position_id]) && ! $employee->fixed_shift_template_id && ! $isNightCore
+            $canTransfer = ! isset($managerPositions[(int) $employee->position_id]) && ! $employee->fixed_shift_template_id && ! $isNightCore && ! $employee->room_service_fixed
                 && ($isFlex || in_array($positionNames[(int) $employee->position_id] ?? '', $transferPositions, true));
 
             if ($transferPolicy === 'auto' && $canTransfer) {
@@ -233,6 +235,13 @@ class ProblemBuilder
                         $this->notes['transfer_blocked'][$employee->name] = true;
                     }
                 }
+            }
+
+            // Room Service cố định: chỉ làm Room Service (ca cứng nếu có), không sang outlet khác; OFF thì người hỗ trợ thay.
+            if ($employee->room_service_fixed && $roomOutletId && ! $isNightCore) {
+                $skills = ["{$roomOutletId}:0" => EmployeeSpec::PRIMARY];
+                $fixed = [$fixedShiftId ? "{$roomOutletId}:{$fixedShiftId}" : "{$roomOutletId}:0"];
+                $isFlex = false;
             }
 
             if (! $skills && $employee->auto_schedule) {

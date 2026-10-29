@@ -123,13 +123,23 @@ class EmployeeForm extends FormAbstract
                     ->colspan(1)
             )
             ->add(
+                'room_service_fixed',
+                SelectField::class,
+                SelectFieldOption::make()
+                    ->label('Nhân viên Room Service cố định')
+                    ->choices([0 => 'Không', 1 => 'Có – luôn ưu tiên xếp Room Service'])
+                    ->defaultValue(0)
+                    ->helperText('Ngày đi làm luôn xếp ở Room Service (theo Ca cứng nếu có, vd M6), không bị điều sang outlet khác.')
+                    ->colspan(1)
+            )
+            ->add(
                 'can_room_service',
                 SelectField::class,
                 SelectFieldOption::make()
-                    ->label('Có thể làm Room Service')
-                    ->choices([0 => 'Không', 1 => 'Có – được tự động xếp ca Room Service'])
+                    ->label('Có thể hỗ trợ Room Service')
+                    ->choices([0 => 'Không', 1 => 'Có – thay khi Room Service thiếu người'])
                     ->defaultValue(0)
-                    ->helperText('Chỉ người bật mục này được thuật toán xếp vào Room Service. Muốn người đó luôn làm Room Service: chọn Outlet chính là Room Service.')
+                    ->helperText('Chỉ được tự xếp vào Room Service khi người cố định OFF / không làm được và ca đó thiếu người. Đã bật "cố định" thì không cần bật mục này.')
                     ->colspan(1)
             )
             ->add(

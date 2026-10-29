@@ -157,8 +157,10 @@
                                         @if (! empty($row['merged_from']))
                                             <span class="badge bg-azure-lt" title="Outlet chính {{ $row['merged_from'] }} – đang hiển thị chung, outlet chính không đổi">{{ $row['merged_from'] }}</span>
                                         @endif
-                                        @if ($row['room_service'])
-                                            <span class="badge bg-orange-lt" title="Có thể làm Room Service (hồ sơ nhân viên) – được tự xếp vào Room Service">RS</span>
+                                        @if ($row['room_service'] === 'fixed')
+                                            <span class="badge bg-orange-lt" title="Nhân viên Room Service cố định (hồ sơ) – luôn ưu tiên xếp Room Service">RS cố định</span>
+                                        @elseif ($row['room_service'] === 'support')
+                                            <span class="badge bg-orange-lt" title="Có thể hỗ trợ Room Service (hồ sơ) – chỉ thay khi Room Service thiếu người">RS hỗ trợ</span>
                                         @endif
                                         @if ($employee->is_trainee)
                                             <span class="badge bg-yellow-lt" title="Thực tập sinh: không tính vào định biên{{ $employee->training_to ? ', đến ' . $employee->training_to->format('d/m/Y') : '' }}">Thực tập</span>

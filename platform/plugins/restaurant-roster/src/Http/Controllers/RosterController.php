@@ -149,6 +149,15 @@ class RosterController extends BaseController
             $message .= ' Night luân phiên xếp tay – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
         }
 
+        // Quản lý xếp tay người không phải Room Service cố định vào Room Service (vd đổi người cố định sang người hỗ trợ):
+        // ô tự khóa để chạy lại xếp tự động không thay người khác.
+        $roomOutletId = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->roomOutletId();
+
+        if ($shift->kind === Shift::KIND_SHIFT && $roomOutletId && (int) $shift->outlet_id === $roomOutletId && ! $employee->room_service_fixed && ! $shift->is_locked) {
+            $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
+            $message .= ' Room Service xếp tay – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
+        }
+
         // Xếp tay khác ca cứng: giữ quyết định của quản lý bằng cách khóa ô, để "Tối ưu lại" không đổi về ca cứng.
         if ($employee->fixed_shift_template_id && $shift->kind === Shift::KIND_SHIFT
             && (int) $shift->shift_template_id !== (int) $employee->fixed_shift_template_id && ! $shift->is_locked) {
@@ -954,7 +963,7 @@ class RosterController extends BaseController
                 'cells' => $cells,
                 'check' => $check,
                 'section' => $section($employee),
-                'room_service' => (bool) $employee->can_room_service,
+                'room_service' => $employee->room_service_fixed ? 'fixed' : ($employee->can_room_service ? 'support' : null),
                 // Khu gộp: người của nhà hàng đang đóng cửa (outlet chính không đổi) – hiện nhãn outlet để không nhầm.
                 'merged_from' => $merge && (int) $employee->outlet_id === $merge['closed_id'] ? $merge['closed_code'] : null,
             ];
