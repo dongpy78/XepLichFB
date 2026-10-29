@@ -99,7 +99,7 @@ class AutoShiftCodesTest extends TestCase
 
         $night = array_filter($result->assignments, fn ($r) => $r['date'] === $day && $r['shift_id'] === self::N);
         $this->assertLessThanOrEqual(2, count($night), 'Không xếp 3 người luân phiên thay Night cứng');
-        $this->assertNotEmpty(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['shift_code'] === 'Night cứng'), 'Báo không có Night cứng');
+        $this->assertNotEmpty(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['shift_code'] === 'Night cố định'), 'Báo không có Night cứng');
 
         foreach (array_diff($days, [$day]) as $date) {
             $ids3 = array_column(array_filter($result->assignments, fn ($r) => $r['date'] === $date && $r['shift_id'] === self::N), 'employee_id');

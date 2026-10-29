@@ -98,7 +98,7 @@ class NightRotationRulesTest extends TestCase
         [$result] = $this->week(options: ['hard' => [1 => [$day => 'Nghỉ phép năm'], 2 => [$day => 'Xin OFF']]]);
 
         $this->assertSame([], array_intersect($this->nightIds($result, $day), [1, 2]), 'Không phá OFF đã duyệt');
-        $gap = array_values(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['shift_code'] === 'Night cứng'))[0] ?? null;
+        $gap = array_values(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['shift_code'] === 'Night cố định'))[0] ?? null;
         $this->assertNotNull($gap, 'Cảnh báo ngày không có Night cứng');
         $this->assertCount(2, $gap['reasons']['approved_off']);
         $this->assertTrue($gap['provably_impossible']);

@@ -173,27 +173,6 @@
         </div>
     @endif
 
-    @if ($nightPlan = $run->settings['night_plan'] ?? [])
-        <div class="card mb-3">
-            <div class="card-header">
-                <h3 class="card-title">Luân phiên Night đã dùng</h3>
-                <a class="ms-auto small" href="{{ route('roster.night.index') }}">Quản lý nhân sự Night</a>
-            </div>
-            <div class="list-group list-group-flush">
-                @foreach ($nightPlan as $week => $info)
-                    <div class="list-group-item small">
-                        <strong>Tuần {{ \Carbon\Carbon::parse($week)->format('d/m') }}</strong>
-                        <span class="badge {{ $info['source'] === 'approved' ? 'bg-success' : 'bg-warning' }} text-white ms-1">{{ $info['source'] === 'approved' ? 'Đã duyệt' : 'Đề xuất – chưa duyệt' }}</span>
-                        · {{ $info['names'] ? implode(', ', $info['names']) : 'chưa chọn được ai' }}
-                        @foreach ($info['warnings'] as $warning)
-                            <div class="text-danger">{{ $warning }}</div>
-                        @endforeach
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
-
     @php $report = $proposal['support_report'] ?? []; @endphp
     @if (! empty($report['rows']))
         <div class="card mb-3">
@@ -347,7 +326,7 @@
             <div class="card-header"><h3 class="card-title">Cân bằng theo ngày (quản lý / nữ waiter / nam waiter M6–A2, Night)</h3></div>
             <div class="table-responsive">
                 <table class="table card-table table-vcenter table-sm">
-                    <thead><tr><th>Ngày</th><th>Quản lý OFF</th><th>Nhân viên OFF (theo nhóm)</th><th>Outlet: Waiter (sáng / chiều) · quản lý · nữ · nam</th><th>Night (thực tế / nhu cầu)</th></tr></thead>
+                    <thead><tr><th>Ngày</th><th>Quản lý OFF</th><th>Nhân viên OFF (theo nhóm)</th><th>Outlet: Waiter (sáng / chiều) · quản lý · nữ · nam</th><th>Night (thực tế / tối thiểu Night cố định)</th></tr></thead>
                     <tbody>
                         @foreach ($balance as $day)
                             <tr>

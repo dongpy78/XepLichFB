@@ -91,7 +91,7 @@ class FemaleBalanceAndNightFairnessTest extends TestCase
         [$result] = $this->nightWeek(['hard' => [1 => [$day => 'Nghỉ phép'], 2 => [$day => 'Nghỉ phép']]]);
 
         $this->assertSame([], array_filter($result->assignments, fn ($r) => $r['date'] === $day && $r['shift_id'] === self::N), 'Không xếp Night ngày không có Night cứng');
-        $this->assertNotEmpty(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['shift_code'] === 'Night cứng'));
+        $this->assertNotEmpty(array_filter($result->unfilledRequirements, fn ($u) => $u['date'] === $day && $u['shift_code'] === 'Night cố định'));
         $this->assertSame([], $result->hardConstraintViolations);
     }
 

@@ -114,13 +114,22 @@ class EmployeeForm extends FormAbstract
                     ->colspan(1)
             )
             ->add(
-                'night_rotation_enabled',
+                'night_role',
                 SelectField::class,
                 SelectFieldOption::make()
-                    ->label('Tham gia luân phiên Night')
-                    ->choices([1 => 'Có (nếu là nam waiter có năng lực Night)', 0 => 'Không – tạm ngừng luân phiên'])
-                    ->defaultValue(1)
-                    ->helperText('Night cứng: chọn Ca cứng là ca đêm (N). Room Service chuyên trách: chọn ở trang Nhân sự Room Service. Hai nhóm này không vào luân phiên.')
+                    ->label('Night cố định')
+                    ->choices(['' => 'Không', \Botble\RestaurantRoster\Models\Employee::NIGHT_CORE => 'Có – tự động xếp ca đêm (N)'])
+                    ->helperText('Chỉ người bật Night cố định được thuật toán tự xếp ca đêm. Night luân phiên: quản lý xếp tay ca N trên Bảng xếp ca.')
+                    ->colspan(1)
+            )
+            ->add(
+                'can_room_service',
+                SelectField::class,
+                SelectFieldOption::make()
+                    ->label('Có thể làm Room Service')
+                    ->choices([0 => 'Không', 1 => 'Có – được tự động xếp ca Room Service'])
+                    ->defaultValue(0)
+                    ->helperText('Chỉ người bật mục này được thuật toán xếp vào Room Service. Muốn người đó luôn làm Room Service: chọn Outlet chính là Room Service.')
                     ->colspan(1)
             )
             ->add(

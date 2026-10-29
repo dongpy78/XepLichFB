@@ -53,7 +53,7 @@ class EmployeeController extends BaseController
 
     public function update(Employee $employee, EmployeeRequest $request)
     {
-        $watched = ['outlet_id', 'schedule_group_id', 'night_role', 'night_rotation_enabled', 'is_trainee', 'fixed_shift_template_id', 'auto_schedule'];
+        $watched = ['outlet_id', 'schedule_group_id', 'night_role', 'can_room_service', 'is_trainee', 'fixed_shift_template_id', 'auto_schedule'];
         $before = array_intersect_key($employee->getAttributes(), array_flip($watched));
         $employee->update($request->validated());
         $after = array_intersect_key($employee->fresh()->getAttributes(), array_flip($watched));

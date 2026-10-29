@@ -519,7 +519,7 @@ final class ResultBuilder
 
             $checks = [
                 'hard' => ['ok' => ! $hard, 'text' => $hard ? count($hard) . ' vi phạm điều kiện cứng' : 'Không trùng ca, không vi phạm điều kiện cứng, ô khóa / OFF đã duyệt giữ nguyên'],
-                'night' => ['ok' => $nightOk, 'text' => ($day['night_need'] ? sprintf('Night %d / %d người', count($day['night']), $day['night_need']) : 'Không có nhu cầu Night')
+                'night' => ['ok' => $nightOk, 'text' => ($day['night_need'] ? sprintf('Night %d người (tối thiểu %d Night cố định) – thêm người luân phiên: xếp tay', count($day['night']), $day['night_need']) : 'Không có nhu cầu Night')
                     . ($nightGaps ? ' – ' . implode('; ', array_map(fn ($u) => $u['shift_code'] . ' thiếu ' . $u['missing'], $nightGaps)) : '')],
                 'lobby' => ['ok' => ! $lobby, 'text' => $lobby ? 'Lobby thiếu người: ' . implode('; ', array_map(fn ($u) => sprintf('%s %d/%d', $u['shift_code'], $u['assigned'], $u['min']), $lobby)) : 'Lobby đủ định biên'],
                 'waiter' => ['ok' => ! $unbalanced && ! $missingGender, 'text' => (implode(' · ', array_map(fn ($o) => sprintf('%s %d/%d', $o['outlet'], $o['waiters'][0], $o['waiters'][1]), $day['outlets'])) ?: 'Không có outlet cân bằng M6 / A2')
@@ -641,7 +641,7 @@ final class ResultBuilder
     }
 
     /**
-     * Ngày Night không có nhân viên Night cứng nào để điều phối (bắt buộc ≥ 1 / ngày), kèm lý do từng người Night cứng.
+     * Ngày Night không có nhân viên Night cố định nào để điều phối (bắt buộc ≥ 1 / ngày), kèm lý do từng người Night cứng.
      */
     private function coreGaps(ScheduleState $state): array
     {
@@ -665,7 +665,7 @@ final class ResultBuilder
                 } elseif ($fixed && ! $fixed->isWorking()) {
                     $reasons['locked'][] = "{$employee->name} (ô đã khóa: OFF)";
                 } elseif ($state->shiftAt($employeeId, $i) === null) {
-                    $reasons['blocked'][] = "{$employee->name} (OFF theo lịch – đủ số ngày làm trong tuần; đổi ngày OFF với người Night cứng còn lại)";
+                    $reasons['blocked'][] = "{$employee->name} (OFF theo lịch – đủ số ngày làm trong tuần; đổi ngày OFF với người Night cố định còn lại)";
                     $movable++;
                 } else {
                     $reasons['busy_elsewhere'][] = "{$employee->name} (đang làm ca khác)";
@@ -675,11 +675,11 @@ final class ResultBuilder
 
             $result[] = [
                 'date' => $date, 'outlet_id' => $outletId, 'outlet_name' => $problem->outletName($outletId), 'shift_id' => null,
-                'shift_code' => 'Night cứng', 'level' => 'min', 'min' => 1, 'target' => 1, 'min_male' => 0, 'target_male' => 0,
+                'shift_code' => 'Night cố định', 'level' => 'min', 'min' => 1, 'target' => 1, 'min_male' => 0, 'target_male' => 0,
                 'assigned' => 0, 'assigned_male' => 0, 'missing' => 1, 'eligible_total' => count(array_filter($problem->employees, fn ($e) => $e->isNightCore())),
                 'reasons' => $reasons, 'provably_impossible' => $movable === 0,
                 'proposals' => [['date' => $date, 'type' => 'keep_warning', 'label' => 'D',
-                    'text' => 'Night ngày ' . date('d/m', strtotime($date)) . ' không có nhân viên Night cứng điều phối – đổi ngày OFF của một người Night cứng hoặc duyệt ngoại lệ (ghi lý do).']],
+                    'text' => 'Night ngày ' . date('d/m', strtotime($date)) . ' không có nhân viên Night cố định – đổi ngày OFF của một người Night cố định, hoặc quản lý xếp tay người khác làm Night trên Bảng xếp ca.']],
             ];
         }
 

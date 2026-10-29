@@ -87,17 +87,13 @@ return [
         // false = như trước: chỉ theo dòng năng lực đã khai.
         'skills_from_profile' => true,
         // Mã ca thuật toán được TỰ xếp (quản lý 24/10/2026). "OH" (OH ở nhà hàng) không có trong danh sách → chỉ quản lý xếp tay;
-        // "OH(L)" là OH hỗ trợ Lobby. "N" = ca Night (luân phiên / Night cứng). Ô quản lý xếp tay hoặc khóa không bị lọc.
+        // "OH(L)" là OH hỗ trợ Lobby. "N" = ca Night (chỉ người bật Night cố định). Ô quản lý xếp tay hoặc khóa không bị lọc.
         'auto_shift_codes' => ['M6', 'A2', 'N', 'OH(L)', 'M9(L)', 'M6(L)', 'A2(L)', 'M6(K)', 'A2(K)'],
         'transfer_outlets' => ['GUSTO', 'VILLA'],
         'transfer_positions' => ['Waiter', 'Hostess'],
-        // Night (quản lý 23/10/2026): đúng 3 người / ngày (Định biên nhân sự), ≥ 1 Night cứng (ca cứng ca đêm) mỗi ngày;
-        // mỗi tuần chọn bấy nhiêu nam waiter luân phiên từ các outlet dưới, mỗi người 2 đêm liền nhau (3 khi cần), hôm sau OFF.
-        'night_rotation_per_week' => 4,
-        // Số đêm tối đa / tuần của một người luân phiên (mục tiêu 2 đêm liền nhau; làm thêm đêm khi cần đủ 3 người / ngày).
-        'night_rotation_max_nights' => 5,
-        'night_rotation_outlets' => ['GUSTO', 'VILLA', 'NIGHT'],
-        // Outlet Room Service (mã outlet) – người chuyên trách / dự phòng / thay thế quản lý ở trang Nhân sự Room Service.
+        // Night (quản lý 29/10/2026): thuật toán chỉ tự xếp ca đêm cho người bật "Night cố định" trong hồ sơ, ≥ 1 người / đêm.
+        // Night luân phiên không còn tự động – quản lý xếp tay ca N trên Bảng xếp ca.
+        // Outlet Room Service (mã outlet) – người được tự xếp: bật "Có thể làm Room Service" trong hồ sơ nhân viên.
         'room_service_codes' => ['ROOM', 'RS', 'ROOMSERVICE'],
         // Định biên phủ Lobby = số người CÓ MẶT CÙNG LÚC (quản lý chốt 22/10/2026): khung được chia tại các mốc vào / ra Lobby
         // của ca, một người chỉ được tính ở đoạn mà họ có mặt trọn đoạn (không còn "phủ ≥ 50% khung").

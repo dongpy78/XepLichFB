@@ -85,24 +85,12 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 });
             });
 
-            Route::get('night', ['as' => 'night.index', 'uses' => 'NightStaffController@index', 'permission' => 'roster.index']);
-            Route::get('room-service', ['as' => 'room-service.index', 'uses' => 'RoomServiceStaffController@index', 'permission' => 'roster.index']);
-
             Route::group(['permission' => 'roster.settings'], function (): void {
                 Route::post('swap-waiters', 'RosterController@swapWaiters')->name('swap-waiters');
 
                 Route::group(['prefix' => 'schedule-groups', 'as' => 'schedule-groups.'], function (): void {
                     Route::resource('', 'ScheduleGroupController')->parameters(['' => 'group'])->except('show');
                 });
-
-                Route::post('night', 'NightStaffController@save')->name('night.save');
-                Route::post('night/reset', 'NightStaffController@reset')->name('night.reset');
-                Route::post('night/demand', 'NightStaffController@demand')->name('night.demand');
-                Route::post('night/propose', 'NightStaffController@propose')->name('night.propose');
-                Route::post('night/unapprove', 'NightStaffController@unapprove')->name('night.unapprove');
-                Route::post('night/{employee}/toggle', 'NightStaffController@toggle')->name('night.toggle')->wherePrimaryKey('employee');
-                Route::post('room-service', 'RoomServiceStaffController@store')->name('room-service.store');
-                Route::post('room-service/{row}/end', 'RoomServiceStaffController@end')->name('room-service.end')->wherePrimaryKey('row');
 
                 Route::group(['prefix' => 'outlets', 'as' => 'outlets.'], function (): void {
                     Route::resource('', 'OutletController')->parameters(['' => 'outlet']);

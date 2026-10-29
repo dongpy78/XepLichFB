@@ -140,6 +140,15 @@ class RosterController extends BaseController
             $message .= ' Ô tiệc (BQ) đã tự khóa – xếp tự động sẽ giữ nguyên.';
         }
 
+        // Night luân phiên (quản lý 29/10/2026): chỉ quản lý xếp tay – người không phải Night cố định làm ca đêm thì ô tự khóa,
+        // "Tạo lịch tự động" / "Tối ưu lại" giữ nguyên.
+        $startHour = $shift->template?->start_time ? (int) substr((string) $shift->template->start_time, 0, 2) : null;
+
+        if ($shift->kind === Shift::KIND_SHIFT && $startHour !== null && ($startHour >= 20 || $startHour < 4) && ! $employee->isNightCore() && ! $shift->is_locked) {
+            $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
+            $message .= ' Night luân phiên xếp tay – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
+        }
+
         // Xếp tay khác ca cứng: giữ quyết định của quản lý bằng cách khóa ô, để "Tối ưu lại" không đổi về ca cứng.
         if ($employee->fixed_shift_template_id && $shift->kind === Shift::KIND_SHIFT
             && (int) $shift->shift_template_id !== (int) $employee->fixed_shift_template_id && ! $shift->is_locked) {
@@ -858,13 +867,6 @@ class RosterController extends BaseController
                 $employee->schedule_order ?? 99999, $employee->position->order ?? 99999, $employee->code))
             ->values();
 
-        // Room Service chuyên trách trong tuần (đánh dấu trên bảng).
-        $roomLeads = app(\Botble\RestaurantRoster\Services\RoomServiceStaffService::class)->leadIds($weekStart, $weekEnd);
-
-        // Night luân phiên đã duyệt của tuần (để đánh dấu trên bảng).
-        $nightRotation = \Botble\RestaurantRoster\Models\NightRotation::query()->whereDate('week_start', $weekStart->toDateString())
-            ->where('status', '!=', \Botble\RestaurantRoster\Models\NightRotation::STATUS_PROPOSED)->pluck('employee_id')->map(fn ($id) => (int) $id)->all();
-
         // Lấy thêm 7 ngày trước tuần đang xem để kiểm tra ngày làm liên tục và giờ nghỉ đầu tuần.
         $shifts = Shift::query()
             ->with('template:id,code,name,color,support_station,start_time')
@@ -938,8 +940,7 @@ class RosterController extends BaseController
                 'cells' => $cells,
                 'check' => $check,
                 'section' => $section($employee),
-                'night_rotation' => in_array((int) $employee->getKey(), $nightRotation, true),
-                'room_lead' => in_array((int) $employee->getKey(), $roomLeads, true),
+                'room_service' => (bool) $employee->can_room_service,
             ];
         }
 

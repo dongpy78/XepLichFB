@@ -24,7 +24,7 @@ class Employee extends BaseModel
         'position_id',
         'fixed_shift_template_id',
         'night_role',
-        'night_rotation_enabled',
+        'can_room_service',
         'is_trainee',
         'mentor_id',
         'training_from',
@@ -47,7 +47,7 @@ class Employee extends BaseModel
         'days_off_per_week' => 'int',
         'auto_schedule' => 'bool',
         'is_trainee' => 'bool',
-        'night_rotation_enabled' => 'bool',
+        'can_room_service' => 'bool',
         'schedule_order' => 'int',
         'training_from' => 'date',
         'training_to' => 'date',
@@ -61,7 +61,10 @@ class Employee extends BaseModel
     public const NIGHT_FLEX = 'flex';
 
     /** Night cố định không chọn ở đây: là người có ca cứng là ca đêm (quản lý chọn ở mục Ca cứng). */
+    public const NIGHT_CORE = 'core';
+
     public const NIGHT_ROLES = [
+        self::NIGHT_CORE => 'Night cố định – thuật toán tự xếp ca đêm',
         self::NIGHT_FLEX => 'Night đa năng (Night / Room Service / hỗ trợ nhà hàng)',
     ];
 
@@ -70,6 +73,11 @@ class Employee extends BaseModel
      */
     public function isNightCore(): bool
     {
+        // Bật "Night cố định" trong hồ sơ (quản lý 29/10/2026), hoặc dữ liệu cũ: ca cứng là ca đêm.
+        if ($this->night_role === self::NIGHT_CORE) {
+            return true;
+        }
+
         $start = $this->fixedShift?->start_time;
 
         if (! $start) {

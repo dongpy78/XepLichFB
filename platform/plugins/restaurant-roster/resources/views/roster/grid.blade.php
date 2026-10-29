@@ -74,7 +74,7 @@
                     @php
                         $currentSection = null;
                         $currentStatOutlet = null;
-                        $nightRoles = ['core' => ['N cố định', 'Night cố định (ca cứng ca đêm)'], 'flex' => ['N đa năng', 'Night đa năng: Night / Room Service / hỗ trợ nhà hàng']];
+                        $nightRoles = ['core' => ['N cố định', 'Night cố định (hồ sơ nhân viên) – thuật toán tự xếp ca đêm']];
                     @endphp
                     @foreach ($grid['rows'] as $row)
                         @php
@@ -125,17 +125,14 @@
                                     @endif
                                 </div>
                                 @php $nightRole = $employee->isNightCore() ? 'core' : $employee->night_role; @endphp
-                                @if ($employee->position->name || $nightRole || $row['night_rotation'] || $row['room_lead'] || $employee->is_trainee)
+                                @if ($employee->position->name || $nightRole || $row['room_service'] || $employee->is_trainee)
                                     <div class="roster-staff__meta">
                                         {{ $employee->position->name }}
                                         @if ($role = $nightRoles[$nightRole] ?? null)
                                             <span class="badge bg-dark-lt" title="{{ $role[1] }}">{{ $role[0] }}</span>
                                         @endif
-                                        @if ($row['room_lead'])
-                                            <span class="badge bg-orange-lt" title="Room Service chuyên trách (Nhân sự Room Service) – không luân phiên Night">RS cứng</span>
-                                        @endif
-                                        @if ($row['night_rotation'])
-                                            <span class="badge bg-indigo-lt" title="Được chọn luân phiên Night tuần này (vẫn thuộc nhóm hiển thị hiện tại)">N luân phiên</span>
+                                        @if ($row['room_service'])
+                                            <span class="badge bg-orange-lt" title="Có thể làm Room Service (hồ sơ nhân viên) – được tự xếp vào Room Service">RS</span>
                                         @endif
                                         @if ($employee->is_trainee)
                                             <span class="badge bg-yellow-lt" title="Thực tập sinh: không tính vào định biên{{ $employee->training_to ? ', đến ' . $employee->training_to->format('d/m/Y') : '' }}">Thực tập</span>

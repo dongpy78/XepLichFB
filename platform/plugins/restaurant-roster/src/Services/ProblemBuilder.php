@@ -85,12 +85,10 @@ class ProblemBuilder
         $transferOutletIds = $outlets->whereIn('code', (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']))
             ->pluck('id')->map(fn ($id) => (int) $id)->all();
         $transferPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.transfer_positions', ['Waiter', 'Hostess']));
-        // Room Service: chuyên trách theo ca, dự phòng, người đã xác nhận kỹ năng thay thế (Nhân sự Room Service).
-        $roomService = app(RoomServiceStaffService::class);
-        $roomOutletId = $roomService->outletId();
-        $roomStaff = $roomOutletId ? $roomService->effectiveRows($from, $to)->groupBy('employee_id') : collect();
-        // Nam waiter đủ điều kiện luân phiên Night (hồ sơ): Villa / Gusto / Night, không Night cứng, không Room Service cứng, đang bật.
-        $rotationIds = array_flip($nightStaff->groups($from)['rotation']->modelKeys());
+        // Room Service (quản lý 29/10/2026): chỉ người bật "Có thể làm Room Service" trong hồ sơ được tự xếp vào Room Service.
+        $roomOutletId = $this->roomOutletId();
+        // Night (quản lý 29/10/2026): chỉ người bật "Night cố định" được tự xếp ca đêm; Night luân phiên do quản lý xếp tay.
+        $nightTemplateList = $nightStaff->nightTemplates()->modelKeys();
         $maleStaffPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.male_staff_positions', ['Waiter']));
 
         // Cấp quản lý: theo cờ "Cấp quản lý" của vị trí (không so tên chức vụ); chỉ tự xếp các ca manager_shift_codes.
@@ -107,7 +105,6 @@ class ProblemBuilder
         $specs = [];
         $decisionIds = [];
         $fromProfile = (bool) config('plugins.restaurant-roster.general.scheduling.skills_from_profile', true);
-        $nightTemplateIds = $fromProfile ? $nightStaff->nightTemplates()->modelKeys() : [];
         $roomOutletKey = $roomOutletId ? (int) $roomOutletId : null;
 
         foreach ($employees as $employee) {
@@ -124,7 +121,7 @@ class ProblemBuilder
             }
 
             // Năng lực mặc định từ hồ sơ (skills_from_profile): làm được mọi ca của outlet chính (quản lý vẫn chỉ tự xếp M6 / A2;
-            // ca nào được tự xếp vẫn theo auto_shift_codes). Room Service vẫn theo module Nhân sự Room Service.
+            // ca nào được tự xếp vẫn theo auto_shift_codes). Room Service theo cờ "Có thể làm Room Service" (bên dưới).
             if ($fromProfile && $employee->outlet_id && (int) $employee->outlet_id !== $roomOutletKey) {
                 $skills["{$employee->outlet_id}:0"] ??= EmployeeSpec::PRIMARY;
             }
@@ -148,22 +145,24 @@ class ProblemBuilder
                 }
             }
 
-            // Room Service: chuyên trách ca → chỉ làm ca đó ở Room Service (hoặc OFF) khi hiệu lực trọn kỳ; dự phòng → ưu tiên thay;
-            // đã xác nhận kỹ năng → đủ điều kiện thay thế. Không ai khác được tự coi là làm được Room Service.
-            $isRoomLead = false;
-
-            foreach ($roomStaff[$employee->getKey()] ?? [] as $row) {
-                if ($row->role === \Botble\RestaurantRoster\Models\RoomServiceStaff::ROLE_LEAD && $row->shift_template_id) {
-                    $isRoomLead = true;
-                    $skills["{$roomOutletId}:{$row->shift_template_id}"] = EmployeeSpec::PRIMARY;
-
-                    if ((! $row->effective_from || $row->effective_from->lte($from)) && (! $row->effective_to || $row->effective_to->gte($to))) {
-                        $fixed = ["{$roomOutletId}:{$row->shift_template_id}"];
+            // Room Service: chỉ người bật "Có thể làm Room Service" (hồ sơ). Người không bật không bao giờ được tự xếp vào Room Service,
+            // kể cả có dòng Ngoại lệ năng lực. Ca cứng trong hồ sơ vẫn áp dụng (vd chuyên trách ca M6).
+            if ($roomOutletId) {
+                foreach (array_keys($skills) as $key) {
+                    if ((int) explode(':', $key)[0] === $roomOutletId) {
+                        unset($skills[$key]);
                     }
-                } elseif ($row->role === \Botble\RestaurantRoster\Models\RoomServiceStaff::ROLE_BACKUP) {
+                }
+
+                if ($employee->can_room_service) {
                     $skills["{$roomOutletId}:0"] = EmployeeSpec::PRIMARY;
+
+                    if ($fixedShiftId) {
+                        $fixed[] = "{$roomOutletId}:{$fixedShiftId}";
+                        $fixed = array_values(array_unique(array_filter($fixed, fn ($k) => isset($skills[explode(':', $k)[0] . ':0']) || isset($skills[$k]))));
+                    }
                 } else {
-                    $skills["{$roomOutletId}:0"] ??= EmployeeSpec::ELIGIBLE;
+                    $fixed = array_values(array_filter($fixed, fn ($k) => (int) explode(':', $k)[0] !== $roomOutletId));
                 }
             }
 
@@ -187,19 +186,33 @@ class ProblemBuilder
                     $skills["{$stationId}:0"] ??= EmployeeSpec::ELIGIBLE;
                 }
 
-                // Nam waiter trong danh sách luân phiên Night → làm được ca đêm ở outlet Night.
-                if (isset($rotationIds[$employee->getKey()])) {
-                    foreach ($nightOutletIds as $o) {
-                        foreach ($nightTemplateIds as $t) {
-                            $skills["{$o}:{$t}"] ??= EmployeeSpec::ELIGIBLE;
-                        }
-                    }
+            }
+
+            // Night: chỉ Night cố định được tự xếp ca đêm. Người khác bỏ mọi năng lực ca đêm ở outlet Night (kể cả dòng Ngoại lệ năng lực):
+            // Night luân phiên do quản lý xếp tay trên Bảng xếp ca (ô xếp tay được giữ nguyên, không bị thuật toán đổi).
+            $isNightCore = $employee->isNightCore();
+
+            foreach (array_keys($skills) as $key) {
+                [$o, $s] = array_map('intval', explode(':', $key));
+
+                if (in_array($o, $nightOutletIds, true) && ($s === 0 || in_array($s, $nightTemplateList, true)) && ! $isNightCore) {
+                    unset($skills[$key]);
                 }
             }
 
-            // Nhân viên đa năng: thuộc outlet Night, không phải Night cứng, không phải Room Service chuyên trách – được mượn trước tiên.
-            $isFlex = in_array((int) $employee->outlet_id, $nightOutletIds, true) && ! $employee->isNightCore() && ! $isRoomLead;
-            $canTransfer = ! isset($managerPositions[(int) $employee->position_id]) && ! $employee->fixed_shift_template_id && ! $isRoomLead
+            if (! $isNightCore) {
+                $fixed = array_values(array_filter($fixed, fn ($k) => ! in_array((int) explode(':', $k)[0], $nightOutletIds, true)));
+            } elseif ($nightOutletIds && $nightTemplateList) {
+                // Night cố định: chỉ làm ca đêm (ca cứng là ca đêm, hoặc ca đêm đầu tiên) tại outlet Night (outlet chính nếu là outlet Night).
+                $nightOutlet = in_array((int) $employee->outlet_id, $nightOutletIds, true) ? (int) $employee->outlet_id : $nightOutletIds[0];
+                $nightShift = in_array($fixedShiftId, $nightTemplateList, true) ? $fixedShiftId : (int) $nightTemplateList[0];
+                $skills["{$nightOutlet}:{$nightShift}"] = EmployeeSpec::PRIMARY;
+                $fixed = ["{$nightOutlet}:{$nightShift}"];
+            }
+
+            // Nhân viên đa năng: thuộc outlet Night, không phải Night cố định – được mượn sang nhà hàng trước tiên.
+            $isFlex = in_array((int) $employee->outlet_id, $nightOutletIds, true) && ! $isNightCore;
+            $canTransfer = ! isset($managerPositions[(int) $employee->position_id]) && ! $employee->fixed_shift_template_id && ! $isNightCore
                 && ($isFlex || in_array($positionNames[(int) $employee->position_id] ?? '', $transferPositions, true));
 
             if ($transferPolicy === 'auto' && $canTransfer) {
@@ -248,12 +261,8 @@ class ProblemBuilder
                 // Định biên nam = nam waiter: không tính cấp quản lý, chỉ vị trí trong male_staff_positions.
                 isMaleStaff: $employee->gender === 'male' && ! isset($managerPositions[(int) $employee->position_id])
                     && (! $maleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $maleStaffPositions, true)),
-                // Night cứng = ca cứng ca đêm (bắt buộc ≥ 1 người / ngày); luân phiên = nam waiter đủ điều kiện (hồ sơ).
-                nightRole: match (true) {
-                    $employee->isNightCore() => EmployeeSpec::NIGHT_CORE,
-                    isset($rotationIds[$employee->getKey()]) => EmployeeSpec::NIGHT_ROTATION,
-                    default => null,
-                },
+                // Night cố định (hồ sơ): ≥ 1 người / đêm. Không còn vai trò luân phiên tự động.
+                nightRole: $isNightCore ? EmployeeSpec::NIGHT_CORE : null,
                 isFlex: $isFlex,
             );
 
@@ -274,7 +283,7 @@ class ProblemBuilder
         $regularOff = $this->birthdayOffs($employees, $days, $fixed, $hard);
 
         $requirements = $this->requirements($days, array_values(array_diff($targetOutletIds, [$stationOutletId])), $templates->pluck('id')->all());
-        $requirements = $this->applyNightDemand($requirements, $days, $nightStaff, $targetOutletIds);
+        $requirements = $this->applyNightCoreOnly($requirements, $specs, $nightStaff);
         $requirements = $this->applyGenderPresence($requirements, $specs);
 
         // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
@@ -323,7 +332,6 @@ class ProblemBuilder
             supportHistory: $supportHistory,
             shiftHistory: $shiftHistory,
             historyWeeks: $historyWeeks,
-            nightPlan: $this->nightPlan($nightStaff, $from, $to),
             lobbyPreferred: $this->lobbyPreferred($specs, $shifts, $templates, $stationOutletId, $stationCode),
         );
     }
@@ -400,30 +408,6 @@ class ProblemBuilder
         }
 
         return $result;
-    }
-
-    /** @var array<string, array{source: string, ids: int[], warnings: string[]}> Kế hoạch luân phiên Night đã dùng ở lần build gần nhất (theo tuần) */
-    public array $nightWeeks = [];
-
-    /**
-     * Kế hoạch luân phiên Night cho các ngày xếp lịch: tuần đã duyệt → đúng danh sách; chưa duyệt → đề xuất của thuật toán.
-     */
-    private function nightPlan(NightStaffService $nightStaff, CarbonImmutable $from, CarbonImmutable $to): array
-    {
-        $result = $nightStaff->planFor($from, $to);
-        $this->nightWeeks = $result['weeks'];
-
-        foreach ($result['weeks'] as $week => $info) {
-            foreach ($info['warnings'] as $warning) {
-                $this->notes['night_rotation'][] = $warning;
-            }
-
-            if ($info['source'] === 'proposed') {
-                $this->notes['night_rotation_proposed'][] = $week;
-            }
-        }
-
-        return $result['plan'];
     }
 
     private function outletParents($outlets): array
@@ -833,7 +817,7 @@ class ProblemBuilder
         $shifts = Shift::query()
             ->whereIn('employee_id', $employeeIds)
             ->whereBetween('date', [$from->subDays(7)->toDateString(), $to->addDay()->toDateString()])
-            ->with('template')
+            ->with(['template', 'employee.fixedShift'])
             ->get();
 
         foreach ($shifts as $shift) {
@@ -847,7 +831,11 @@ class ProblemBuilder
                 $hard[$employeeId][$date] ??= 'Nghỉ phép ' . $shift->leave_type . ' (trong lịch)';
             }
 
-            if ($isDecision && ! $shift->is_locked && $shift->kind !== Shift::KIND_LEAVE) {
+            // Ca đêm quản lý xếp tay cho người không phải Night cố định (Night luân phiên): luôn giữ nguyên, kể cả chưa khóa.
+            $manualNight = $working && $shift->source !== 'engine' && $shift->template && $this->shiftSpec($shift->template)->category() === 'night'
+                && ! $shift->employee?->isNightCore();
+
+            if ($isDecision && ! $shift->is_locked && $shift->kind !== Shift::KIND_LEAVE && ! $manualNight) {
                 if ($working) {
                     $baseline[$employeeId][$date] = ScheduleState::slotKey((int) $shift->outlet_id, (int) $shift->shift_template_id, $this->isSupport($shift));
                 }
@@ -958,53 +946,49 @@ class ProblemBuilder
 
         return array_values(array_unique(array_map('intval', array_filter([
             ...(new NightStaffService($this))->nightOutletIds(),
-            app(RoomServiceStaffService::class)->outletId(),
+            $this->roomOutletId(),
             ...array_keys($this->outletParents($outlets)),
         ]))));
     }
 
     /**
-     * Nhu cầu Night theo ngày (quản lý chọn trên trang Nhân sự Night: ít khách 2, đông khách 3 người): thay tối thiểu / mục tiêu
-     * của định biên ca đêm ngày đó. Ngày chưa chọn giữ định biên Night mặc định. Không hạ nhu cầu ngầm: thiếu người thì báo thiếu.
+     * Night tự động chỉ gồm Night cố định (quản lý 29/10/2026): định biên ca đêm thành tối thiểu 1 Night cố định / đêm
+     * (thiếu → cảnh báo), mục tiêu = số người Night cố định. Người luân phiên do quản lý xếp tay, không phải thuật toán bù.
+     * Không có ai bật Night cố định → không còn tối thiểu (cảnh báo trong ghi chú lần chạy).
      *
      * @param \Botble\RestaurantRoster\Scheduling\Requirement[] $requirements
+     * @param EmployeeSpec[] $specs
      * @return \Botble\RestaurantRoster\Scheduling\Requirement[]
      */
-    private function applyNightDemand(array $requirements, array $days, NightStaffService $nightStaff, array $targetOutletIds): array
+    private function applyNightCoreOnly(array $requirements, array $specs, NightStaffService $nightStaff): array
     {
-        $demands = $nightStaff->demands(CarbonImmutable::parse(reset($days)), CarbonImmutable::parse(end($days)));
-        $outlets = array_values(array_intersect($nightStaff->nightOutletIds(), $targetOutletIds));
+        $outlets = $nightStaff->nightOutletIds();
+        $templates = $nightStaff->nightTemplates()->modelKeys();
+        $core = count(array_filter($specs, fn (EmployeeSpec $e) => $e->isNightCore()));
 
-        if (! $demands || ! $outlets) {
-            return $requirements;
+        if (! $core && $outlets) {
+            $this->notes['night_core'][] = 'Chưa có nhân viên nào bật "Night cố định" – thuật toán không xếp ca đêm; quản lý xếp tay trên Bảng xếp ca.';
         }
 
-        $templates = $nightStaff->nightTemplates()->modelKeys();
-        $done = [];
-
         foreach ($requirements as $k => $r) {
-            $staff = $demands[$r->date] ?? null;
-
-            if ($staff === null || isset($done[$r->date]) || ! in_array($r->outletId, $outlets, true) || ! in_array($r->shiftId, $templates, true)
-                || ($r->min <= 0 && $r->target <= 0)) {
+            if (! in_array($r->outletId, $outlets, true) || ! in_array($r->shiftId, $templates, true) || ($r->min <= 0 && $r->target <= 0)) {
                 continue;
             }
 
-            $requirements[$k] = new \Botble\RestaurantRoster\Scheduling\Requirement($r->date, $r->outletId, $r->shiftId, $staff, $staff, $staff,
-                $r->minMale, $r->targetMale, $r->allowReduce, $r->positionMins, $r->minFemale, $r->targetFemale, $r->positionTargets, $r->countWindow, $r->sourceId);
-            $done[$r->date] = true;
-        }
-
-        // Ngày đã chọn nhu cầu nhưng chưa có định biên ca đêm: tạo ô Night (một outlet Night, một mẫu ca đêm).
-        if (count($outlets) === 1 && count($templates) === 1) {
-            foreach ($days as $date) {
-                if (isset($demands[$date]) && ! isset($done[$date])) {
-                    $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, $outlets[0], (int) $templates[0], $demands[$date], $demands[$date], $demands[$date]);
-                }
-            }
+            $requirements[$k] = new \Botble\RestaurantRoster\Scheduling\Requirement($r->date, $r->outletId, $r->shiftId, min(1, $core), $core, null,
+                0, 0, $r->allowReduce, [], 0, 0, [], $r->countWindow, $r->sourceId);
         }
 
         return $requirements;
+    }
+
+    /** Outlet Room Service (mã room_service_codes, hoặc tên chứa "Room"). */
+    public function roomOutletId(): ?int
+    {
+        $codes = (array) config('plugins.restaurant-roster.general.scheduling.room_service_codes', ['ROOM', 'RS', 'ROOMSERVICE']);
+        $id = Outlet::query()->whereIn('code', $codes)->value('id') ?? Outlet::query()->where('name', 'like', '%Room%')->value('id');
+
+        return $id ? (int) $id : null;
     }
 
     /**

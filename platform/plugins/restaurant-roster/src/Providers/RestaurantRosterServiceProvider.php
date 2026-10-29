@@ -109,24 +109,6 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'permissions' => ['roster.settings'],
                 ])
                 ->registerItem([
-                    'id' => 'cms-plugins-restaurant-roster-night',
-                    'priority' => 4,
-                    'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Nhân sự Night',
-                    'icon' => 'ti ti-moon',
-                    'route' => 'roster.night.index',
-                    'permissions' => ['roster.index'],
-                ])
-                ->registerItem([
-                    'id' => 'cms-plugins-restaurant-roster-room-service',
-                    'priority' => 4,
-                    'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Nhân sự Room Service',
-                    'icon' => 'ti ti-bell-ringing',
-                    'route' => 'roster.room-service.index',
-                    'permissions' => ['roster.index'],
-                ])
-                ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster-schedule-groups',
                     'priority' => 5,
                     'parent_id' => 'cms-plugins-restaurant-roster',
@@ -166,7 +148,7 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'id' => 'cms-plugins-restaurant-roster-requirements',
                     'priority' => 6,
                     'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Định biên Night / Room Service / Kid',
+                    'name' => 'Định biên Room Service / Kid',
                     'icon' => 'ti ti-users-group',
                     'route' => 'roster.requirements.index',
                     'permissions' => ['roster.settings'],
