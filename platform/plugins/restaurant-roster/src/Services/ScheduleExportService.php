@@ -131,8 +131,9 @@ class ScheduleExportService
     // ------------------------------------------------------------------ PNG
 
     /**
-     * Ảnh PNG: một ảnh duy nhất cho cả tuần (quản lý 30/10/2026 – không chia phần), thiết kế theo màu thương hiệu
-     * (navy + vàng gold), mỗi loại ca một màu (sáng / trưa / chiều / đêm), OFF xám, nghỉ phép hồng; dòng xen kẽ dễ dò.
+     * Ảnh PNG một tấm cho cả tuần (quản lý 30/10/2026): cùng font (Inter) và bảng màu với Bảng xếp ca – màu ca theo Mẫu ca
+     * (sky, sand, amber, violet…), OFF đỏ nhạt, nghỉ phép hồng. Bảng giãn đủ chiều rộng ảnh; tiêu đề chỉ "LỊCH LÀM VIỆC TUẦN"
+     * và ngày áp dụng; ngày sinh nhân viên sau tên. Bản nháp có nhãn BẢN NHÁP đỏ.
      */
     public function png(array $snapshot): string
     {
@@ -142,152 +143,153 @@ class ScheduleExportService
             throw new RuntimeException('Tuần này chưa có nhân viên nào trên bảng xếp ca.');
         }
 
-        [$regular, $bold] = $this->fonts();
+        $f = $this->fonts();
         $days = $snapshot['days'];
         $draft = ! isset($snapshot['version']);
         $rows = array_merge(...array_map(fn ($s) => $s['rows'], $sections));
 
-        // Kích thước (px) – đủ lớn để đọc rõ trên điện thoại khi gửi Zalo.
-        $pad = 40;
-        $bannerH = 176;
-        $headH = 70;
-        $sectionH = 50;
-        $rowH = 64;
-        $colNo = 64;
-        $colName = max(340, min(480, 44 + max($this->textWidth($bold, 19, $this->longestText($rows, 'name')), $this->textWidth($regular, 14, $this->longestText($rows, 'position')))));
-        $colDay = 136;
-        $tableW = $colNo + $colName + $colDay * count($days);
-        $width = $pad * 2 + $tableW;
-        $tableTop = $bannerH + 30;
+        // Khổ cố định 1600px; cột ngày chia đều phần còn lại để bảng phủ kín chiều rộng ảnh.
+        $width = 1600;
+        $pad = 36;
+        $headerH = 164;
+        $headH = 68;
+        $sectionH = 46;
+        $rowH = 66;
+        $colNo = 56;
+        $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['semibold'], 19, $r['name'])
+            + (! empty($r['birthday']) ? $this->textWidth($f['medium'], 13, 'SN ' . $r['birthday']) + 34 : 0), $rows));
+        $colName = max(360, min(560, $nameNeed + 36));
+        $colDay = (int) floor(($width - $pad * 2 - $colNo - $colName) / max(1, count($days)));
+        $colName = $width - $pad * 2 - $colNo - $colDay * count($days);
+        $tableTop = $headerH;
         $tableH = $headH + $sectionH * count($sections) + $rowH * count($rows);
-        $height = $tableTop + $tableH + 120;
+        $height = $tableTop + $tableH + 110;
 
         $img = imagecreatetruecolor($width, $height);
-        imagealphablending($img, true);
         $c = fn (string $hex) => imagecolorallocate($img, hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2)));
-        $bg = $c('F4F6FA');
         $white = $c('FFFFFF');
+        $text = $c('0F172A');
+        $muted = $c('64748B');
+        $faint = $c('94A3B8');
+        $line = $c('E5E9F0');
+        $headBg = $c('F8FAFC');
+        $sectionBg = $c('F1F5F9');
+        $weekend = $c('FBFCFD');
         $navy = $c('0A2540');
-        $navyDeep = $c('061A30');
         $gold = $c('E0A96D');
-        $goldWash = $c('FDF3E7');
-        $ink = $c('1B2330');
-        $muted = $c('6B7686');
-        $line = $c('E3E8EF');
-        $zebra = $c('F8FAFC');
-        $weekendHead = $c('E4EBF5');
-        $red = $c('D64545');
-        imagefilledrectangle($img, 0, 0, $width, $height, $bg);
+        imagefilledrectangle($img, 0, 0, $width, $height, $white);
 
-        // Băng tiêu đề navy + vạch vàng.
-        imagefilledrectangle($img, 0, 0, $width, $bannerH, $navy);
-        imagefilledrectangle($img, 0, $bannerH - 6, $width, $bannerH, $gold);
-        imagefilledrectangle($img, $pad, 40, $pad + 8, 112, $gold);
-        imagettftext($img, 34, 0, $pad + 26, 76, $white, $bold, 'LỊCH LÀM VIỆC TUẦN');
-        imagettftext($img, 20, 0, $pad + 26, 112, $gold, $bold, $this->snapshots->period($snapshot));
-        imagettftext($img, 14, 0, $pad + 26, 144, $c('B9C6D8'), $regular, $this->fit($regular, 14, $snapshot['scope_label'] . ' · ' . $this->snapshots->caption($snapshot), $width - $pad * 2 - 260));
+        // Tiêu đề: "LỊCH LÀM VIỆC TUẦN" + ngày áp dụng (vạch vàng bên trái như thương hiệu).
+        imagefilledrectangle($img, $pad, 40, $pad + 6, 124, $gold);
+        imagettftext($img, 36, 0, $pad + 24, 82, $navy, $f['bold'], 'LỊCH LÀM VIỆC TUẦN');
+        imagettftext($img, 20, 0, $pad + 26, 122, $muted, $f['medium'], 'Ngày ' . $this->snapshots->period($snapshot));
 
-        // Nhãn phiên bản / bản nháp góc phải.
-        $tag = $draft ? 'BẢN NHÁP' : 'PHIÊN BẢN v' . $snapshot['version'];
-        $tagW = $this->textWidth($bold, 18, $tag) + 44;
-        $this->pill($img, $width - $pad - $tagW, 52, $width - $pad, 98, $draft ? $red : $gold);
-        imagettftext($img, 18, 0, $width - $pad - $tagW + 22, 83, $draft ? $white : $navyDeep, $bold, $tag);
-
-        // Thẻ bảng (nền trắng, viền nhẹ).
-        $x0 = $pad;
-        $x1 = $pad + $tableW;
-        $this->roundRect($img, $x0 - 1, $tableTop - 1, $x1 + 1, $tableTop + $tableH + 1, 14, $line);
-        $this->roundRect($img, $x0, $tableTop, $x1, $tableTop + $tableH, 14, $white);
-
-        // Hàng tiêu đề: "Thứ" đậm + ngày nhỏ; thứ 7 / CN nền đậm hơn.
-        $y = $tableTop;
-        $this->roundRect($img, $x0, $y, $x1, $y + $headH, 14, $c('EEF2F8'));
-        imagefilledrectangle($img, $x0, $y + 14, $x1, $y + $headH, $c('EEF2F8'));
-        $this->cellText($img, $bold, 15, $muted, $x0, $colNo, $y, $headH, '#', true);
-        $this->cellText($img, $bold, 16, $navy, $x0 + $colNo, $colName, $y, $headH, 'NHÂN VIÊN');
-
-        foreach ($days as $k => $day) {
-            $cx = $x0 + $colNo + $colName + $colDay * $k;
-            [$dow, $date] = array_pad(explode(' ', $day['label'], 2), 2, '');
-
-            if (in_array($dow, ['T7', 'CN'], true)) {
-                if ($k === count($days) - 1) {
-                    // Cột cuối: giữ góc bo tròn của thẻ bảng.
-                    $this->roundRect($img, $cx, $y, $cx + $colDay, $y + $headH, 14, $weekendHead);
-                    imagefilledrectangle($img, $cx, $y + 14, $cx + $colDay, $y + $headH, $weekendHead);
-                    imagefilledrectangle($img, $cx, $y, $cx + $colDay - 14, $y + $headH, $weekendHead);
-                } else {
-                    imagefilledrectangle($img, $cx, $y, $cx + $colDay, $y + $headH, $weekendHead);
-                }
-            }
-
-            $this->cellText($img, $bold, 18, $navy, $cx, $colDay, $y - 12, $headH, $dow, true);
-            $this->cellText($img, $regular, 13, $muted, $cx, $colDay, $y + 14, $headH, $date, true);
+        if ($draft) {
+            $tagW = $this->textWidth($f['bold'], 17, 'BẢN NHÁP') + 40;
+            $this->roundRect($img, $width - $pad - $tagW, 52, $width - $pad, 94, 8, $c('FEE2E2'));
+            imagettftext($img, 17, 0, $width - $pad - $tagW + 20, 80, $c('DC2626'), $f['bold'], 'BẢN NHÁP');
         }
 
+        $x0 = $pad;
+        $x1 = $width - $pad;
+        $dayX = fn (int $k) => $x0 + $colNo + $colName + $colDay * $k;
+        $isWeekend = fn (array $day) => in_array(explode(' ', $day['label'])[0], ['T7', 'CN'], true);
+
+        // Thẻ bảng: viền + bo góc.
+        $this->roundRect($img, $x0 - 1, $tableTop - 1, $x1 + 1, $tableTop + $tableH + 1, 12, $line);
+        $this->roundRect($img, $x0, $tableTop, $x1, $tableTop + $tableH, 12, $white);
+
+        // Nền cột cuối tuần (nhạt như bảng xếp ca).
+        foreach ($days as $k => $day) {
+            if ($isWeekend($day)) {
+                imagefilledrectangle($img, $dayX($k), $tableTop + $headH, $dayX($k) + $colDay - ($k === count($days) - 1 ? 1 : 0), $tableTop + $tableH - 12, $weekend);
+            }
+        }
+
+        // Hàng tiêu đề.
+        $y = $tableTop;
+        $this->roundRect($img, $x0, $y, $x1, $y + $headH, 12, $headBg);
+        imagefilledrectangle($img, $x0, $y + 12, $x1, $y + $headH, $headBg);
+        $this->cellText($img, $f['semibold'], 14, $faint, $x0, $colNo, $y, $headH, '#', true);
+        $this->cellText($img, $f['semibold'], 14, $muted, $x0 + $colNo, $colName, $y, $headH, 'NHÂN VIÊN');
+
+        foreach ($days as $k => $day) {
+            [$dow, $date] = array_pad(explode(' ', $day['label'], 2), 2, '');
+            $this->cellText($img, $f['semibold'], 18, $text, $dayX($k), $colDay, $y - 11, $headH, $this->dayName($dow), true);
+            $this->cellText($img, $f['regular'], 14, $muted, $dayX($k), $colDay, $y + 14, $headH, $date, true);
+        }
+
+        imageline($img, $x0, $y + $headH, $x1, $y + $headH, $line);
         $y += $headH;
         $n = 0;
 
         foreach ($sections as $section) {
-            // Băng tên khu: nền vàng nhạt + vạch vàng trái.
-            imagefilledrectangle($img, $x0, $y, $x1, $y + $sectionH, $goldWash);
-            imagefilledrectangle($img, $x0, $y, $x0 + 6, $y + $sectionH, $gold);
-            $this->cellText($img, $bold, 17, $navy, $x0 + 16, $x1 - $x0 - 16, $y, $sectionH, mb_strtoupper($section['label']) . '  ·  ' . count($section['rows']) . ' người');
+            imagefilledrectangle($img, $x0, $y, $x1, $y + $sectionH, $sectionBg);
+            $label = mb_strtoupper($section['label']);
+            imagettftext($img, 15, 0, $x0 + 18, (int) ($y + $sectionH / 2 + 6), $c('334155'), $f['bold'], $label);
+            imagettftext($img, 14, 0, $x0 + 30 + $this->textWidth($f['bold'], 15, $label), (int) ($y + $sectionH / 2 + 6), $faint, $f['medium'], count($section['rows']) . ' người');
+            imageline($img, $x0, $y + $sectionH, $x1, $y + $sectionH, $line);
             $y += $sectionH;
 
-            foreach ($section['rows'] as $i => $row) {
-                if ($i % 2 === 1) {
-                    imagefilledrectangle($img, $x0, $y, $x1, $y + $rowH, $zebra);
+            foreach ($section['rows'] as $row) {
+                $this->cellText($img, $f['medium'], 15, $faint, $x0, $colNo, $y, $rowH, (string) ++$n, true);
+
+                // Tên + ngày sinh (nhãn nhỏ) ; chức vụ bên dưới.
+                $nx = $x0 + $colNo + 8;
+                $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 110 : 0));
+                imagettftext($img, 19, 0, $nx, $y + 31, $text, $f['semibold'], $name);
+
+                if (! empty($row['birthday'])) {
+                    $bx = $nx + $this->textWidth($f['semibold'], 19, $name) + 12;
+                    $bw = $this->textWidth($f['medium'], 13, 'SN ' . $row['birthday']) + 20;
+                    $this->roundRect($img, $bx, $y + 12, $bx + $bw, $y + 36, 6, $c('FCE7F3'));
+                    imagettftext($img, 13, 0, $bx + 10, $y + 29, $c('BE185D'), $f['medium'], 'SN ' . $row['birthday']);
                 }
 
-                imageline($img, $x0, $y, $x1, $y, $line);
-                $this->cellText($img, $regular, 15, $muted, $x0, $colNo, $y, $rowH, (string) ++$n, true);
-                // Tên đậm + chức vụ nhỏ bên dưới.
-                imagettftext($img, 19, 0, $x0 + $colNo + 12, $y + 30, $ink, $bold, $this->fit($bold, 19, $row['name'], $colName - 24));
-                imagettftext($img, 13, 0, $x0 + $colNo + 12, $y + 52, $muted, $regular, $this->fit($regular, 13, $row['position'], $colName - 24));
+                imagettftext($img, 14, 0, $nx, $y + 54, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));
 
                 foreach ($row['cells'] as $k => $cell) {
                     if ($cell === '') {
                         continue;
                     }
 
-                    $cx = $x0 + $colNo + $colName + $colDay * $k;
-                    [$fill, $text] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
-                    $this->pill($img, $cx + 12, $y + 13, $cx + $colDay - 12, $y + $rowH - 13, $c($fill));
-                    $this->cellText($img, $bold, mb_strlen($cell) > 6 ? 14 : 17, $c($text), $cx, $colDay, $y, $rowH, $cell, true);
+                    [$fill, $fg] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
+                    $this->roundRect($img, $dayX($k) + 10, $y + 14, $dayX($k) + $colDay - 10, $y + $rowH - 14, 8, $c($fill));
+                    $this->cellText($img, $f['semibold'], mb_strlen($cell) > 6 ? 14 : 17, $c($fg), $dayX($k), $colDay, $y, $rowH, $cell, true);
                 }
 
                 $y += $rowH;
+                imageline($img, $x0, $y, $x1, $y, $line);
             }
         }
 
-        // Đường kẻ dọc nhẹ giữa các ngày.
-        foreach (range(0, count($days)) as $k) {
-            $cx = $x0 + $colNo + $colName + $colDay * $k;
-            imageline($img, $cx, $tableTop + $headH, $cx, $tableTop + $tableH, $line);
+        // Kẻ dọc giữa các cột.
+        foreach (range(0, count($days) - 1) as $k) {
+            imageline($img, $dayX($k), $tableTop + $headH, $dayX($k), $tableTop + $tableH - 1, $line);
         }
 
-        // Chú thích: chip màu từng ca + OFF.
+        // Chú thích màu ca.
         $lx = $pad;
-        $ly = $tableTop + $tableH + 36;
-        imagettftext($img, 15, 0, $lx, $ly + 20, $muted, $bold, 'Chú thích');
-        $lx += $this->textWidth($bold, 15, 'Chú thích') + 24;
+        $ly = $tableTop + $tableH + 34;
+        imagettftext($img, 15, 0, $lx, $ly + 21, $muted, $f['semibold'], 'Chú thích');
+        $lx += $this->textWidth($f['semibold'], 15, 'Chú thích') + 22;
 
         foreach ([...$snapshot['legend'], 'OFF' => 'nghỉ'] as $code => $time) {
-            [$fill, $text] = $this->shiftColors($snapshot, (string) $code, $code === 'OFF');
-            $chipW = $this->textWidth($bold, 15, (string) $code) + 28;
+            [$fill, $fg] = $this->shiftColors($snapshot, (string) $code, $code === 'OFF');
+            $chipW = $this->textWidth($f['semibold'], 15, (string) $code) + 26;
+            $tw = $this->textWidth($f['regular'], 14, (string) $time);
 
-            if ($lx + $chipW + $this->textWidth($regular, 14, (string) $time) + 30 > $width - $pad) {
+            if ($lx + $chipW + $tw + 30 > $width - $pad) {
                 break;
             }
 
-            $this->pill($img, $lx, $ly, $lx + $chipW, $ly + 30, $c($fill));
-            imagettftext($img, 15, 0, $lx + 14, $ly + 22, $c($text), $bold, (string) $code);
-            imagettftext($img, 14, 0, $lx + $chipW + 10, $ly + 21, $muted, $regular, (string) $time);
-            $lx += $chipW + $this->textWidth($regular, 14, (string) $time) + 34;
+            $this->roundRect($img, $lx, $ly, $lx + $chipW, $ly + 30, 7, $c($fill));
+            imagettftext($img, 15, 0, $lx + 13, $ly + 21, $c($fg), $f['semibold'], (string) $code);
+            imagettftext($img, 14, 0, $lx + $chipW + 9, $ly + 21, $muted, $f['regular'], (string) $time);
+            $lx += $chipW + $tw + 30;
         }
 
-        imagettftext($img, 13, 0, $pad, $ly + 64, $c('9AA4B2'), $regular, 'Selectum Noa · F&B · Xếp lịch nhà hàng');
+        imagettftext($img, 13, 0, $pad, $ly + 64, $faint, $f['regular'], 'Selectum Noa · F&B · Xếp lịch nhà hàng');
 
         ob_start();
         imagepng($img, null, 6);
@@ -296,27 +298,40 @@ class ScheduleExportService
         return (string) ob_get_clean();
     }
 
+    private function dayName(string $short): string
+    {
+        return ['T2' => 'Thứ 2', 'T3' => 'Thứ 3', 'T4' => 'Thứ 4', 'T5' => 'Thứ 5', 'T6' => 'Thứ 6', 'T7' => 'Thứ 7', 'CN' => 'Chủ nhật'][$short] ?? $short;
+    }
+
     /**
-     * Màu ô ca theo giờ bắt đầu (lấy từ chú thích): sáng xanh dương, trưa xanh ngọc, chiều cam, đêm tím; OFF xám; nghỉ phép hồng.
+     * Màu ô ca giống Bảng xếp ca: màu của Mẫu ca (sky / sand / amber / navy / violet / emerald / slate); OFF đỏ nhạt; nghỉ phép hồng.
+     * Bản chụp cũ chưa có màu: suy theo giờ bắt đầu.
      *
      * @return array{0: string, 1: string} [nền, chữ] (hex)
      */
     private function shiftColors(array $snapshot, string $cell, bool $off): array
     {
         if ($off) {
-            return $cell === 'OFF' ? ['E9ECF1', '7A8494'] : ['FCE4EC', 'AD1457'];
+            return $cell === 'OFF' ? ['FEE2E2', 'DC2626'] : ['FCE7F3', 'BE185D'];
         }
 
+        $palette = [
+            'sky' => ['E0F2FE', '0369A1'], 'sand' => ['FFEDD5', 'C2410C'], 'amber' => ['FEF3C7', 'B45309'], 'navy' => ['334155', 'FFFFFF'],
+            'violet' => ['EDE9FE', '6D28D9'], 'emerald' => ['DCFCE7', '15803D'], 'slate' => ['F1F5F9', '475569'],
+        ];
         $code = (string) preg_replace('/[(+].*$/u', '', $cell);
-        $hour = isset($snapshot['legend'][$code]) ? (int) substr((string) $snapshot['legend'][$code], 0, 2) : null;
+        $color = $snapshot['colors'][$code] ?? null;
 
-        return match (true) {
-            $hour === null => ['E8EEF6', '0A2540'],
-            $hour >= 19 || $hour < 4 => ['E8E3FB', '4527A0'],
-            $hour < 8 => ['DCEBFF', '0B4F9C'],
-            $hour < 12 => ['D7F2EC', '0B6E5A'],
-            default => ['FFE9CF', '9A4B00'],
-        };
+        if ($color === null && isset($snapshot['legend'][$code])) {
+            $hour = (int) substr((string) $snapshot['legend'][$code], 0, 2);
+            $color = match (true) {
+                $hour >= 19 || $hour < 4 => 'navy',
+                $hour < 12 => 'sky',
+                default => 'sand',
+            };
+        }
+
+        return $palette[$color] ?? $palette['slate'];
     }
 
     private function roundRect($img, int $x1, int $y1, int $x2, int $y2, int $r, int $color): void
@@ -338,18 +353,27 @@ class ScheduleExportService
 
     // ------------------------------------------------------------------ helpers
 
-    /** @return array{0: string, 1: string} font TTF có tiếng Việt (DejaVu Sans của dompdf, có sẵn trên hosting). */
+    /**
+     * Font: Inter (giống trang quản trị / Bảng xếp ca, có tiếng Việt – kèm trong plugin, giấy phép OFL);
+     * dự phòng DejaVu Sans của dompdf.
+     *
+     * @return array{regular: string, medium: string, semibold: string, bold: string}
+     */
     private function fonts(): array
     {
-        $dirs = [base_path('vendor/dompdf/dompdf/lib/fonts'), base_path('platform/plugins/restaurant-roster/resources/fonts')];
+        $inter = base_path('platform/plugins/restaurant-roster/resources/fonts');
 
-        foreach ($dirs as $dir) {
-            if (is_file("{$dir}/DejaVuSans.ttf") && is_file("{$dir}/DejaVuSans-Bold.ttf")) {
-                return ["{$dir}/DejaVuSans.ttf", "{$dir}/DejaVuSans-Bold.ttf"];
-            }
+        if (is_file("{$inter}/Inter-Regular.otf") && is_file("{$inter}/Inter-Bold.otf")) {
+            return ['regular' => "{$inter}/Inter-Regular.otf", 'medium' => "{$inter}/Inter-Medium.otf", 'semibold' => "{$inter}/Inter-SemiBold.otf", 'bold' => "{$inter}/Inter-Bold.otf"];
         }
 
-        throw new RuntimeException('Không tìm thấy font DejaVu Sans để tạo ảnh PNG.');
+        $dejavu = base_path('vendor/dompdf/dompdf/lib/fonts');
+
+        if (is_file("{$dejavu}/DejaVuSans.ttf")) {
+            return ['regular' => "{$dejavu}/DejaVuSans.ttf", 'medium' => "{$dejavu}/DejaVuSans.ttf", 'semibold' => "{$dejavu}/DejaVuSans-Bold.ttf", 'bold' => "{$dejavu}/DejaVuSans-Bold.ttf"];
+        }
+
+        throw new RuntimeException('Không tìm thấy font để tạo ảnh PNG.');
     }
 
     private function cellText($img, string $font, int $size, int $color, int $x, int $w, int $y, int $h, string $text, bool $center = false): void

@@ -209,13 +209,15 @@ class SchedulePublicationTest extends TestCase
     /** PNG, Excel, PDF tải được từ cùng một phiên bản; tiếng Việt, tên file có tuần + phiên bản. */
     public function test_exports_from_published_version(): void
     {
-        $this->staff();
+        [$first] = $this->staff();
+        $first->update(['birthday' => '9/1']);
         $this->publish();
+        $this->assertSame('09/01', ScheduleVersion::query()->firstOrFail()->snapshot['sections'][0]['rows'][0]['birthday'], 'Ngày sinh lưu kèm để in sau tên');
 
         $png = $this->export('png')->assertOk()->assertHeader('Content-Type', 'image/png');
         $this->assertStringContainsString('Lich-lam-viec-2030-01-07_2030-01-13-v1.png', (string) $png->headers->get('Content-Disposition'));
         $info = getimagesizefromstring($png->getContent());
-        $this->assertGreaterThan(1200, $info[0], 'Ảnh đủ rộng để đọc rõ trên điện thoại');
+        $this->assertSame(1600, $info[0], 'Ảnh rộng 1600px, bảng phủ kín chiều rộng');
 
         $xlsx = $this->export('xlsx')->assertOk();
         $this->assertStringContainsString('-v1.xlsx', (string) $xlsx->headers->get('Content-Disposition'));

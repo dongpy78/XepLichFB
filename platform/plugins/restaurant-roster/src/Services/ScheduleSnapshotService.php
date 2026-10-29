@@ -61,14 +61,18 @@ class ScheduleSnapshotService
                 'code' => (string) $employee->code,
                 'name' => (string) $employee->name,
                 'position' => (string) ($employee->position->name ?? ''),
+                // Ngày sinh (dd/mm) hiển thị sau tên trên ảnh lịch.
+                'birthday' => preg_match('/^(\d{1,2})\/(\d{1,2})/', (string) $employee->birthday, $b) ? sprintf('%02d/%02d', $b[1], $b[2]) : null,
                 'outlet' => (string) ($employee->outlet->code ?? ''),
                 'cells' => $cells,
                 'offs' => $offs,
             ];
         }
 
-        $legend = ShiftTemplate::query()->whereIn('code', array_keys($codes))->orderBy('order')->get()
-            ->mapWithKeys(fn (ShiftTemplate $t) => [(string) $t->code => $t->time_range])->all();
+        $templates = ShiftTemplate::query()->whereIn('code', array_keys($codes))->orderBy('order')->get();
+        $legend = $templates->mapWithKeys(fn (ShiftTemplate $t) => [(string) $t->code => $t->time_range])->all();
+        // Màu ca giống Bảng xếp ca (màu của Mẫu ca: sky, amber, violet…).
+        $colors = $templates->mapWithKeys(fn (ShiftTemplate $t) => [(string) $t->code => (string) ($t->color ?: 'slate')])->all();
 
         return [
             'week_start' => $grid['weekStart']->toDateString(),
@@ -78,6 +82,7 @@ class ScheduleSnapshotService
             'days' => $days,
             'sections' => array_values($sections),
             'legend' => $legend,
+            'colors' => $colors,
             'employee_count' => (int) array_sum(array_map(fn ($s) => count($s['rows']), $sections)),
         ];
     }
