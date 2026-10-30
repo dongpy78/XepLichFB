@@ -77,7 +77,7 @@
 
     @if ($dayChecks = $proposal['support_report']['day_checks'] ?? [])
         @php
-            $checkLabels = ['hard' => 'Điều kiện cứng', 'night' => 'Night', 'lobby' => 'Lobby', 'waiter' => 'Waiter M6/A2', 'other' => 'Định biên khác'];
+            $checkLabels = ['hard' => 'Điều kiện cứng', 'night' => 'Night', 'lobby' => 'Lobby', 'waiter' => 'Waiter M6/A2', 'restaurant' => 'Villa / Gusto', 'other' => 'Định biên khác'];
         @endphp
         <div class="card mb-3">
             <div class="card-header"><h3 class="card-title">Kiểm tra từng ngày</h3></div>
@@ -90,7 +90,8 @@
                                 <td class="text-nowrap">{{ \Carbon\Carbon::parse($day['date'])->isoFormat('dd DD/MM') }}</td>
                                 <td>@if ($day['status'] === 'ok')<span class="badge bg-success text-white">Đạt</span>@else<span class="badge bg-warning text-white">Cần xem</span>@endif</td>
                                 @foreach (array_keys($checkLabels) as $key)
-                                    <td class="small {{ $day['checks'][$key]['ok'] ? '' : 'text-danger fw-semibold' }}">{{ $day['checks'][$key]['text'] }}</td>
+                                    {{-- Lần chạy cũ có thể thiếu mục kiểm tra mới. --}}
+                                    <td class="small {{ ($day['checks'][$key]['ok'] ?? true) ? '' : 'text-danger fw-semibold' }}">{{ $day['checks'][$key]['text'] ?? '—' }}</td>
                                 @endforeach
                             </tr>
                         @endforeach

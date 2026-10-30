@@ -525,12 +525,72 @@ final class ResultBuilder
                 'waiter' => ['ok' => ! $unbalanced && ! $missingGender, 'text' => (implode(' · ', array_map(fn ($o) => sprintf('%s %d/%d', $o['outlet'], $o['waiters'][0], $o['waiters'][1]), $day['outlets'])) ?: 'Không có outlet cân bằng M6 / A2')
                     . ($missingGender ? ' – ' . implode('; ', $missingGender) : '')],
                 'other' => ['ok' => ! $other, 'text' => $other ? count($other) . ' ô thiếu tối thiểu (Room Service / Kid-Deline…)' : 'Các định biên khác đủ'],
+                'restaurant' => $this->restaurantCheck($state, $date),
             ];
 
             $result[] = ['date' => $date, 'status' => array_filter($checks, fn ($c) => ! $c['ok']) ? 'warning' : 'ok', 'checks' => $checks];
         }
 
         return $result;
+    }
+
+    /**
+     * Villa / Gusto trong ngày: cả hai mở → hiển thị riêng (không điều chuyển); chỉ một mở → tổng người làm ở nhà hàng đang mở,
+     * M6 / A2, số người điều động từ nhà hàng đóng cửa, người chưa xếp và lý do; cả hai đóng → cảnh báo.
+     *
+     * @return array{ok: bool, text: string}
+     */
+    private function restaurantCheck(ScheduleState $state, string $date): array
+    {
+        $problem = $state->problem;
+        $ids = $problem->restaurantOutletIds;
+        $i = $state->index[$date] ?? null;
+
+        if (count($ids) !== 2 || $i === null) {
+            return ['ok' => true, 'text' => '—'];
+        }
+
+        $closed = array_values(array_filter($ids, fn ($o) => isset($problem->closedOutletDays[$o][$date])));
+
+        if (! $closed) {
+            return ['ok' => true, 'text' => 'Cả hai mở – xếp riêng'];
+        }
+
+        if (count($closed) === 2) {
+            return ['ok' => false, 'text' => 'Cả ' . implode(' và ', array_map(fn ($o) => $problem->outletName($o), $ids)) . ' đóng cửa – không xếp nhân viên nhà hàng vào hai nơi này'];
+        }
+
+        $off = $closed[0];
+        $active = $ids[0] === $off ? $ids[1] : $ids[0];
+        $split = ['morning' => 0, 'afternoon' => 0];
+        $total = 0;
+        $moved = 0;
+        $idle = [];
+
+        foreach ($problem->employees as $id => $employee) {
+            $cell = $state->shiftAt($id, $i);
+
+            if ($cell && $cell[0] === $active && ! ($cell[3] ?? false)) {
+                $total++;
+                $category = $problem->shifts[$cell[1]]->category();
+                $split[$category] = ($split[$category] ?? 0) + 1;
+                $moved += (int) ($employee->homeOutletId === $off);
+            }
+
+            if ($employee->homeOutletId === $off && ! $cell) {
+                $idle[] = $employee->name . ' (' . match (true) {
+                    isset($problem->hardUnavailable[$id][$date]) => 'OFF đã duyệt',
+                    $state->isFixed($id, $i) => 'ô đã khóa',
+                    $employee->isManager => 'cấp quản lý không tự điều chuyển – xếp tay nếu cần',
+                    default => 'OFF theo lịch tuần',
+                } . ')';
+            }
+        }
+
+        $text = sprintf('%s đóng cửa → làm tại %s: %d người (M6 %d / A2 %d), điều động từ %s: %d',
+            $problem->outletName($off), $problem->outletName($active), $total, $split['morning'], $split['afternoon'], $problem->outletName($off), $moved);
+
+        return ['ok' => true, 'text' => $text . ($idle ? '. Chưa xếp: ' . implode(', ', array_slice($idle, 0, 8)) . (count($idle) > 8 ? '…' : '') : '')];
     }
 
     /**

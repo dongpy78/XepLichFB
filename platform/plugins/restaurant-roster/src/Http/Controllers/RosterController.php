@@ -1031,6 +1031,7 @@ class RosterController extends BaseController
             'weekEnd' => $weekEnd,
             'weekLabel' => sprintf('Tuần %d · %s – %s', $weekStart->isoWeek(), $weekStart->format('d/m'), $weekEnd->format('d/m/Y')),
             'merge' => $merge,
+            'restaurantStatus' => $this->restaurantStatus($weekStart),
             'mergeOutlets' => $this->mergeOutlets()->mapWithKeys(fn (Outlet $o) => [(int) $o->getKey() => (string) ($o->code ?: $o->name)])->all(),
             'days' => $days,
             'rows' => $rows,
@@ -1118,6 +1119,19 @@ class RosterController extends BaseController
         $outlets = $this->mergeOutlets();
         $chosen = \Illuminate\Support\Facades\DB::table('roster_grid_merges')->whereDate('week_start', $weekStart->toDateString())->value('outlet_id');
         $active = $chosen ? $outlets->firstWhere('id', (int) $chosen) : null;
+        $auto = false;
+
+        // Chỉ một nhà hàng hoạt động cả tuần (nhà hàng kia "Đóng cửa" đủ 7 ngày): tự hiển thị chung tại nhà hàng đang mở.
+        if (! $active && $outlets->count() === 2) {
+            $days = collect(range(0, 6))->map(fn ($d) => $weekStart->copy()->addDays($d)->toDateString())->all();
+            $closed = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->closedRestaurantDays($outlets->modelKeys(), $days);
+            $allWeek = $outlets->filter(fn (Outlet $o) => count($closed[(int) $o->getKey()] ?? []) >= 7);
+
+            if ($allWeek->count() === 1) {
+                $active = $outlets->first(fn (Outlet $o) => $o->getKey() !== $allWeek->first()->getKey());
+                $auto = true;
+            }
+        }
 
         if ($outlets->count() !== 2 || ! $active) {
             return null;
@@ -1131,13 +1145,101 @@ class RosterController extends BaseController
             'closed_id' => (int) $other->getKey(),
             'active_code' => (string) ($active->code ?: $active->name),
             'closed_code' => (string) ($other->code ?: $other->name),
+            'auto' => $auto,
             'section' => [
                 'key' => $group ? 'g' . $group->id : 'o' . $active->getKey(),
-                'label' => sprintf('%s – hiển thị chung nhân viên %s + %s', $group?->name ?: ($active->code ?: $active->name), $active->code ?: $active->name, $other->code ?: $other->name),
+                'label' => sprintf('%s – hiển thị chung nhân viên %s + %s%s', $group?->name ?: ($active->code ?: $active->name), $active->code ?: $active->name, $other->code ?: $other->name,
+                    $auto ? ' (' . ($other->code ?: $other->name) . ' đóng cửa cả tuần)' : ''),
                 'order' => $group ? (int) $group->order : (int) ($active->order ?? 99999),
                 'stat_outlet_id' => (int) $active->getKey(),
             ],
         ];
+    }
+
+    /**
+     * Trạng thái hoạt động Villa / Gusto từng ngày của tuần (cấu hình rõ ràng ở Ngày đặc biệt – "Đóng cửa"; outlet ngừng hoạt động
+     * = đóng cả tuần), số ca đang xếp tại nhà hàng đó, và cảnh báo: cả hai cùng đóng; đóng cửa nhưng vẫn còn ca (đổi trạng thái sau khi
+     * đã tạo lịch – cần chạy lại xếp tự động).
+     *
+     * @return array{outlets: array, days: string[], warnings: string[]}
+     */
+    protected function restaurantStatus(Carbon $weekStart): array
+    {
+        $outlets = $this->mergeOutlets();
+        $days = collect(range(0, 6))->map(fn ($d) => $weekStart->copy()->addDays($d)->toDateString())->all();
+
+        if ($outlets->count() !== 2) {
+            return ['outlets' => [], 'days' => $days, 'warnings' => []];
+        }
+
+        $closed = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->closedRestaurantDays($outlets->modelKeys(), $days);
+        $shifts = Shift::query()->whereIn('outlet_id', $outlets->modelKeys())->where('kind', Shift::KIND_SHIFT)
+            ->whereDate('date', '>=', $days[0])->whereDate('date', '<=', $days[6])->get(['outlet_id', 'date'])
+            ->groupBy(fn (Shift $s) => $s->outlet_id . '|' . $s->date->toDateString())->map->count();
+        $rows = [];
+        $warnings = [];
+
+        foreach ($outlets as $o) {
+            $id = (int) $o->getKey();
+            $rows[$id] = ['code' => (string) ($o->code ?: $o->name), 'inactive' => $o->status?->getValue() !== BaseStatusEnum::PUBLISHED, 'days' => []];
+
+            foreach ($days as $date) {
+                $isClosed = isset($closed[$id][$date]);
+                $count = (int) ($shifts[$id . '|' . $date] ?? 0);
+                $rows[$id]['days'][$date] = ['closed' => $isClosed, 'shifts' => $count];
+
+                if ($isClosed && $count) {
+                    $warnings[] = sprintf('%s %s đã đánh dấu đóng cửa nhưng còn %d ca xếp tại %s – chạy lại "Tạo lịch tự động" / "Tối ưu lại" (ca đã khóa / xếp tay được giữ).',
+                        $rows[$id]['code'], date('d/m', strtotime($date)), $count, $rows[$id]['code']);
+                }
+            }
+        }
+
+        foreach ($days as $date) {
+            if (collect($rows)->every(fn ($r) => $r['days'][$date]['closed'])) {
+                $warnings[] = sprintf('Ngày %s: cả %s đều đóng cửa – thuật toán không xếp nhân viên nhà hàng vào hai nơi này; quản lý kiểm tra lại.',
+                    date('d/m', strtotime($date)), implode(' và ', array_column($rows, 'code')));
+            }
+        }
+
+        return ['outlets' => $rows, 'days' => $days, 'warnings' => $warnings];
+    }
+
+    /**
+     * Mở / đóng cửa Villa hoặc Gusto cho các ngày (một ngày hoặc cả tuần) – lưu ở Ngày đặc biệt (cột "Hoạt động").
+     * Không xóa / sửa ca đã xếp: quản lý chạy lại xếp tự động sau khi đổi trạng thái (ca khóa / xếp tay vẫn giữ).
+     */
+    public function outletStatus(Request $request)
+    {
+        $data = $request->validate([
+            'status_outlet_id' => ['required', 'integer', Rule::in($this->mergeOutlets()->modelKeys())],
+            'dates' => ['required', 'array', 'min:1', 'max:31'],
+            'dates.*' => ['date_format:Y-m-d'],
+            'closed' => ['required', 'boolean'],
+        ]);
+        $closed = (bool) $data['closed'];
+        $changed = 0;
+
+        DB::transaction(function () use ($data, $closed, &$changed): void {
+            foreach (array_unique($data['dates']) as $date) {
+                $row = \Botble\RestaurantRoster\Models\OutletDay::query()->where('outlet_id', $data['status_outlet_id'])->whereDate('date', $date)->first();
+
+                if ($row) {
+                    $changed += (int) ((bool) $row->is_closed !== $closed);
+                    $row->update(['is_closed' => $closed]);
+                } elseif ($closed) {
+                    \Botble\RestaurantRoster\Models\OutletDay::query()->create(['outlet_id' => $data['status_outlet_id'], 'date' => $date, 'is_closed' => true]);
+                    $changed++;
+                }
+            }
+        });
+
+        $code = (string) Outlet::query()->whereKey($data['status_outlet_id'])->value('code');
+        $existing = Shift::query()->where('outlet_id', $data['status_outlet_id'])->where('kind', Shift::KIND_SHIFT)
+            ->where(fn ($q) => collect($data['dates'])->each(fn ($d) => $q->orWhereDate('date', $d)))->count();
+
+        return $this->gridResponse($request, sprintf('Đã đánh dấu %s %s %d ngày.%s', $code, $closed ? 'ĐÓNG CỬA' : 'mở cửa', $changed,
+            $closed && $existing ? " {$existing} ca đã xếp tại {$code} vẫn giữ nguyên – chạy lại \"Tạo lịch tự động\" để xếp nhân viên sang nhà hàng đang mở." : ''));
     }
 
     /** Bật / tắt hiển thị chung Villa + Gusto cho tuần đang xem (outlet_id = khu hiển thị chung; trống = hiển thị riêng). */

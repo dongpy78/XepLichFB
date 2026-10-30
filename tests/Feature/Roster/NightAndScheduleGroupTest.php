@@ -765,9 +765,10 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertEquals($before->requirements, $after->requirements, 'Định biên / chỗ ca không đổi');
         $this->assertEquals($before->employees, $after->employees, 'Nhân viên, outlet, năng lực không đổi');
 
+        // Đóng cửa vài ngày: vẫn hiển thị riêng (chỉ đóng cả tuần mới tự hiển thị chung).
         $this->setMerge(null);
-        $this->closeAllWeek('GUSTO');
-        $this->assertStringNotContainsString('HIỂN THỊ CHUNG NHÂN VIÊN', $this->gridHtml(), 'Đóng cửa không tự gộp bảng');
+        $this->closeAllWeek('GUSTO', 3);
+        $this->assertStringNotContainsString('HIỂN THỊ CHUNG NHÂN VIÊN', $this->gridHtml(), 'Đóng vài ngày không tự gộp bảng');
     }
 
     /** Đổi Waiter Gusto ⇄ Villa (chức năng có sẵn): outlet chính và nhóm hiển thị cùng đổi, bảng hiện đúng khu; có nhật ký. */
@@ -790,5 +791,72 @@ class NightAndScheduleGroupTest extends TestCase
         $gustoAt = strpos($html, '<span class="roster-section__name">GUSTO</span>');
         $row = strpos($html, 'data-employee-name="' . $people['GW1']->name . '"');
         $this->assertTrue($row > $villaAt && ($gustoAt < $villaAt || $row < $gustoAt), 'GW1 nay hiện trong khu Villa');
+    }
+
+    private function setStatus(string $outlet, array $dates, bool $closed)
+    {
+        return $this->actingAs($this->user())->postJson(route('roster.outlet-status'), ['week' => self::WEEK, 'status_outlet_id' => $this->outlets[$outlet]->getKey(),
+            'dates' => $dates, 'closed' => $closed ? 1 : 0]);
+    }
+
+    /**
+     * Hoạt động nhà hàng theo ngày trên Bảng xếp ca: đóng / mở được lưu (Ngày đặc biệt), dùng cho thuật toán; đổi trạng thái sau khi đã có
+     * lịch → cảnh báo còn ca tại nhà hàng đóng cửa (không tự xóa ca); cả hai cùng đóng → cảnh báo; mở lại → hết cảnh báo.
+     */
+    public function test_restaurant_open_close_per_day_with_warnings(): void
+    {
+        $people = $this->twoRestaurants();
+        $monday = self::WEEK;
+        $html = $this->gridHtml();
+        $this->assertStringContainsString('Hoạt động nhà hàng', $html);
+        $this->assertStringContainsString('Đóng cả tuần', $html);
+
+        $response = $this->setStatus('GUSTO', [$monday], true)->assertJson(['error' => false]);
+        $this->assertStringContainsString('1 ca đã xếp tại GUSTO vẫn giữ nguyên', (string) $response->json('message'));
+        $this->assertTrue((bool) \Botble\RestaurantRoster\Models\OutletDay::query()->where('outlet_id', $this->outlets['GUSTO']->getKey())->whereDate('date', $monday)->value('is_closed'));
+        $this->assertSame(1, Shift::query()->count(), 'Không tự xóa / sửa ca đã xếp');
+
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $this->assertSame([$monday => true], $problem->closedOutletDays[$this->outlets['GUSTO']->getKey()] ?? null, 'Thuật toán đọc trạng thái đóng cửa');
+        $this->assertEqualsCanonicalizing([$this->outlets['GUSTO']->getKey(), $this->outlets['VILLA']->getKey()], $problem->restaurantOutletIds);
+        $this->assertStringContainsString('GUSTO 04/03 đã đánh dấu đóng cửa nhưng còn 1 ca', html_entity_decode($this->gridHtml()));
+
+        $this->setStatus('VILLA', [$monday], true);
+        $this->assertStringContainsString('cả GUSTO và VILLA đều đóng cửa', $this->gridHtml());
+
+        $this->setStatus('VILLA', [$monday], false);
+        $this->setStatus('GUSTO', [$monday], false);
+        $html = html_entity_decode($this->gridHtml());
+        $this->assertStringNotContainsString('đóng cửa nhưng còn', $html);
+        $this->assertSame(0, \Botble\RestaurantRoster\Models\OutletDay::query()->where('is_closed', true)->count());
+        $this->assertSame($this->outlets['GUSTO']->getKey(), (int) $people['GW1']->fresh()->outlet_id, 'Outlet chính không đổi');
+    }
+
+    /** Gusto đóng cửa cả tuần: Bảng xếp ca tự hiển thị chung tại Villa (không có nút "Hiển thị riêng"); mở lại → hiển thị riêng. */
+    public function test_restaurant_closed_all_week_auto_merges_grid(): void
+    {
+        $this->twoRestaurants();
+        $week = array_map(fn ($d) => Carbon::parse(self::WEEK)->addDays($d)->toDateString(), range(0, 6));
+        $this->setStatus('GUSTO', $week, true)->assertJson(['error' => false]);
+
+        $html = $this->gridHtml();
+        $this->assertStringContainsString('VILLA – HIỂN THỊ CHUNG NHÂN VIÊN VILLA + GUSTO (GUSTO ĐÓNG CỬA CẢ TUẦN)', $html);
+        $this->assertStringNotContainsString('data-merge-outlet=""', $html, 'Gộp tự động – không có nút Hiển thị riêng');
+
+        $this->setStatus('GUSTO', $week, false);
+        $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $this->gridHtml());
+    }
+
+    /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
+    public function test_restaurant_status_requires_manage_permission(): void
+    {
+        $this->twoRestaurants();
+        $viewer = new User();
+        $viewer->forceFill(['email' => uniqid('v') . '@example.test', 'username' => uniqid('v'), 'password' => bcrypt('x'), 'first_name' => 'V', 'last_name' => 'V',
+            'super_user' => false, 'permissions' => ['roster.index' => true]])->save();
+        $denied = $this->actingAs($viewer)->postJson(route('roster.outlet-status'), ['week' => self::WEEK, 'status_outlet_id' => $this->outlets['GUSTO']->getKey(), 'dates' => [self::WEEK], 'closed' => 1]);
+
+        $this->assertTrue($denied->status() >= 400 || $denied->json('error') === true);
+        $this->assertSame(0, \Botble\RestaurantRoster\Models\OutletDay::query()->count());
     }
 }

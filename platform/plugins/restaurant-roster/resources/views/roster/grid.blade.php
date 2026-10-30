@@ -17,6 +17,68 @@
     </div>
 @endif
 
+@if (! empty($grid['restaurantStatus']['outlets']))
+    @php
+        $rs = $grid['restaurantStatus'];
+        $dayShort = [1 => 'T2', 2 => 'T3', 3 => 'T4', 4 => 'T5', 5 => 'T6', 6 => 'T7', 7 => 'CN'];
+    @endphp
+    {{-- Hoạt động Villa / Gusto theo ngày: đóng cửa → nhân viên nhà hàng đó được xếp sang nhà hàng đang mở (chạy lại xếp tự động). --}}
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <strong><x-core::icon name="ti ti-building-store" /> Hoạt động nhà hàng</strong>
+                <span class="small text-muted">Đóng cửa một ngày → nhân viên nhà hàng đó được xếp làm ở nhà hàng đang mở (khi chạy lại xếp tự động). Cả hai mở → không tự điều chuyển.</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-borderless mb-0 align-middle" style="width: auto">
+                    <tr>
+                        <td></td>
+                        @foreach ($rs['days'] as $date)
+                            <td class="text-center small text-muted">{{ $dayShort[\Carbon\Carbon::parse($date)->dayOfWeekIso] }} {{ \Carbon\Carbon::parse($date)->format('d/m') }}</td>
+                        @endforeach
+                        <td></td>
+                    </tr>
+                    @foreach ($rs['outlets'] as $outletId => $row)
+                        <tr>
+                            <td class="fw-semibold pe-3">{{ $row['code'] }}@if ($row['inactive'])<div class="small text-danger">ngừng hoạt động</div>@endif</td>
+                            @foreach ($row['days'] as $date => $day)
+                                <td class="text-center">
+                                    @php
+                                        $label = $day['closed'] ? 'Đóng' : 'Mở';
+                                        $cls = $day['closed'] ? 'btn-danger' : 'btn-outline-success';
+                                        $confirm = $day['closed']
+                                            ? "Mở cửa lại {$row['code']} ngày " . date('d/m', strtotime($date)) . '? Chạy lại xếp tự động để xếp lại nhân viên về ' . $row['code'] . '.'
+                                            : "Đánh dấu {$row['code']} ĐÓNG CỬA ngày " . date('d/m', strtotime($date)) . '? Khi chạy lại xếp tự động, nhân viên ' . $row['code'] . ' được xếp sang nhà hàng đang mở.'
+                                                . ($day['shifts'] ? " Hiện có {$day['shifts']} ca tại {$row['code']} ngày này – giữ nguyên cho tới khi chạy lại (ca khóa / xếp tay luôn giữ)." : '');
+                                    @endphp
+                                    @if ($canManage && ! $row['inactive'])
+                                        <button type="button" class="btn btn-sm {{ $cls }} py-0 px-2" data-roster-action="status" data-status-outlet="{{ $outletId }}"
+                                            data-status-dates="{{ $date }}" data-status-closed="{{ $day['closed'] ? 0 : 1 }}" data-confirm="{{ $confirm }}"
+                                            title="{{ $day['shifts'] }} ca tại {{ $row['code'] }}">{{ $label }}</button>
+                                    @else
+                                        <span class="badge {{ $day['closed'] ? 'bg-danger' : 'bg-success' }} text-white">{{ $label }}</span>
+                                    @endif
+                                </td>
+                            @endforeach
+                            <td class="ps-2 text-nowrap">
+                                @if ($canManage && ! $row['inactive'])
+                                    <button type="button" class="btn btn-sm btn-link py-0" data-roster-action="status" data-status-outlet="{{ $outletId }}" data-status-dates="{{ implode(',', $rs['days']) }}"
+                                        data-status-closed="1" data-confirm="Đánh dấu {{ $row['code'] }} ĐÓNG CỬA cả tuần? Khi chạy lại xếp tự động, nhân viên {{ $row['code'] }} được xếp sang nhà hàng đang mở.">Đóng cả tuần</button>
+                                    <button type="button" class="btn btn-sm btn-link py-0" data-roster-action="status" data-status-outlet="{{ $outletId }}" data-status-dates="{{ implode(',', $rs['days']) }}"
+                                        data-status-closed="0" data-confirm="Mở cửa {{ $row['code'] }} cả tuần?">Mở cả tuần</button>
+                                @endif
+                            </td>
+                        </tr>
+                    @endforeach
+                </table>
+            </div>
+            @foreach ($rs['warnings'] as $warning)
+                <div class="small text-danger mt-1"><x-core::icon name="ti ti-alert-triangle" /> {{ $warning }}</div>
+            @endforeach
+        </div>
+    </div>
+@endif
+
 @if (! empty($grid['merge']))
     {{-- Thông báo cho mọi người xem bảng: tuần này Villa + Gusto hiển thị chung một khu (chỉ đổi cách hiển thị). --}}
     <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -24,9 +86,9 @@
             <x-core::icon name="ti ti-arrows-join" />
             Tuần này nhân viên <strong>{{ $grid['merge']['active_code'] }} + {{ $grid['merge']['closed_code'] }}</strong> hiển thị chung trong khu
             <strong>{{ $grid['merge']['active_code'] }}</strong>, xếp theo cấp bậc. Người có nhãn <span class="badge bg-azure-lt">{{ $grid['merge']['closed_code'] }}</span>
-            vẫn thuộc outlet {{ $grid['merge']['closed_code'] }} – chỉ đổi cách hiển thị, lịch và xếp tự động không đổi.
+            vẫn thuộc outlet {{ $grid['merge']['closed_code'] }}@if (! empty($grid['merge']['auto'])) – {{ $grid['merge']['closed_code'] }} đóng cửa cả tuần nên nhân viên được xếp làm ở {{ $grid['merge']['active_code'] }}.@else – chỉ đổi cách hiển thị, lịch và xếp tự động không đổi.@endif
         </div>
-        @if ($canManage)
+        @if ($canManage && empty($grid['merge']['auto']))
             <button type="button" class="btn btn-sm" data-roster-action="merge" data-merge-outlet="">Hiển thị riêng</button>
         @endif
     </div>

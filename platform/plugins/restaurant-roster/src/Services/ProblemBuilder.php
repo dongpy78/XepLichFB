@@ -342,6 +342,8 @@ class ProblemBuilder
             shiftHistory: $shiftHistory,
             historyWeeks: $historyWeeks,
             lobbyPreferred: $this->lobbyPreferred($specs, $shifts, $templates, $stationOutletId, $stationCode),
+            restaurantOutletIds: $transferOutletIds,
+            closedOutletDays: $this->closedRestaurantDays($transferOutletIds, $days),
         );
     }
 
@@ -989,6 +991,31 @@ class ProblemBuilder
         }
 
         return $requirements;
+    }
+
+    /**
+     * Ngày nhà hàng (Villa / Gusto) không hoạt động: đánh dấu "Đóng cửa" ở Ngày đặc biệt, hoặc outlet ngừng hoạt động (cả kỳ).
+     * Chỉ những ngày này nhân viên của nhà hàng đó mới được tự xếp sang nhà hàng còn lại.
+     *
+     * @param int[] $outletIds
+     * @return array<int, array<string, bool>>
+     */
+    public function closedRestaurantDays(array $outletIds, array $days): array
+    {
+        $closed = [];
+        $inactive = Outlet::query()->whereIn('id', $outletIds)->where('status', '!=', BaseStatusEnum::PUBLISHED)->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        foreach ($inactive as $outletId) {
+            $closed[$outletId] = array_fill_keys($days, true);
+        }
+
+        OutletDay::query()->whereIn('outlet_id', $outletIds)->where('is_closed', true)
+            ->whereDate('date', '>=', reset($days))->whereDate('date', '<=', end($days))->get()
+            ->each(function (OutletDay $d) use (&$closed): void {
+                $closed[(int) $d->outlet_id][$d->date->toDateString()] = true;
+            });
+
+        return $closed;
     }
 
     /** Outlet Room Service (mã room_service_codes, hoặc tên chứa "Room"). */

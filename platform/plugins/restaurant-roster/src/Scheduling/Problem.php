@@ -76,6 +76,13 @@ final class Problem
          *      Nha Trang → OH(L), Cam Ranh → M9(L)) – mỗi người một ca / tuần trước khi ai nhận ca thứ hai.
          */
         public readonly array $lobbyPreferred = [],
+        /** @var int[] Nhà hàng điều chuyển cho nhau (transfer_outlets: Villa, Gusto) */
+        public readonly array $restaurantOutletIds = [],
+        /**
+         * @var array<int, array<string, bool>> [outletId][ngày] => nhà hàng KHÔNG hoạt động ngày đó (Ngày đặc biệt "Đóng cửa",
+         *      hoặc outlet ngừng hoạt động). Chỉ những ngày này nhân viên của nhà hàng đó mới được tự xếp sang nhà hàng kia.
+         */
+        public readonly array $closedOutletDays = [],
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -174,6 +181,7 @@ final class Problem
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
             $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan, $this->lobbyPreferred,
+            $this->restaurantOutletIds, $this->closedOutletDays,
         ]));
     }
 }

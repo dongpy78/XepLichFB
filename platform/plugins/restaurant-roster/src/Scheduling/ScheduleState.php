@@ -648,6 +648,20 @@ final class ScheduleState
             return ['not_eligible', sprintf('Không đủ điều kiện làm %s tại %s', $shift->code, $this->problem->outletName($outletId))];
         }
 
+        // Nhà hàng đóng cửa ngày này (Hoạt động nhà hàng / Ngày đặc biệt): không tự xếp ai vào.
+        if ($checkEligibility && isset($this->problem->closedOutletDays[$outletId][$this->dates[$i]])) {
+            return ['closed', sprintf('%s đóng cửa ngày này', $this->problem->outletName($outletId))];
+        }
+
+        // Villa ↔ Gusto (quản lý 30/10/2026): khi cả hai nhà hàng cùng hoạt động, không tự điều chuyển (không M6(G) / A2(V) chỉ để
+        // cân bằng ca). Chỉ được tự xếp sang nhà hàng kia vào ngày nhà hàng gốc của người đó đóng cửa (Ngày đặc biệt / ngừng hoạt động).
+        // Ô quản lý xếp tay / khóa không kiểm tra (checkEligibility = false).
+        if ($checkEligibility && $employee->homeOutletId !== null && $outletId !== $employee->homeOutletId
+            && in_array($outletId, $this->problem->restaurantOutletIds, true) && in_array($employee->homeOutletId, $this->problem->restaurantOutletIds, true)
+            && ! isset($this->problem->closedOutletDays[$employee->homeOutletId][$this->dates[$i]])) {
+            return ['transfer', sprintf('%s vẫn hoạt động ngày này – không tự điều chuyển sang %s', $this->problem->outletName($employee->homeOutletId), $this->problem->outletName($outletId))];
+        }
+
         if ($checkEligibility && $shift->allowedGender !== null && $employee->gender !== $shift->allowedGender) {
             return ['gender', sprintf('Ca %s chỉ dành cho nhân viên %s', $shift->code, $shift->allowedGender === 'female' ? 'nữ' : 'nam')];
         }
@@ -1134,7 +1148,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $this->femaleBalance(), 'male_balance' => $this->maleBalance(), 'waiter_balance' => $this->waiterBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $this->femaleBalance(), 'male_balance' => $this->maleBalance(), 'waiter_balance' => $this->waiterBalance(), 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1376,7 +1390,10 @@ final class ScheduleState
             $m['worked']++;
 
             // Mượn người không phải đa năng Night (ưu tiên 2) – xếp sau nhân viên đa năng.
-            if ($o !== null && ! $employee->isNightFlex() && $this->borrowPolicy()->isBorrowed($employee, (int) $o)) {
+            // Ngày nhà hàng gốc đóng cửa: làm ở nhà hàng đang mở là chỗ làm chính của ngày đó, không tính là mượn người.
+            $homeClosed = $home !== null && isset($this->problem->closedOutletDays[$home][$date]);
+
+            if ($o !== null && ! $homeClosed && ! $employee->isNightFlex() && $this->borrowPolicy()->isBorrowed($employee, (int) $o)) {
                 $m['borrow_nonflex']++;
             }
 
@@ -1426,7 +1443,7 @@ final class ScheduleState
             $m[$category]++;
             $m['outlets'][$o] = ($m['outlets'][$o] ?? 0) + 1;
 
-            if ($o !== null && $o !== $home && ($parents[$o] ?? null) !== $home) {
+            if ($o !== null && $o !== $home && ($parents[$o] ?? null) !== $home && ! $homeClosed) {
                 $m['non_home']++;
 
                 if (isset($parents[$o])) {
@@ -1438,7 +1455,7 @@ final class ScheduleState
                 $m['non_primary']++;
 
                 // Người thay thế (chỉ "đủ điều kiện") làm ở outlet khác outlet chính: dùng sau người dự phòng / chuyên trách (mức chính).
-                if ($o !== $home && ($parents[$o] ?? null) !== $home) {
+                if ($o !== $home && ($parents[$o] ?? null) !== $home && ! $homeClosed) {
                     $m['substitute']++;
                 }
             }
@@ -1872,6 +1889,35 @@ final class ScheduleState
      * theo từng outlet × ngày, tính riêng từng outlet (Villa, Gusto…): chẵn → bằng nhau, lẻ → lệch 1 (quản lý 28/10/2026).
      * Cân bằng riêng nam / riêng nữ cho phép mỗi giới lệch 1 cùng chiều → tổng lệch 2 (4/2): đây là chỉ tiêu tổng.
      */
+    /**
+     * Waiter của MỖI nhà hàng (theo outlet chính) chia đều M6 / A2 từng ngày, kể cả người đang làm ở nhà hàng kia (ngày nhà hàng
+     * gốc đóng cửa) – tránh cảnh người Gusto dồn hết vào M6 còn người Villa điều sang lấp A2 (tổng tại Gusto vẫn "cân bằng").
+     */
+    public function homeBalance(): int
+    {
+        $penalty = 0;
+
+        foreach ($this->homeShift as $days) {
+            foreach ($days as $i => $count) {
+                if (! $this->inScope[$i]) {
+                    continue;
+                }
+
+                $am = $count['morning'] ?? 0;
+                $total = $am + ($count['afternoon'] ?? 0);
+
+                if ($total >= 2) {
+                    $penalty += max(0, (int) ceil(abs($am - $total / 2) - 0.5 - 1e-9));
+                }
+            }
+        }
+
+        return $penalty;
+    }
+
+    /** @var array<int, array<int, array<string, int>>> [outlet chính][dayIndex][morning|afternoon] => số waiter */
+    private array $homeShift = [];
+
     public function waiterBalance(): int
     {
         return $this->genderBalance(fn ($i, $o, $s) => $this->waiterCount($i, $o, $s));
@@ -2075,6 +2121,16 @@ final class ScheduleState
 
     private function adjustCount(int $i, int $outletId, int $shiftId, int $employeeId, int $delta, bool $support = false): void
     {
+        // Waiter của từng nhà hàng (theo outlet chính) làm ca sáng / chiều mở (M6 / A2) – ở bất kỳ nhà hàng nào – để cân bằng riêng.
+        $spec = $this->problem->employees[$employeeId] ?? null;
+
+        if ($spec && ! $support && ! $spec->isManager && ($spec->isFemaleStaff || $spec->countsAsMale())
+            && in_array($spec->homeOutletId, $this->problem->restaurantOutletIds, true)
+            && in_array(strtoupper($this->problem->shifts[$shiftId]->code), $this->problem->rules->balanceShiftCodes, true)
+            && in_array($category = $this->problem->shifts[$shiftId]->category(), ['morning', 'afternoon'], true)) {
+            $this->homeShift[$spec->homeOutletId][$i][$category] = ($this->homeShift[$spec->homeOutletId][$i][$category] ?? 0) + $delta;
+        }
+
         if ($this->problem->employees[$employeeId]?->isManager ?? false) {
             $this->managerWorking[$i] = ($this->managerWorking[$i] ?? 0) + $delta;
         } elseif (($spec = $this->problem->employees[$employeeId] ?? null) && $this->countsForOffSpread($spec)) {
@@ -2169,7 +2225,8 @@ final class ScheduleState
         $dayAfter = $dayBefore;
         $dayAfter[0] = [$dayBefore[0][0] + $delta, $dayBefore[0][1] + ($isMale ? $delta : 0), $dayBefore[0][2] + ($isFemaleStaff ? $delta : 0)];
 
-        if ($employeeSpec && $this->borrowPolicy()->isBorrowed($employeeSpec, $outletId)) {
+        if ($employeeSpec && $this->borrowPolicy()->isBorrowed($employeeSpec, $outletId)
+            && ! isset($this->problem->closedOutletDays[$employeeSpec->homeOutletId][$this->dates[$i]])) {
             $borrowed = $this->borrowCount[$key] ?? [0, 0, 0];
             $this->borrowCount[$key] = [$borrowed[0] + $delta, $borrowed[1] + ($isMale ? $delta : 0), $borrowed[2] + ($isFemaleStaff ? $delta : 0)];
             $dayAfter[1] = [$dayBefore[1][0] + $delta, $dayBefore[1][1] + ($isMale ? $delta : 0), $dayBefore[1][2] + ($isFemaleStaff ? $delta : 0)];

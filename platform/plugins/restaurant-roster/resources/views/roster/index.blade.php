@@ -18,6 +18,7 @@
         data-off-record-url="{{ route('roster.off-record') }}"
         data-shift-request-url="{{ route('roster.shift-request') }}"
         data-grid-merge-url="{{ route('roster.grid-merge') }}"
+        data-outlet-status-url="{{ route('roster.outlet-status') }}"
         data-publish-preview-url="{{ route('roster.publish-preview') }}"
         data-week="{{ $grid['weekStart']->toDateString() }}"
     >

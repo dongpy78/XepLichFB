@@ -140,9 +140,13 @@ $(() => {
         }
 
         const action = $button.data('roster-action')
-        const url = { copy: urls.copyUrl, publish: urls.publishUrl, clear: urls.clearUrl, swap: urls.swapUrl, merge: urls.gridMergeUrl }[action]
+        const url = { copy: urls.copyUrl, publish: urls.publishUrl, clear: urls.clearUrl, swap: urls.swapUrl, merge: urls.gridMergeUrl, status: urls.outletStatusUrl }[action]
         // Hiển thị chung Villa + Gusto: outlet khu hiển thị chung (trống = hiển thị riêng).
-        const payload = action === 'merge' ? { outlet_id: $button.data('merge-outlet') || '' } : {}
+        // Mở / đóng cửa nhà hàng: outlet, các ngày (cách nhau dấu phẩy), đóng (1) / mở (0).
+        const payload = {
+            merge: { outlet_id: $button.data('merge-outlet') || '' },
+            status: { status_outlet_id: $button.data('status-outlet'), dates: String($button.data('status-dates')).split(','), closed: $button.data('status-closed') },
+        }[action] || {}
 
         Botble.showButtonLoading($button)
         request('POST', url, payload).always(() => Botble.hideButtonLoading($button))

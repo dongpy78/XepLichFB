@@ -97,7 +97,8 @@ class ManagerRulesTest extends TestCase
         }
 
         $this->assertSame(0, $result->softConstraintScores['objective']['manager_balance']);
-        $this->assertSame([], $result->warnings);
+        // Không có cảnh báo về quản lý (lệch sáng / chiều, OFF dồn); cảnh báo vận hành khác (vd OFF nhân viên) không thuộc test này.
+        $this->assertSame([], array_values(array_filter($result->warnings, fn ($w) => str_starts_with($w['code'], 'manager'))));
     }
 
     public function test_locked_shifts_and_off_are_kept_and_imbalance_is_reported(): void
