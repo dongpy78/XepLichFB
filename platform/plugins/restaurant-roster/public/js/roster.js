@@ -171,7 +171,7 @@ $(() => {
 
                 const info = response.data
 
-                if (!info.total && !info.kept) {
+                if (!info.total && !info.kept && !info.versions) {
                     Botble.showError(`Không có ô nào để xóa ở ${info.label}.`)
 
                     return
@@ -188,13 +188,14 @@ $(() => {
 
                 const total = info.total + (includeLocked ? info.kept : 0)
 
-                if (!total) {
+                if (!total && !info.versions) {
                     Botble.showError('Chỉ có ô đã khóa / nghỉ phép – không xóa gì.')
 
                     return
                 }
 
-                const published = info.published ? `\nTrong đó có ${info.published} ca ĐÃ CÔNG BỐ.` : ''
+                const published = (info.published ? `\nTrong đó có ${info.published} ca ĐÃ CÔNG BỐ.` : '')
+                    + (info.versions ? `\nXóa luôn ${info.versions} bản lịch đã công bố (ảnh / Excel / PDF) – tuần trở về Bản nháp.` : '')
 
                 if (!window.confirm(`Xóa ${total} ô lịch của ${info.label}?${published}\n\nCó thể hoàn tác trong 30 phút.`)) {
                     return
@@ -209,6 +210,9 @@ $(() => {
             })
             .fail((xhr) => Botble.handleError(xhr))
     }
+
+    // Nút "Xóa lịch tuần" trên thanh công cụ: xóa cả tuần đang xem (cả ca đã công bố), có xem trước, hỏi giữ ô khóa, hoàn tác.
+    $app.on('click', '[data-roster-clear-week]', () => clearCells({ mode: 'week' }))
 
     $grid.on('click', '[data-roster-clear]', (event) => {
         event.stopPropagation()

@@ -353,7 +353,7 @@ class RosterController extends BaseController
     public function clearCells(Request $request)
     {
         $data = $request->validate([
-            'mode' => ['required', Rule::in(['row', 'column'])],
+            'mode' => ['required', Rule::in(['row', 'column', 'week'])],
             'employee_id' => ['required_if:mode,row', 'nullable', 'integer'],
             'outlet_id_clear' => ['required_if:mode,column', 'nullable', 'integer'],
             'date' => ['required_if:mode,column', 'nullable', 'date_format:Y-m-d'],
@@ -363,7 +363,12 @@ class RosterController extends BaseController
 
         [$weekStart, $weekEnd] = $this->weekRange($request);
 
-        if ($data['mode'] === 'row') {
+        if ($data['mode'] === 'week') {
+            // Cả tuần đang xem (theo bộ lọc outlet / hiển thị chung): xóa cả ca nháp lẫn ca đã công bố để xếp lại từ đầu.
+            $label = 'lịch tuần ' . $weekStart->format('d/m') . ' – ' . $weekEnd->format('d/m/Y');
+            $query = Shift::query()->whereIn('employee_id', $this->employeeQuery($request)->pluck('id'))
+                ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()]);
+        } elseif ($data['mode'] === 'row') {
             $employee = Employee::query()->findOrFail($data['employee_id']);
             $label = $employee->name . ' (cả tuần ' . $weekStart->format('d/m') . ' – ' . $weekEnd->format('d/m') . ')';
             $query = Shift::query()->where('employee_id', $employee->getKey())
@@ -384,45 +389,58 @@ class RosterController extends BaseController
         // OFF quản lý đã cho chỉ gỡ được bằng "Gỡ OFF" (có kiểm tra quyền, cập nhật đơn), không xóa hàng loạt.
         $targets = $request->boolean('include_locked') ? $shifts->reject(fn (Shift $shift) => $shift->isRecordedOff()) : $shifts->reject($isKept);
 
+        // Xóa lịch tuần: xóa luôn các bản đã công bố của tuần (ảnh / Excel / PDF) – tuần trở về "Bản nháp" như mới (quản lý 30/10/2026).
+        $versions = $data['mode'] === 'week'
+            ? \Botble\RestaurantRoster\Models\ScheduleVersion::query()->whereDate('week_start', $weekStart->toDateString())
+                ->where('scope_outlet_id', $this->scopeOutletId($request))->get()
+            : collect();
+
         if ($request->boolean('preview')) {
             return $this->httpResponse()->setData([
                 'label' => $label,
                 'total' => $targets->count(),
                 'published' => $targets->where('status', Shift::STATUS_PUBLISHED)->count(),
                 'kept' => $kept->count(),
+                'versions' => $versions->count(),
             ]);
         }
 
-        if ($targets->isEmpty()) {
+        if ($targets->isEmpty() && $versions->isEmpty()) {
             return $this->gridResponse($request, "Không có ô nào để xóa ở {$label}.");
         }
 
-        DB::transaction(function () use ($request, $targets, $data): void {
+        DB::transaction(function () use ($request, $targets, $data, $versions): void {
             $logs = $targets->map(fn (Shift $shift) => [
                 'employee_id' => $shift->employee_id,
                 'date' => $shift->date->toDateString(),
                 'before' => json_encode($this->snapshot($shift), JSON_UNESCAPED_UNICODE),
                 'after' => null,
-                'action' => $data['mode'] === 'row' ? 'clear_row' : 'clear_column',
+                'action' => ['row' => 'clear_row', 'column' => 'clear_column', 'week' => 'clear_week'][$data['mode']],
                 'user_id' => $request->user()?->getKey(),
                 'created_at' => now(),
                 'updated_at' => now(),
             ])->all();
 
-            ChangeLog::query()->insert($logs);
+            if ($logs) {
+                ChangeLog::query()->insert($logs);
+            }
+
             Shift::query()->whereIn('id', $targets->pluck('id'))->delete();
+            \Botble\RestaurantRoster\Models\ScheduleVersion::query()->whereIn('id', $versions->modelKeys())->delete();
         });
 
-        // Lưu bản sao để "Hoàn tác" (30 phút, mỗi người dùng một lần xóa gần nhất).
+        // Lưu bản sao để "Hoàn tác" (30 phút, mỗi người dùng một lần xóa gần nhất) – gồm cả các bản đã công bố bị xóa.
         Cache::put($this->undoKey($request), [
             'label' => $label,
             'rows' => $targets->map(fn (Shift $shift) => $shift->getRawOriginal())->values()->all(),
+            'versions' => $versions->map(fn ($v) => $v->getRawOriginal())->values()->all(),
         ], now()->addMinutes(30));
 
         $published = $targets->where('status', Shift::STATUS_PUBLISHED)->count();
 
-        return $this->gridResponse($request, sprintf('Đã xóa %d ô của %s%s%s.', $targets->count(), $label,
+        return $this->gridResponse($request, sprintf('Đã xóa %d ô của %s%s%s%s.', $targets->count(), $label,
             $published ? " (gồm {$published} ca đã công bố)" : '',
+            $versions->count() ? ", xóa {$versions->count()} bản đã công bố – tuần trở về Bản nháp" : '',
             $kept->count() && ! $request->boolean('include_locked') ? ", giữ {$kept->count()} ô đã khóa / nghỉ phép" : ''
         ), ['undo' => $label]);
     }
@@ -439,8 +457,19 @@ class RosterController extends BaseController
         }
 
         $restored = 0;
+        $versions = 0;
 
-        DB::transaction(function () use ($request, $saved, &$restored): void {
+        DB::transaction(function () use ($request, $saved, &$restored, &$versions): void {
+            foreach ($saved['versions'] ?? [] as $row) {
+                $exists = \Botble\RestaurantRoster\Models\ScheduleVersion::query()->whereDate('week_start', substr((string) $row['week_start'], 0, 10))
+                    ->where('scope_outlet_id', $row['scope_outlet_id'])->where('version', $row['version'])->exists();
+
+                if (! $exists) {
+                    DB::table('roster_schedule_versions')->insert($row);
+                    $versions++;
+                }
+            }
+
             foreach ($saved['rows'] as $row) {
                 $exists = Shift::query()->where('employee_id', $row['employee_id'])->whereDate('date', substr((string) $row['date'], 0, 10))->exists();
 
@@ -464,7 +493,8 @@ class RosterController extends BaseController
 
         $skipped = count($saved['rows']) - $restored;
 
-        return $this->gridResponse($request, "Đã hoàn tác: khôi phục {$restored} ô của {$saved['label']}" . ($skipped ? ", bỏ qua {$skipped} ô đã được xếp ca mới" : '') . '.');
+        return $this->gridResponse($request, "Đã hoàn tác: khôi phục {$restored} ô của {$saved['label']}" . ($versions ? " và {$versions} bản đã công bố" : '')
+            . ($skipped ? ", bỏ qua {$skipped} ô đã được xếp ca mới" : '') . '.');
     }
 
     protected function undoKey(Request $request): string

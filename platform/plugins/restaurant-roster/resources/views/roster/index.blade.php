@@ -68,8 +68,9 @@
                         <button type="button" class="btn" data-roster-action="copy">
                             <x-core::icon name="ti ti-copy" /> Sao chép tuần trước
                         </button>
-                        <button type="button" class="btn btn-outline-danger" data-roster-action="clear" data-confirm="Xóa tất cả ca NHÁP (chưa công bố) trong tuần này?">
-                            <x-core::icon name="ti ti-eraser" /> Xóa ca nháp
+                        <button type="button" class="btn btn-outline-danger" data-roster-clear-week
+                            title="Xóa toàn bộ lịch tuần đang xem (cả ca đã công bố) để xếp lại từ đầu – hỏi giữ ô đã khóa; hoàn tác được trong 30 phút">
+                            <x-core::icon name="ti ti-eraser" /> Xóa lịch tuần
                         </button>
                         <button type="button" class="btn btn-primary" data-roster-action="publish" title="Kiểm tra lỗi, xác nhận rồi công bố – lưu phiên bản lịch chính thức để tải PNG / Excel / PDF">
                             <x-core::icon name="ti ti-send" /> Công bố lịch tuần
