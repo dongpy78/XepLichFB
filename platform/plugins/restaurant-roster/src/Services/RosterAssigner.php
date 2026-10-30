@@ -3,7 +3,9 @@
 namespace Botble\RestaurantRoster\Services;
 
 use Botble\RestaurantRoster\Models\Employee;
+use Botble\Base\Enums\BaseStatusEnum;
 use Botble\RestaurantRoster\Models\Outlet;
+use Botble\RestaurantRoster\Models\OutletDay;
 use Botble\RestaurantRoster\Models\Shift;
 use Botble\RestaurantRoster\Models\ShiftTemplate;
 use Carbon\CarbonInterface;
@@ -87,8 +89,21 @@ class RosterAssigner
         }
         $overtime = max(0, min(12, (float) ($spec['overtime'] ?? 0)));
 
+        $outletId = $spec['outlet_id'] ?? $this->resolveOutletId($employee, $tags, $spec['template'] ?? null);
+
+        // Nhà hàng gốc đóng cửa ngày này (chỉ còn một nhà hàng hoạt động): người đó làm thẳng tại nhà hàng còn mở - outlet làm việc là
+        // nhà hàng đó, ca ghi M6 / A2 (không thêm (G) / (V); A2(V)(K) -> A2(K)). Outlet gốc trong hồ sơ không đổi.
+        if ($spec['kind'] === Shift::KIND_SHIFT && ($open = $this->openRestaurantFor($employee, $date))) {
+            if ((int) $outletId === (int) $employee->outlet_id) {
+                $outletId = $open;
+            }
+
+            $restaurantTags = array_filter(array_map(fn ($o) => $this->tagForOutlet($o), $this->restaurantOutletIds()));
+            $tags = array_values(array_diff($tags, $restaurantTags));
+        }
+
         $values = [
-            'outlet_id' => $spec['outlet_id'] ?? $this->resolveOutletId($employee, $tags, $spec['template'] ?? null),
+            'outlet_id' => $outletId,
             'kind' => $spec['kind'],
             'shift_template_id' => null,
             'leave_type' => null,
@@ -192,9 +207,16 @@ class RosterAssigner
      *
      * @return string[]
      */
-    public function tagsForOutlet(Employee $employee, ?int $outletId, ?ShiftTemplate $template = null): array
+    public function tagsForOutlet(Employee $employee, ?int $outletId, ?ShiftTemplate $template = null, ?CarbonInterface $date = null): array
     {
         if (! $outletId || (int) $outletId === (int) $employee->outlet_id) {
+            return [];
+        }
+
+        // Nhà hàng gốc đóng cửa: làm tại nhà hàng còn mở là ca thường, không phải điều chuyển -> không có (G) / (V).
+        $open = $date ? $this->openRestaurantFor($employee, $date) : null;
+
+        if ($open && (int) $outletId === $open) {
             return [];
         }
 
@@ -205,13 +227,67 @@ class RosterAssigner
         if ($tag && $parent) {
             $parentId = $this->outletIdsByCode()[$parent] ?? null;
 
-            if ($parentId && (int) $parentId !== (int) $employee->outlet_id && ($origin = $this->tagForOutlet($employee->outlet_id, $template))) {
+            if ($parentId && (int) $parentId !== (int) $employee->outlet_id && (int) $parentId !== $open
+                && ($origin = $this->tagForOutlet($employee->outlet_id, $template))) {
                 return [$origin, $tag];
             }
         }
 
         return $tag ? [$tag] : [];
     }
+
+    /**
+     * Nhà hàng gốc (Villa / Gusto – transfer_outlets) của nhân viên đóng cửa ngày này và đúng một nhà hàng còn mở → id nhà hàng đó.
+     * Đóng cửa = "Ngày đặc biệt" đánh dấu đóng, hoặc outlet ngừng hoạt động (giống ProblemBuilder::closedRestaurantDays).
+     */
+    public function openRestaurantFor(Employee $employee, CarbonInterface $date): ?int
+    {
+        $restaurants = $this->restaurantOutletIds();
+        $home = (int) $employee->outlet_id;
+
+        if (! in_array($home, $restaurants, true)) {
+            return null;
+        }
+
+        $closed = $this->closedRestaurants($date->toDateString());
+
+        if (! in_array($home, $closed, true)) {
+            return null;
+        }
+
+        $open = array_values(array_diff($restaurants, $closed));
+
+        return count($open) === 1 ? $open[0] : null;
+    }
+
+    /** @return int[] */
+    protected function restaurantOutletIds(): array
+    {
+        return $this->restaurantIds ??= array_values(array_filter(array_map(
+            fn ($code) => $this->outletIdsByCode()[$code] ?? null,
+            (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA'])
+        )));
+    }
+
+    /** @return int[] nhà hàng đóng cửa ngày $date (nạp một lần mỗi ngày) */
+    protected function closedRestaurants(string $date): array
+    {
+        if (! isset($this->closedByDate[$date])) {
+            $ids = $this->restaurantOutletIds();
+            $this->closedByDate[$date] = $ids ? array_values(array_unique([
+                ...Outlet::query()->whereIn('id', $ids)->where('status', '!=', BaseStatusEnum::PUBLISHED)->pluck('id')->map(fn ($id) => (int) $id)->all(),
+                ...OutletDay::query()->whereIn('outlet_id', $ids)->where('is_closed', true)->whereDate('date', $date)->pluck('outlet_id')->map(fn ($id) => (int) $id)->all(),
+            ])) : [];
+        }
+
+        return $this->closedByDate[$date];
+    }
+
+    /** @var int[]|null */
+    private ?array $restaurantIds = null;
+
+    /** @var array<string, int[]> */
+    private array $closedByDate = [];
 
     /**
      * Ký hiệu phụ thể hiện việc làm ngoài outlet chính (ngược của resolveOutletId), ví dụ Gusto → G.

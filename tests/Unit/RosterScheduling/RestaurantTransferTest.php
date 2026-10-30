@@ -92,8 +92,8 @@ class RestaurantTransferTest extends TestCase
     }
 
     /**
-     * Villa đóng cửa Chủ nhật (Ngày đặc biệt): chỉ Chủ nhật nhân viên Villa sang Gusto; người Gusto không dồn vào M6 –
-     * cả nhóm Gusto và nhóm Villa (đang ở Gusto) đều chia đều M6 / A2.
+     * Villa đóng cửa Chủ nhật (Ngày đặc biệt): chỉ Chủ nhật nhân viên Villa sang Gusto; M6 / A2 tại Gusto cân bằng trên TỔNG người
+     * Villa + Gusto (quản lý 30/10/2026: không chia riêng theo outlet gốc khi chỉ còn một nhà hàng).
      */
     public function test_villa_closed_on_sunday_transfers_only_that_day_and_balances_each_group(): void
     {
@@ -109,8 +109,8 @@ class RestaurantTransferTest extends TestCase
 
         $gusto = $this->homeSplit($result, $sunday, self::GUSTO);
         $villa = $this->homeSplit($result, $sunday, self::VILLA);
-        $this->assertLessThanOrEqual(1, abs($gusto[0] - $gusto[1]), 'Người Gusto không dồn hết vào M6: ' . json_encode($gusto));
-        $this->assertLessThanOrEqual(1, abs($villa[0] - $villa[1]), 'Người Villa sang Gusto cũng chia đều: ' . json_encode($villa));
+        [$am, $pm] = [$gusto[0] + $villa[0], $gusto[1] + $villa[1]];
+        $this->assertSame(($am + $pm) % 2, abs($am - $pm), "Tổng tại Gusto {$am}/{$pm} (chẵn bằng nhau, lẻ lệch 1)");
         $this->assertGreaterThan(0, array_sum($villa), 'Villa đóng cửa: người Villa vẫn có chỗ làm ở Gusto');
         $this->assertHardConstraintsHold($problem, $result);
     }
@@ -154,19 +154,51 @@ class RestaurantTransferTest extends TestCase
         $this->assertStringContainsString('đóng cửa', $check['text']);
     }
 
-    /** Quản lý (cấp Captain trở lên) không tự điều chuyển: Villa đóng → quản lý Villa chưa xếp, có lý do. */
-    public function test_manager_not_transferred_when_home_closed(): void
+    /** Quản lý Villa như ProblemBuilder dựng: năng lực Gusto + ngoại lệ "nhà hàng gốc đóng cửa". */
+    private function villaManager(int $id): EmployeeSpec
     {
-        $day = $this->day(1);
-        $manager = new EmployeeSpec(90, 'Captain #90', 'male', self::VILLA, 48, 2, [self::VILLA . ':0' => 'primary'], [], 'cam_ranh', 200,
-            isManager: true, managerShiftIds: [self::M6, self::A2]);
-        $days = $this->days();
-        $closed = [self::VILLA => [$day => true]];
-        $result = $this->solve($this->problem([...$this->team(), $manager], $this->open($days, $closed), [
-            'restaurants' => [self::VILLA, self::GUSTO], 'closed_days' => $closed, 'busy_weekdays' => [], 'time_limit' => 60, 'max_iterations' => 40000]));
+        return new EmployeeSpec($id, "Captain #{$id}", $id % 2 ? 'female' : 'male', self::VILLA, 48, 2, [self::VILLA . ':0' => 'primary', self::GUSTO . ':0' => 'eligible'], [], 'cam_ranh', 200,
+            isManager: true, managerShiftIds: [self::M6, self::A2], closedHomeOutletIds: [self::GUSTO]);
+    }
 
-        $this->assertNull($this->shiftOf($result, 90, $day), 'Quản lý Villa không bị điều sang Gusto');
-        $this->assertStringContainsString('Captain #90 (cấp quản lý không tự điều chuyển', collect($result->supportReport['day_checks'])->firstWhere('date', $day)['checks']['restaurant']['text']);
+    /**
+     * Villa đóng cửa cả tuần (quản lý 30/10/2026): quản lý Villa (Junior Captain trở lên) được xếp tại Gusto, chỉ M6 / A2;
+     * OFF đã duyệt của quản lý giữ nguyên.
+     */
+    public function test_villa_managers_work_at_gusto_when_villa_closed(): void
+    {
+        $days = $this->days();
+        $closed = [self::VILLA => array_fill_keys($days, true)];
+        $result = $this->solve($this->problem([...$this->team(), $this->villaManager(90), $this->villaManager(91)], $this->open($days, $closed), [
+            'restaurants' => [self::VILLA, self::GUSTO], 'closed_days' => $closed, 'busy_weekdays' => [], 'time_limit' => 60, 'max_iterations' => 40000,
+            'hard' => [90 => [$days[0] => 'Xin OFF']]]));
+
+        $this->assertNull($this->shiftOf($result, 90, $days[0]), 'OFF đã duyệt của quản lý giữ nguyên');
+
+        foreach ([90, 91] as $id) {
+            $shifts = array_filter($result->assignments, fn ($r) => $r['employee_id'] === $id && $r['kind'] === 'shift');
+            $this->assertGreaterThanOrEqual(4, count($shifts), "Captain #{$id} được xếp lịch tại Gusto");
+
+            foreach ($shifts as $r) {
+                $this->assertSame(self::GUSTO, $r['outlet_id'], "Captain #{$id} {$r['date']} làm tại Gusto");
+                $this->assertContains($r['shift_id'], [self::M6, self::A2], 'Quản lý chỉ M6 / A2');
+            }
+        }
+
+        foreach ($result->supportReport['day_checks'] as $day) {
+            $this->assertStringNotContainsString('không tự điều chuyển', $day['checks']['restaurant']['text'], 'Không bỏ qua quản lý vì nhà hàng gốc đóng');
+        }
+    }
+
+    /** Cả hai nhà hàng mở: quy tắc cũ giữ nguyên – quản lý Villa không tự sang Gusto. */
+    public function test_manager_not_transferred_when_both_open(): void
+    {
+        $result = $this->solve($this->problem([...$this->team(), $this->villaManager(90)], $this->open($this->days()), [
+            'restaurants' => [self::VILLA, self::GUSTO], 'busy_weekdays' => [], 'time_limit' => 60, 'max_iterations' => 40000]));
+
+        $shifts = array_filter($result->assignments, fn ($r) => $r['employee_id'] === 90 && $r['kind'] === 'shift');
+        $this->assertNotEmpty($shifts);
+        $this->assertSame([self::VILLA], array_values(array_unique(array_column($shifts, 'outlet_id'))), 'Quản lý chỉ làm tại Villa');
     }
 
     /** Ô quản lý đã xếp tay / khóa sang nhà hàng kia (vd A2(G)) được giữ nguyên dù cả hai mở. */

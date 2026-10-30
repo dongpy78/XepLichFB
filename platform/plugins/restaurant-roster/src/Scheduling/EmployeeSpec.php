@@ -35,6 +35,10 @@ final class EmployeeSpec
         public readonly ?string $nightRole = null,
         // Nhân viên đa năng (mọi người thuộc outlet Night trừ Night cứng và Room Service chuyên trách): được mượn trước khi outlet thiếu tối thiểu.
         public readonly bool $isFlex = false,
+        // Nhà hàng kia (Villa <-> Gusto) được tự xếp vào ngày nhà hàng gốc đóng cửa - áp dụng cả cấp quản lý (ràng buộc 'transfer'
+        // của ScheduleState chặn mọi ngày nhà hàng gốc còn hoạt động).
+        /** @var int[] */
+        public readonly array $closedHomeOutletIds = [],
     ) {
     }
 
@@ -76,7 +80,8 @@ final class EmployeeSpec
         }
 
         // Quản lý: thuật toán không tự điều chuyển sang outlet khác và chỉ tự xếp M6 / A2 (OH, M9 do quản lý xếp tay).
-        if ($this->isManager && ($outletId !== $this->homeOutletId
+        // Ngoại lệ: nhà hàng gốc đóng cửa -> được xếp M6 / A2 tại nhà hàng còn hoạt động (closedHomeOutletIds).
+        if ($this->isManager && (($outletId !== $this->homeOutletId && ! in_array($outletId, $this->closedHomeOutletIds, true))
             || ($this->managerShiftIds !== null && ! in_array($shiftId, $this->managerShiftIds, true)))) {
             return null;
         }

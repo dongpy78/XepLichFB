@@ -186,7 +186,7 @@ class RosterScheduler
                 }
 
                 $template = $isWork ? $templates[$row['shift_id']] : null;
-                $outletTags = $isWork ? $this->assigner->tagsForOutlet($employee, (int) $row['outlet_id'], $template) : [];
+                $outletTags = $isWork ? $this->assigner->tagsForOutlet($employee, (int) $row['outlet_id'], $template, CarbonImmutable::parse($row['date'])) : [];
                 $keepTags = $isWork && $current && (int) $current->shift_template_id === (int) $row['shift_id'] && (int) $current->outlet_id === (int) $row['outlet_id']
                     ? array_diff($current->tags ?: [], ['L', ...$outletTags])
                     : [];

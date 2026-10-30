@@ -1899,7 +1899,9 @@ final class ScheduleState
 
         foreach ($this->homeShift as $days) {
             foreach ($days as $i => $count) {
-                if (! $this->inScope[$i]) {
+                // Ngày có nhà hàng đóng cửa: cả hai nhóm gộp về nhà hàng còn mở, M6 / A2 cân bằng trên tổng tại đó (waiter_balance),
+                // không chia riêng theo outlet gốc.
+                if (! $this->inScope[$i] || $this->anyRestaurantClosed($i)) {
                     continue;
                 }
 
@@ -1913,6 +1915,17 @@ final class ScheduleState
         }
 
         return $penalty;
+    }
+
+    private function anyRestaurantClosed(int $i): bool
+    {
+        foreach ($this->problem->restaurantOutletIds as $o) {
+            if (isset($this->problem->closedOutletDays[$o][$this->dates[$i]])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @var array<int, array<int, array<string, int>>> [outlet chính][dayIndex][morning|afternoon] => số waiter */

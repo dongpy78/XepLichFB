@@ -169,7 +169,9 @@ class RosterController extends BaseController
         // của người có quyền → tự khóa ô để "Tối ưu lại" không đổi ngược lại.
         if ($shift->kind === Shift::KIND_SHIFT && $employee->position?->is_manager) {
             $managerCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.manager_shift_codes', ['M6', 'A2']));
-            $outsideRules = ! in_array(strtoupper((string) $shift->template?->code), $managerCodes, true) || (int) $shift->outlet_id !== (int) $employee->outlet_id;
+            // Nhà hàng gốc đóng cửa: M6 / A2 tại nhà hàng còn mở vẫn là trong quy tắc (không tự khóa).
+            $outsideRules = ! in_array(strtoupper((string) $shift->template?->code), $managerCodes, true)
+                || ((int) $shift->outlet_id !== (int) $employee->outlet_id && (int) $shift->outlet_id !== $this->assigner->openRestaurantFor($employee, $date));
 
             if ($outsideRules && ! $shift->is_locked) {
                 $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);

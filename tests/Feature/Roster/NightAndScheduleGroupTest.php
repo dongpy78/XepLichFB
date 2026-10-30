@@ -159,8 +159,10 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame('eligible', $level($gustoWaiter, $villa, $m6), 'Waiter Gusto được điều chuyển sang Villa');
         $this->assertSame('primary', $level($gustoWaiter, $gusto, $m6), 'Outlet chính vẫn là chuyên trách (ưu tiên)');
         $this->assertSame('eligible', $level($hostess, $villa, $m6), 'Hostess được điều chuyển');
-        $this->assertNull($level($captain, $villa, $m6), 'Cấp quản lý không tự điều chuyển');
-        $this->assertNull($level($bartender, $villa, $m6), 'Vị trí khác chỉ theo năng lực đã khai');
+        // Cấp quản lý / vị trí khác: chỉ là ứng viên Villa vào ngày Gusto đóng cửa (ràng buộc 'transfer' chặn mọi ngày Gusto còn mở).
+        $this->assertSame([$villa], $problem->employees[$captain->getKey()]->closedHomeOutletIds, 'Quản lý sang Villa chỉ khi Gusto đóng');
+        $this->assertSame([$villa], $problem->employees[$bartender->getKey()]->closedHomeOutletIds);
+        $this->assertNull($level($captain, $villa, $n), 'Quản lý vẫn chỉ M6 / A2');
         $this->assertNull($level($gustoWaiter, $night, $n), 'Night luân phiên không còn tự động – kể cả có dòng năng lực Night');
         $this->assertTrue($problem->employees[$gustoWaiter->getKey()]->countsAsMale(), 'Nam waiter');
     }
@@ -845,6 +847,132 @@ class NightAndScheduleGroupTest extends TestCase
 
         $this->setStatus('GUSTO', $week, false);
         $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $this->gridHtml());
+    }
+
+    /**
+     * Một nhà hàng hoạt động (quản lý 30/10/2026): nhân viên + quản lý (Junior Captain trở lên) của nhà hàng đóng cửa làm tại nhà hàng
+     * còn mở, ô lưu outlet làm việc = nhà hàng đó, mã ca chỉ M6 / A2 (không (G) / (V)); outlet gốc không đổi; OFF đã duyệt và ô khóa giữ.
+     *
+     * @return array<string, Employee>
+     */
+    private function singleRestaurantRun(string $closed): array
+    {
+        $open = $closed === 'VILLA' ? 'GUSTO' : 'VILLA';
+        $captain = Position::query()->create(['name' => 'Junior Restaurant Captain', 'is_manager' => true, 'status' => 'published']);
+        $people = [];
+
+        foreach (['VILLA', 'GUSTO'] as $outlet) {
+            foreach (['C1' => 'male', 'C2' => 'female'] as $k => $gender) {
+                $people[$outlet[0] . $k] = $this->employee($outlet[0] . $k, $outlet, $gender, ['position_id' => $captain->getKey()]);
+            }
+
+            foreach (['W1' => 'male', 'W2' => 'male', 'W3' => 'female', 'W4' => 'female'] as $k => $gender) {
+                $people[$outlet[0] . $k] = $this->employee($outlet[0] . $k, $outlet, $gender);
+            }
+        }
+
+        $this->closeAllWeek($closed);
+        $tuesday = Carbon::parse(self::WEEK)->addDay()->toDateString();
+        // OFF quản lý đã cho của một quản lý nhà hàng đóng cửa; ô khóa của một waiter nhà hàng còn mở.
+        Shift::query()->create(['employee_id' => $people[$closed[0] . 'C1']->getKey(), 'date' => self::WEEK, 'kind' => Shift::KIND_OFF, 'status' => 'draft',
+            'is_locked' => true, 'lock_reason' => Shift::LOCK_OFF_REQUEST, 'hours' => 0]);
+        Shift::query()->create(['employee_id' => $people[$open[0] . 'W1']->getKey(), 'date' => $tuesday, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['A2']->getKey(),
+            'outlet_id' => $this->outlets[$open]->getKey(), 'status' => 'draft', 'is_locked' => true, 'lock_reason' => Shift::LOCK_CONFIRMED,
+            'start_at' => "{$tuesday} 14:00:00", 'end_at' => "{$tuesday} 22:00:00", 'hours' => 8]);
+
+        $scheduler = app(\Botble\RestaurantRoster\Services\RosterScheduler::class);
+        $run = $scheduler->run(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, 'generate', 1, ['time_limit_seconds' => 3]);
+        $scheduler->apply($run, 1);
+
+        $shifts = Shift::query()->with('template')->get();
+        $this->assertSame($shifts->count(), $shifts->unique(fn (Shift $s) => $s->employee_id . '|' . $s->date->toDateString())->count(), 'Không trùng ô');
+        $this->assertSame(0, $shifts->where('kind', Shift::KIND_SHIFT)->where('outlet_id', $this->outlets[$closed]->getKey())->count(), "Không ai làm ở {$closed} đang đóng");
+
+        foreach ($shifts->where('kind', Shift::KIND_SHIFT) as $shift) {
+            $this->assertNotContains('G', $shift->tags ?: [], "{$shift->notation}: không có (G)");
+            $this->assertNotContains('V', $shift->tags ?: [], "{$shift->notation}: không có (V)");
+        }
+
+        foreach (['C1', 'C2'] as $k) {
+            $manager = $people[$closed[0] . $k];
+            $work = $shifts->where('employee_id', $manager->getKey())->where('kind', Shift::KIND_SHIFT);
+            $this->assertGreaterThanOrEqual(3, $work->count(), "Quản lý {$closed} {$k} được xếp lịch tại {$open}");
+            $this->assertSame([$this->outlets[$open]->getKey()], $work->pluck('outlet_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
+            $this->assertEmpty(array_diff($work->map(fn (Shift $s) => $s->notation)->unique()->all(), ['M6', 'A2']), 'Quản lý chỉ M6 / A2');
+            $this->assertSame($this->outlets[$closed]->getKey(), (int) $manager->fresh()->outlet_id, 'Outlet gốc trong hồ sơ không đổi');
+        }
+
+        $this->assertNotEmpty($shifts->where('employee_id', $people[$closed[0] . 'W3']->getKey())->where('kind', Shift::KIND_SHIFT), "Waiter {$closed} được xếp tại {$open}");
+        $off = $shifts->first(fn (Shift $s) => $s->employee_id === $people[$closed[0] . 'C1']->getKey() && $s->date->toDateString() === self::WEEK);
+        $this->assertSame(Shift::KIND_OFF, $off->kind, 'OFF đã duyệt giữ nguyên');
+        $locked = $shifts->first(fn (Shift $s) => $s->employee_id === $people[$open[0] . 'W1']->getKey() && $s->date->toDateString() === $tuesday);
+        $this->assertSame('A2', $locked->notation, 'Ô khóa giữ nguyên');
+
+        // M6 / A2 của waiter (không tính quản lý) cân bằng trên tổng người hai nhà hàng tại nhà hàng còn mở.
+        $managers = collect($people)->filter(fn (Employee $e, $k) => str_contains($k, 'C'))->map->getKey()->all();
+
+        foreach ($shifts->where('kind', Shift::KIND_SHIFT)->whereNotIn('employee_id', $managers)->groupBy(fn (Shift $s) => $s->date->toDateString()) as $date => $day) {
+            [$am, $pm] = [$day->where('shift_template_id', $this->templates['M6']->getKey())->count(), $day->where('shift_template_id', $this->templates['A2']->getKey())->count()];
+            $this->assertLessThanOrEqual(1, abs($am - $pm), "{$date}: waiter tại {$open} M6 {$am} / A2 {$pm}");
+        }
+
+        return $people;
+    }
+
+    public function test_villa_closed_everyone_incl_managers_works_at_gusto_with_plain_codes(): void
+    {
+        $this->singleRestaurantRun('VILLA');
+    }
+
+    public function test_gusto_closed_everyone_incl_managers_works_at_villa_with_plain_codes(): void
+    {
+        $this->singleRestaurantRun('GUSTO');
+    }
+
+    /** Cả hai mở: quản lý không tự sang nhà hàng kia, không ai bị điều chuyển tự động (không mã (G) / (V) mới). */
+    public function test_both_restaurants_open_managers_stay_home(): void
+    {
+        $captain = Position::query()->create(['name' => 'Junior Restaurant Captain', 'is_manager' => true, 'status' => 'published']);
+
+        foreach (['VILLA', 'GUSTO'] as $outlet) {
+            $this->employee($outlet[0] . 'C', $outlet, extra: ['position_id' => $captain->getKey()]);
+
+            foreach (['W1' => 'male', 'W2' => 'male', 'W3' => 'female', 'W4' => 'female'] as $k => $gender) {
+                $this->employee($outlet[0] . $k, $outlet, $gender);
+            }
+        }
+
+        $scheduler = app(\Botble\RestaurantRoster\Services\RosterScheduler::class);
+        $scheduler->apply($scheduler->run(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, 'generate', 1, ['time_limit_seconds' => 3]), 1);
+
+        foreach (Shift::query()->with('employee')->where('kind', Shift::KIND_SHIFT)->get() as $shift) {
+            $this->assertSame((int) $shift->employee->outlet_id, (int) $shift->outlet_id, "{$shift->employee->name} {$shift->notation} làm tại outlet gốc");
+            $this->assertSame([], array_intersect(['G', 'V'], $shift->tags ?: []));
+        }
+    }
+
+    /**
+     * Xếp tay khi Villa đóng: "M6" cho người Villa → làm tại Gusto, ghi M6; "A2(G)" → bỏ (G) dư thừa; Villa mở lại → "M6(G)" vẫn là điều chuyển.
+     */
+    public function test_manual_codes_follow_working_outlet_when_home_closed(): void
+    {
+        $villaWaiter = $this->employee('VW', 'VILLA');
+        $this->closeAllWeek('VILLA', 1);
+        ShiftTemplate::query()->update(['break_minutes' => 0]);
+        $this->templates = ShiftTemplate::query()->get()->keyBy('code')->all();
+        $assigner = app(\Botble\RestaurantRoster\Services\RosterAssigner::class);
+        $monday = Carbon::parse(self::WEEK);
+        $tuesday = $monday->copy()->addDay();
+
+        $plain = $assigner->assign($villaWaiter, $monday, ['kind' => Shift::KIND_SHIFT, 'template' => $this->templates['M6'], 'tags' => []]);
+        $this->assertSame([$this->outlets['GUSTO']->getKey(), 'M6'], [(int) $plain->outlet_id, $plain->notation]);
+
+        $tagged = $assigner->assign($villaWaiter, $monday, ['kind' => Shift::KIND_SHIFT, 'template' => $this->templates['A2'], 'tags' => ['G']]);
+        $this->assertSame([$this->outlets['GUSTO']->getKey(), 'A2'], [(int) $tagged->outlet_id, $tagged->fresh()->notation]);
+
+        $transfer = $assigner->assign($villaWaiter, $tuesday, ['kind' => Shift::KIND_SHIFT, 'template' => $this->templates['M6'], 'tags' => ['G']]);
+        $this->assertSame([$this->outlets['GUSTO']->getKey(), 'M6(G)'], [(int) $transfer->outlet_id, $transfer->notation], 'Villa mở: vẫn là điều chuyển');
+        $this->assertSame($this->outlets['VILLA']->getKey(), (int) $villaWaiter->fresh()->outlet_id);
     }
 
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */

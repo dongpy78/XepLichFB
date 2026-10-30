@@ -237,6 +237,33 @@ class ProblemBuilder
                 }
             }
 
+            // Chỉ một nhà hàng hoạt động (quản lý 30/10/2026): mọi người thuộc Villa / Gusto - kể cả cấp quản lý (vẫn chỉ M6 / A2) và vị trí
+            // ngoài transfer_positions - là ứng viên của nhà hàng kia. Ràng buộc 'transfer' chỉ cho tự xếp sang vào ngày nhà hàng gốc
+            // đóng cửa, nên khi cả hai cùng mở mọi quy tắc điều chuyển cũ giữ nguyên. Night cố định / Room Service cố định không đổi.
+            $closedHomeOutletIds = [];
+
+            if (in_array((int) $employee->outlet_id, $transferOutletIds, true) && ! $isNightCore && ! $employee->room_service_fixed) {
+                foreach ($transferOutletIds as $o) {
+                    if ($o === (int) $employee->outlet_id) {
+                        continue;
+                    }
+
+                    $skills["{$o}:0"] ??= EmployeeSpec::ELIGIBLE;
+                    $closedHomeOutletIds[] = $o;
+
+                    // Ca cứng ở nhà hàng gốc -> cùng ca cứng ở nhà hàng còn mở.
+                    foreach ($fixed as $key) {
+                        [$fo, $fs] = array_map('intval', explode(':', $key));
+
+                        if ($fo === (int) $employee->outlet_id) {
+                            $fixed[] = "{$o}:{$fs}";
+                        }
+                    }
+                }
+
+                $fixed = array_values(array_unique($fixed));
+            }
+
             // Room Service cố định: chỉ làm Room Service (ca cứng nếu có), không sang outlet khác; OFF thì người hỗ trợ thay.
             if ($employee->room_service_fixed && $roomOutletId && ! $isNightCore) {
                 $skills = ["{$roomOutletId}:0" => EmployeeSpec::PRIMARY];
@@ -273,6 +300,7 @@ class ProblemBuilder
                 // Night cố định (hồ sơ): ≥ 1 người / đêm. Không còn vai trò luân phiên tự động.
                 nightRole: $isNightCore ? EmployeeSpec::NIGHT_CORE : null,
                 isFlex: $isFlex,
+                closedHomeOutletIds: $closedHomeOutletIds,
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {

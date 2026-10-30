@@ -581,7 +581,6 @@ final class ResultBuilder
                 $idle[] = $employee->name . ' (' . match (true) {
                     isset($problem->hardUnavailable[$id][$date]) => 'OFF đã duyệt',
                     $state->isFixed($id, $i) => 'ô đã khóa',
-                    $employee->isManager => 'cấp quản lý không tự điều chuyển – xếp tay nếu cần',
                     default => 'OFF theo lịch tuần',
                 } . ')';
             }
