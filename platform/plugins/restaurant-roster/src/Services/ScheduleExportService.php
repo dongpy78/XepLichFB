@@ -151,8 +151,25 @@ class ScheduleExportService
         // Khổ cố định 1800px (rộng hơn A4 một chút); cột ngày chia đều phần còn lại để bảng phủ kín chiều rộng ảnh.
         $width = 1800;
         // Sinh nhật rơi vào tháng của tuần lịch → tô nổi bật như Bảng xếp ca.
-        $months = array_unique(array_map(fn ($d) => (int) substr($d['date'], 5, 2), $days));
-        $birthdayThisMonth = fn (array $r) => ! empty($r['birthday']) && in_array((int) substr($r['birthday'], 3, 2), $months, true);
+        // Như Bảng xếp ca, lấy ngày đầu tuần làm "hôm nay": sinh nhật từ đầu tuần đến hết tháng đó (hoặc hết tuần nếu tuần sang tháng
+        // mới) thì tô nổi; đã qua rồi hoặc ở tháng sau thì không. Vd tuần 26/10 – 01/11: 26/10 … 01/11 tô, 03/11 không.
+        $from = $days[0]['date'];
+        $to = max(end($days)['date'], date('Y-m-t', strtotime($from)));
+        $birthdayThisMonth = function (array $r) use ($from, $to): bool {
+            if (empty($r['birthday']) || ! preg_match('/^(\d{2})\/(\d{2})$/', $r['birthday'], $m)) {
+                return false;
+            }
+
+            foreach (array_unique([substr($from, 0, 4), substr($to, 0, 4)]) as $year) {
+                $date = "{$year}-{$m[2]}-{$m[1]}";
+
+                if ($date >= $from && $date <= $to) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
         $pad = 36;
         $headerH = 164;
         $headH = 68;
