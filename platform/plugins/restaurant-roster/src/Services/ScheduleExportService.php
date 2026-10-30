@@ -148,8 +148,11 @@ class ScheduleExportService
         $draft = ! isset($snapshot['version']);
         $rows = array_merge(...array_map(fn ($s) => $s['rows'], $sections));
 
-        // Khổ cố định 1600px; cột ngày chia đều phần còn lại để bảng phủ kín chiều rộng ảnh.
-        $width = 1600;
+        // Khổ cố định 1800px (rộng hơn A4 một chút); cột ngày chia đều phần còn lại để bảng phủ kín chiều rộng ảnh.
+        $width = 1800;
+        // Sinh nhật rơi vào tháng của tuần lịch → tô nổi bật như Bảng xếp ca.
+        $months = array_unique(array_map(fn ($d) => (int) substr($d['date'], 5, 2), $days));
+        $birthdayThisMonth = fn (array $r) => ! empty($r['birthday']) && in_array((int) substr($r['birthday'], 3, 2), $months, true);
         $pad = 36;
         $headerH = 164;
         $headH = 68;
@@ -157,7 +160,7 @@ class ScheduleExportService
         $rowH = 66;
         $colNo = 56;
         $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['semibold'], 19, $r['name'])
-            + (! empty($r['birthday']) ? $this->textWidth($f['medium'], 13, 'SN ' . $r['birthday']) + 34 : 0), $rows));
+            + (! empty($r['birthday']) ? $this->textWidth($f['bold'], 16, '(' . $r['birthday'] . ')') + 30 : 0), $rows));
         $colName = max(360, min(560, $nameNeed + 36));
         $colDay = (int) floor(($width - $pad * 2 - $colNo - $colName) / max(1, count($days)));
         $colName = $width - $pad * 2 - $colNo - $colDay * count($days);
@@ -234,16 +237,22 @@ class ScheduleExportService
             foreach ($section['rows'] as $row) {
                 $this->cellText($img, $f['medium'], 15, $faint, $x0, $colNo, $y, $rowH, (string) ++$n, true);
 
-                // Tên + ngày sinh (nhãn nhỏ) ; chức vụ bên dưới.
+                // Tên + ngày sinh "(13/12)" như Bảng xếp ca: chữ xám nhạt; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
                 $nx = $x0 + $colNo + 8;
-                $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 110 : 0));
+                $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 100 : 0));
                 imagettftext($img, 19, 0, $nx, $y + 31, $text, $f['semibold'], $name);
 
                 if (! empty($row['birthday'])) {
-                    $bx = $nx + $this->textWidth($f['semibold'], 19, $name) + 12;
-                    $bw = $this->textWidth($f['medium'], 13, 'SN ' . $row['birthday']) + 20;
-                    $this->roundRect($img, $bx, $y + 12, $bx + $bw, $y + 36, 6, $c('FCE7F3'));
-                    imagettftext($img, 13, 0, $bx + 10, $y + 29, $c('BE185D'), $f['medium'], 'SN ' . $row['birthday']);
+                    $label = '(' . $row['birthday'] . ')';
+                    $bx = $nx + $this->textWidth($f['semibold'], 19, $name) + 8;
+
+                    if ($birthdayThisMonth($row)) {
+                        $bw = $this->textWidth($f['bold'], 16, $label) + 18;
+                        $this->roundRect($img, $bx, $y + 11, $bx + $bw, $y + 37, 13, $c('FEE2E2'));
+                        imagettftext($img, 16, 0, $bx + 9, $y + 30, $c('DC2626'), $f['bold'], $label);
+                    } else {
+                        imagettftext($img, 16, 0, $bx, $y + 30, $faint, $f['regular'], $label);
+                    }
                 }
 
                 imagettftext($img, 14, 0, $nx, $y + 54, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));

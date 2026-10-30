@@ -217,7 +217,7 @@ class SchedulePublicationTest extends TestCase
         $png = $this->export('png')->assertOk()->assertHeader('Content-Type', 'image/png');
         $this->assertStringContainsString('Lich-lam-viec-2030-01-07_2030-01-13-v1.png', (string) $png->headers->get('Content-Disposition'));
         $info = getimagesizefromstring($png->getContent());
-        $this->assertSame(1600, $info[0], 'Ảnh rộng 1600px, bảng phủ kín chiều rộng');
+        $this->assertSame(1800, $info[0], 'Ảnh rộng 1800px, bảng phủ kín chiều rộng');
 
         $xlsx = $this->export('xlsx')->assertOk();
         $this->assertStringContainsString('-v1.xlsx', (string) $xlsx->headers->get('Content-Disposition'));
