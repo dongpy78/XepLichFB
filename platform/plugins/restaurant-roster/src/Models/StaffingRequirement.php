@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class StaffingRequirement extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     public const STATUS_ACTIVE = 'active';
     public const STATUS_DRAFT = 'draft';
     public const STATUS_INACTIVE = 'inactive';

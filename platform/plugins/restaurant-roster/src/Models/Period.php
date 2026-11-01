@@ -6,6 +6,8 @@ use Botble\Base\Models\BaseModel;
 
 class Period extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_periods';
 
     protected $fillable = [

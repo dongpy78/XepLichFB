@@ -1149,12 +1149,15 @@ final class ScheduleState
             }
         }
 
+        // Cân bằng nữ / nam / Waiter M6–A2: một lượt duyệt cho cả ba (hàm được gọi ở mỗi vòng lặp của bộ giải).
+        $genderBalances = $this->genderBalances();
+
         // Người dôi ra trên định biên mục tiêu (để đủ ngày làm) được chia đều giữa các ca: $this->overTarget.
         $fairness = (int) round($this->overTarget * 50 + $variance * 10000 + $heavySquares * 20 + $nightSquares * 20 + $lobbySquares * 10 + $supportSquares * 60);
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $this->femaleBalance(), 'male_balance' => $this->maleBalance(), 'waiter_balance' => $this->waiterBalance(), 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $genderBalances[0], 'male_balance' => $genderBalances[1], 'waiter_balance' => $genderBalances[2], 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -1881,14 +1884,79 @@ final class ScheduleState
      */
     public function femaleBalance(): int
     {
-        return $this->genderBalance(fn ($i, $o, $s) => $this->femaleCount($i, $o, $s));
+        return $this->genderBalances()[0];
     }
 
     /** Như femaleBalance cho nam waiter (không tính cấp quản lý, người đi Night không ở ca sáng / chiều). */
     public function maleBalance(): int
     {
-        return $this->genderBalance(fn ($i, $o, $s) => $this->maleCount($i, $o, $s));
+        return $this->genderBalances()[1];
     }
+
+    /**
+     * [femaleBalance, maleBalance, waiterBalance] trong một lượt duyệt các cặp (ngày, outlet): mỗi cặp đọc 4 số đếm thay vì 16 lần gọi hàm
+     * của ba lượt riêng (tối ưu 01/11/2026 – hàm chấm điểm chạy ở mỗi vòng lặp). Công thức giữ nguyên genderBalance().
+     *
+     * @return array{0: int, 1: int, 2: int}
+     */
+    public function genderBalances(): array
+    {
+        if ($this->balanceKeys === null) {
+            // Lần đầu: khóa đếm của mọi cặp, nhóm theo ngày; tính toàn bộ.
+            $this->balanceKeys = [];
+
+            foreach ($this->femalePairs() as $p) {
+                $this->balanceKeys[$p[0]][] = ["{$p[0]}|{$p[1]}|{$p[2]}", "{$p[0]}|{$p[1]}|{$p[3]}", $p[4], $p[4] + $p[5]];
+            }
+
+            $this->balanceDirty = array_fill_keys(array_keys($this->balanceKeys), true);
+        }
+
+        // Tăng dần: chỉ tính lại các ngày có số đếm nam / nữ thay đổi (adjustCount đánh dấu), cộng trừ vào tổng.
+        foreach ($this->balanceDirty as $i => $_) {
+            $day = [0, 0, 0];
+
+            foreach ($this->balanceKeys[$i] ?? [] as [$kAm, $kPm, $wAm, $wSum]) {
+                $fAm = $this->femaleCount[$kAm] ?? 0;
+                $fTotal = $fAm + ($this->femaleCount[$kPm] ?? 0);
+                $mAm = $this->maleCount[$kAm] ?? 0;
+                $mTotal = $mAm + ($this->maleCount[$kPm] ?? 0);
+                $wTotal = $fTotal + $mTotal;
+
+                if ($fTotal >= 2) {
+                    $day[0] += max(0, (int) ceil(abs($fAm - $fTotal * $wAm / $wSum) - 0.5 - 1e-9));
+                }
+
+                if ($mTotal >= 2) {
+                    $day[1] += max(0, (int) ceil(abs($mAm - $mTotal * $wAm / $wSum) - 0.5 - 1e-9));
+                }
+
+                if ($wTotal >= 2) {
+                    $day[2] += max(0, (int) ceil(abs($fAm + $mAm - $wTotal * $wAm / $wSum) - 0.5 - 1e-9));
+                }
+            }
+
+            $old = $this->balanceDay[$i] ?? [0, 0, 0];
+            $this->balanceTotals = [$this->balanceTotals[0] + $day[0] - $old[0], $this->balanceTotals[1] + $day[1] - $old[1], $this->balanceTotals[2] + $day[2] - $old[2]];
+            $this->balanceDay[$i] = $day;
+        }
+
+        $this->balanceDirty = [];
+
+        return $this->balanceTotals;
+    }
+
+    /** @var array<int, array<int, array{0: string, 1: string, 2: float, 3: float}>>|null [dayIndex] => khóa đếm ca sáng / chiều + tỉ lệ của các cặp femalePairs() */
+    private ?array $balanceKeys = null;
+
+    /** @var array<int, true> Ngày có số đếm nam / nữ đổi từ lần tính genderBalances() gần nhất */
+    private array $balanceDirty = [];
+
+    /** @var array<int, array{0: int, 1: int, 2: int}> [dayIndex] => phạt [nữ, nam, waiter] của ngày */
+    private array $balanceDay = [];
+
+    /** @var array{0: int, 1: int, 2: int} */
+    private array $balanceTotals = [0, 0, 0];
 
     /**
      * Tổng Waiter (nam + nữ, làm trực tiếp – không tính người đi Lobby (L), Kid-Deline, Night, quản lý) chia đều M6 / A2
@@ -1901,29 +1969,50 @@ final class ScheduleState
      */
     public function homeBalance(): int
     {
+        // Tăng dần (tối ưu 01/11/2026): tính đủ lần đầu, sau đó adjustCount cộng / trừ phần của (nhà hàng gốc, ngày) vừa đổi.
+        return $this->homeBalanceSum ??= $this->homeBalanceFull();
+    }
+
+    /** homeBalance tính lại toàn bộ (lần đầu và để đối chiếu trong test). */
+    private function homeBalanceFull(): int
+    {
         $penalty = 0;
 
         foreach ($this->homeShift as $days) {
             foreach ($days as $i => $count) {
-                // Ngày có nhà hàng đóng cửa: cả hai nhóm gộp về nhà hàng còn mở, M6 / A2 cân bằng trên tổng tại đó (waiter_balance),
-                // không chia riêng theo outlet gốc.
-                if (! $this->inScope[$i] || $this->anyRestaurantClosed($i)) {
-                    continue;
-                }
-
-                $am = $count['morning'] ?? 0;
-                $total = $am + ($count['afternoon'] ?? 0);
-
-                if ($total >= 2) {
-                    $penalty += max(0, (int) ceil(abs($am - $total / 2) - 0.5 - 1e-9));
-                }
+                $penalty += $this->homePenalty($i, $count);
             }
         }
 
         return $penalty;
     }
 
+    /** Phạt lệch M6 / A2 của waiter một nhà hàng gốc trong ngày $i. */
+    private function homePenalty(int $i, array $count): int
+    {
+        // Ngày có nhà hàng đóng cửa: cả hai nhóm gộp về nhà hàng còn mở, M6 / A2 cân bằng trên tổng tại đó (waiter_balance),
+        // không chia riêng theo outlet gốc.
+        if (! $this->inScope[$i] || $this->anyRestaurantClosed($i)) {
+            return 0;
+        }
+
+        $am = $count['morning'] ?? 0;
+        $total = $am + ($count['afternoon'] ?? 0);
+
+        return $total >= 2 ? max(0, (int) ceil(abs($am - $total / 2) - 0.5 - 1e-9)) : 0;
+    }
+
+    private ?int $homeBalanceSum = null;
+
     private function anyRestaurantClosed(int $i): bool
+    {
+        return $this->restaurantClosedDay[$i] ??= $this->checkRestaurantClosed($i);
+    }
+
+    /** @var array<int, bool> */
+    private array $restaurantClosedDay = [];
+
+    private function checkRestaurantClosed(int $i): bool
     {
         foreach ($this->problem->restaurantOutletIds as $o) {
             if (isset($this->problem->closedOutletDays[$o][$this->dates[$i]])) {
@@ -1939,7 +2028,7 @@ final class ScheduleState
 
     public function waiterBalance(): int
     {
-        return $this->genderBalance(fn ($i, $o, $s) => $this->waiterCount($i, $o, $s));
+        return $this->genderBalances()[2];
     }
 
     /** Số Waiter (nam + nữ) làm trực tiếp tại outlet trong ca. */
@@ -1986,6 +2075,23 @@ final class ScheduleState
      * (thứ 7 / Chủ nhật được OFF như ngày khác). OFF đã duyệt / ô khóa vẫn giữ (phần không đổi của tổng).
      */
     public function offSpread(): int
+    {
+        // Tăng dần (tối ưu 01/11/2026): tính đủ lần đầu, sau đó adjustCount cộng / trừ phần của (nhóm, ngày) vừa đổi.
+        return $this->offSpreadSum ??= $this->offSpreadFull();
+    }
+
+    private ?int $offSpreadSum = null;
+
+    /** Phần của một (nhóm, ngày) trong offSpread. */
+    private function offSpreadTerm(string $group, int $i, int $working): int
+    {
+        $total = $this->staffTotals()[$group] ?? 0;
+
+        return $total >= 2 && $this->inScope[$i] ? max(0, $total - $working) ** 2 : 0;
+    }
+
+    /** offSpread tính lại toàn bộ (lần đầu và để đối chiếu trong test). */
+    private function offSpreadFull(): int
     {
         $sum = 0;
 
@@ -2147,14 +2253,24 @@ final class ScheduleState
             && in_array($spec->homeOutletId, $this->problem->restaurantOutletIds, true)
             && in_array(strtoupper($this->problem->shifts[$shiftId]->code), $this->problem->rules->balanceShiftCodes, true)
             && in_array($category = $this->problem->shifts[$shiftId]->category(), ['morning', 'afternoon'], true)) {
-            $this->homeShift[$spec->homeOutletId][$i][$category] = ($this->homeShift[$spec->homeOutletId][$i][$category] ?? 0) + $delta;
+            $before = $this->homeShift[$spec->homeOutletId][$i] ?? [];
+            $this->homeShift[$spec->homeOutletId][$i][$category] = ($before[$category] ?? 0) + $delta;
+
+            if ($this->homeBalanceSum !== null) {
+                $this->homeBalanceSum += $this->homePenalty($i, $this->homeShift[$spec->homeOutletId][$i]) - $this->homePenalty($i, $before);
+            }
         }
 
         if ($this->problem->employees[$employeeId]?->isManager ?? false) {
             $this->managerWorking[$i] = ($this->managerWorking[$i] ?? 0) + $delta;
         } elseif (($spec = $this->problem->employees[$employeeId] ?? null) && $this->countsForOffSpread($spec)) {
             $group = self::offGroup($spec);
-            $this->staffWorking[$group][$i] = ($this->staffWorking[$group][$i] ?? 0) + $delta;
+            $before = $this->staffWorking[$group][$i] ?? 0;
+            $this->staffWorking[$group][$i] = $before + $delta;
+
+            if ($this->offSpreadSum !== null) {
+                $this->offSpreadSum += $this->offSpreadTerm($group, $i, $before + $delta) - $this->offSpreadTerm($group, $i, $before);
+            }
         }
 
         if (($this->problem->employees[$employeeId]?->nightRole ?? null) === EmployeeSpec::NIGHT_ROTATION && $this->problem->shifts[$shiftId]->category() === 'night') {
@@ -2223,6 +2339,10 @@ final class ScheduleState
         $this->count[$key] = $before + $delta;
         $this->maleCount[$key] = $beforeMale + ($isMale ? $delta : 0);
         $this->femaleCount[$key] = $beforeFemale + ($isFemaleStaff ? $delta : 0);
+
+        if ($isMale || $isFemaleStaff) {
+            $this->balanceDirty[$i] = true;
+        }
 
         $groups = $this->problem->groupsOfPosition($this->problem->employees[$employeeId]?->positionId);
         $beforeGroups = [];

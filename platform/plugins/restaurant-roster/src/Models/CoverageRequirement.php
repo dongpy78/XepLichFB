@@ -10,6 +10,8 @@ use Botble\Base\Models\BaseModel;
  */
 class CoverageRequirement extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_coverage_requirements';
 
     protected $fillable = [

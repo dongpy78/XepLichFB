@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class StaffingRequirementPosition extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     public const KIND_POSITION = 'position';
     public const KIND_MANAGERS = 'managers';
 

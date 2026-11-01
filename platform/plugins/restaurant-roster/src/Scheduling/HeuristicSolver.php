@@ -1217,6 +1217,8 @@ final class HeuristicSolver implements SolverInterface
                     $best = $real;
                     $bestPlan = $state->plan;
                     $lastBest = $stats['iterations'];
+                    // Thời điểm (ms từ đầu pha tìm kiếm) có phương án tốt nhất – để đo thuật toán hội tụ nhanh đến đâu.
+                    $stats['best_found_ms'] = (int) round((microtime(true) - $startedAt) * 1000);
                 }
             } else {
                 $undo();
@@ -1507,9 +1509,53 @@ final class HeuristicSolver implements SolverInterface
         }
 
         // Mọi tập k ngày OFF hợp lệ: người OFF >= 2 ngày/tuần thì mỗi ngày OFF phải có ngày OFF cạnh bên trong tuần.
+        // Danh sách chỉ phụ thuộc (ngày được quyết định, ngày nghỉ đã biết, OFF hiện tại, quy tắc OFF liền) → nhớ lại thay vì liệt kê
+        // lại tới 2^7 tổ hợp mỗi bước (tối ưu 01/11/2026; cùng thứ tự nên cùng lựa chọn ngẫu nhiên, lịch không đổi).
+        $current = array_flip($offNow);
+        $paired = $employee->daysOffPerWeek >= 2;
+        $options = $this->offOptions[($paired ? 'p' : 's') . implode(',', $decision) . '|' . implode(',', array_keys($knownOff)) . '|' . implode(',', $offNow)]
+            ??= $this->enumerateOffSets($decision, $k, $current, $knownOff, $paired);
+
+        if (! $options) {
+            return null;
+        }
+
+        $newOff = $options[mt_rand(0, count($options) - 1)];
+        $toOff = array_values(array_filter($decision, fn ($d) => isset($newOff[$d]) && ! isset($current[$d])));
+        $toWork = array_values(array_filter($decision, fn ($d) => ! isset($newOff[$d]) && isset($current[$d])));
+
+        return [$toOff, $toWork];
+    }
+
+    /** @var array<int, array<string, int|false>> [nhân viên][outlet|ca] => phần điểm cố định của bestSlotFor (false = không đủ năng lực) */
+    private array $slotRank = [];
+
+    private function staticSlotRank(ScheduleState $state, EmployeeSpec $employee, Requirement $requirement): int|false
+    {
+        $level = $employee->skillLevel($requirement->outletId, $requirement->shiftId);
+
+        if ($level === null) {
+            return false;
+        }
+
+        $home = $state->problem->isHomeOutlet($employee, $requirement->outletId);
+
+        return ($home ? 0 : 400) + (isset($state->problem->outletParents[$requirement->outletId]) && ! $home ? 2000 : 0)
+            + ($level === EmployeeSpec::PRIMARY ? 0 : 60);
+    }
+
+    /** @var array<string, array<int, array<int, true>>> Bộ nhớ danh sách tập ngày OFF của randomOffChange */
+    private array $offOptions = [];
+
+    /**
+     * Mọi tập k ngày OFF trong $decision khác tập hiện tại; $paired: mỗi ngày OFF phải liền một ngày OFF khác (kể cả ngày nghỉ đã biết).
+     *
+     * @return array<int, array<int, true>>
+     */
+    private function enumerateOffSets(array $decision, int $k, array $current, array $knownOff, bool $paired): array
+    {
         $options = [];
         $n = count($decision);
-        $current = array_flip($offNow);
 
         for ($mask = 1; $mask < (1 << $n); $mask++) {
             if (substr_count(decbin($mask), '1') !== $k) {
@@ -1528,7 +1574,7 @@ final class HeuristicSolver implements SolverInterface
                 continue;
             }
 
-            if ($employee->daysOffPerWeek >= 2) {
+            if ($paired) {
                 $all = $set + $knownOff;
 
                 foreach (array_keys($set) as $d) {
@@ -1541,15 +1587,7 @@ final class HeuristicSolver implements SolverInterface
             $options[] = $set;
         }
 
-        if (! $options) {
-            return null;
-        }
-
-        $newOff = $options[mt_rand(0, count($options) - 1)];
-        $toOff = array_values(array_filter($decision, fn ($d) => isset($newOff[$d]) && ! isset($current[$d])));
-        $toWork = array_values(array_filter($decision, fn ($d) => ! isset($newOff[$d]) && isset($current[$d])));
-
-        return [$toOff, $toWork];
+        return $options;
     }
 
     /**
@@ -1566,19 +1604,18 @@ final class HeuristicSolver implements SolverInterface
 
         // Xếp hạng bằng phép tính rẻ trước, chỉ kiểm tra ràng buộc cứng (đắt) theo thứ tự hạng.
         foreach ($state->requirements[$d] ?? [] as $key => $requirement) {
-            $level = $employee->skillLevel($requirement->outletId, $requirement->shiftId);
+            // Phần cố định theo (người, outlet × ca): null = không đủ năng lực; còn lại là điểm outlet chính / khu trực thuộc / chuyên trách.
+            $static = $this->slotRank[$e][$key] ??= $this->staticSlotRank($state, $employee, $requirement);
             $count = $state->count($d, $requirement->outletId, $requirement->shiftId);
 
-            if ($level === null || $count >= $requirement->capacity()) {
+            if ($static === false || $count >= $requirement->capacity()) {
                 continue;
             }
 
             $ranked[$key] = ($count < $requirement->min ? -3000 : 0)
                 + ($count < $requirement->target ? -1000 : max(0, $count - $requirement->target + 1) * 200)
                 + (in_array($key, $preferred, true) ? -300 : 0)
-                + ($state->problem->isHomeOutlet($employee, $requirement->outletId) ? 0 : 400)
-                + (isset($state->problem->outletParents[$requirement->outletId]) && ! $state->problem->isHomeOutlet($employee, $requirement->outletId) ? 2000 : 0)
-                + ($level === EmployeeSpec::PRIMARY ? 0 : 60)
+                + $static
                 + mt_rand(0, 250);
         }
 

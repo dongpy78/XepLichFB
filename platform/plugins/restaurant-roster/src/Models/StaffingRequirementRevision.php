@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class StaffingRequirementRevision extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_staffing_requirement_revisions';
 
     protected $fillable = [

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Run extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_runs';
 
     protected $fillable = [

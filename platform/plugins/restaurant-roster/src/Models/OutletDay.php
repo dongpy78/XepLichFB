@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OutletDay extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_outlet_days';
 
     protected $fillable = [

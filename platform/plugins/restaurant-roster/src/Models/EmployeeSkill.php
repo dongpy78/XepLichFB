@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeSkill extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_employee_skills';
 
     protected $fillable = [

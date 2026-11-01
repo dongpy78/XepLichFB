@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AvailabilityRequest extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_availability_requests';
 
     protected $fillable = [

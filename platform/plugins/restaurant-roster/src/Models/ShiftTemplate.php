@@ -2,7 +2,7 @@
 
 namespace Botble\RestaurantRoster\Models;
 
-use Botble\Base\Casts\SafeContent;
+use Botble\RestaurantRoster\Casts\SafeContent;
 use Botble\Base\Enums\BaseStatusEnum;
 use Botble\Base\Models\BaseModel;
 use Carbon\Carbon;
@@ -10,6 +10,8 @@ use Carbon\CarbonInterface;
 
 class ShiftTemplate extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_shift_templates';
 
     protected $fillable = [

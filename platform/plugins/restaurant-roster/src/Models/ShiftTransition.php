@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ShiftTransition extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_shift_transitions';
 
     protected $fillable = [

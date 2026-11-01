@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class ScheduleGroup extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_schedule_groups';
 
     protected $fillable = [

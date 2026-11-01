@@ -2,13 +2,15 @@
 
 namespace Botble\RestaurantRoster\Models;
 
-use Botble\Base\Casts\SafeContent;
+use Botble\RestaurantRoster\Casts\SafeContent;
 use Botble\Base\Enums\BaseStatusEnum;
 use Botble\Base\Models\BaseModel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Position extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_positions';
 
     protected $fillable = [

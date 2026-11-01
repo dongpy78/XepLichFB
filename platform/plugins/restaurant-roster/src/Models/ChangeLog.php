@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ChangeLog extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_change_logs';
 
     protected $fillable = [

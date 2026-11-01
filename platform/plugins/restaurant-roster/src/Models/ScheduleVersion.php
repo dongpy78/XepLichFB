@@ -9,6 +9,8 @@ use Botble\Base\Models\BaseModel;
  */
 class ScheduleVersion extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_schedule_versions';
 
     protected $fillable = [

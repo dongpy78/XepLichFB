@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Violation extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     protected $table = 'roster_violations';
 
     protected $fillable = [

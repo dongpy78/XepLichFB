@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Shift extends BaseModel
 {
+    use Concerns\FastAttributes;
+
     public const KIND_SHIFT = 'shift';
     public const KIND_OFF = 'off';
     public const KIND_LEAVE = 'leave';
