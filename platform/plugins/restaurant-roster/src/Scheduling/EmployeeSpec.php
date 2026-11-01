@@ -80,9 +80,10 @@ final class EmployeeSpec
         }
 
         // Quản lý: thuật toán không tự điều chuyển sang outlet khác và chỉ tự xếp M6 / A2 (OH, M9 do quản lý xếp tay).
-        // Ngoại lệ: nhà hàng gốc đóng cửa -> được xếp M6 / A2 tại nhà hàng còn hoạt động (closedHomeOutletIds).
+        // Ngoại lệ: nhà hàng gốc đóng cửa -> được xếp M6 / A2 tại nhà hàng còn hoạt động (closedHomeOutletIds);
+        // ca cứng trong hồ sơ (vd quản lý ca cứng OH) là quyết định của quản lý -> được xếp đúng ca đó.
         if ($this->isManager && (($outletId !== $this->homeOutletId && ! in_array($outletId, $this->closedHomeOutletIds, true))
-            || ($this->managerShiftIds !== null && ! in_array($shiftId, $this->managerShiftIds, true)))) {
+            || ($this->managerShiftIds !== null && ! in_array($shiftId, $this->managerShiftIds, true) && ! in_array("{$outletId}:{$shiftId}", $this->fixed, true)))) {
             return null;
         }
 

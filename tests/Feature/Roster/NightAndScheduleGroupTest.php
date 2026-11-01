@@ -1085,9 +1085,21 @@ class NightAndScheduleGroupTest extends TestCase
      */
     public function test_fixed_oh_shift_in_profile_is_scheduled(): void
     {
+        $this->assertFixedOhScheduled([]);
+    }
+
+    /** Quản lý (Junior Restaurant Captain trở lên) có ca cứng OH: ca cứng thắng giới hạn "quản lý chỉ tự xếp M6 / A2". */
+    public function test_manager_with_fixed_oh_shift_is_scheduled(): void
+    {
+        $captain = Position::query()->create(['name' => 'Junior Restaurant Captain', 'is_manager' => true, 'status' => 'published']);
+        $this->assertFixedOhScheduled(['position_id' => $captain->getKey()]);
+    }
+
+    private function assertFixedOhScheduled(array $profile): void
+    {
         $oh = ShiftTemplate::query()->create(['code' => 'OH', 'name' => 'OH', 'start_time' => '08:45:00', 'end_time' => '16:45:00', 'hours' => 8, 'break_minutes' => 0, 'status' => 'published']);
         ShiftTemplate::query()->update(['break_minutes' => 0]);
-        $fixed = $this->employee('GOH', 'GUSTO', 'male', ['fixed_shift_template_id' => $oh->getKey()]);
+        $fixed = $this->employee('GOH', 'GUSTO', 'male', ['fixed_shift_template_id' => $oh->getKey(), ...$profile]);
 
         foreach (['W1' => 'male', 'W2' => 'female', 'W3' => 'female'] as $k => $gender) {
             $this->employee('G' . $k, 'GUSTO', $gender);
