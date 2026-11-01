@@ -70,7 +70,7 @@ class ProblemBuilder
         $employees = Employee::query()
             ->where('status', BaseStatusEnum::PUBLISHED)
             ->where('is_trainee', false)
-            ->with(['skills', 'fixedShift:id,start_time'])
+            ->with(['fixedShift:id,start_time'])
             ->get();
 
         // Điều chuyển giữa các outlet (quản lý 23/10/2026, cấu hình cross_outlet_transfer):
@@ -104,25 +104,15 @@ class ProblemBuilder
 
         $specs = [];
         $decisionIds = [];
-        $fromProfile = (bool) config('plugins.restaurant-roster.general.scheduling.skills_from_profile', true);
         $roomOutletKey = $roomOutletId ? (int) $roomOutletId : null;
 
         foreach ($employees as $employee) {
             $skills = [];
             $fixed = [];
 
-            foreach ($employee->skills as $skill) {
-                $key = $skill->outlet_id . ':' . ($skill->shift_template_id ?: 0);
-                $skills[$key] = $skill->level === EmployeeSpec::PRIMARY ? EmployeeSpec::PRIMARY : EmployeeSpec::ELIGIBLE;
-
-                if ($skill->is_fixed) {
-                    $fixed[] = $key;
-                }
-            }
-
-            // Năng lực mặc định từ hồ sơ (skills_from_profile): làm được mọi ca của outlet chính (quản lý vẫn chỉ tự xếp M6 / A2;
-            // ca nào được tự xếp vẫn theo auto_shift_codes). Room Service theo cờ "Có thể làm Room Service" (bên dưới).
-            if ($fromProfile && $employee->outlet_id && (int) $employee->outlet_id !== $roomOutletKey) {
+            // Năng lực chỉ suy từ hồ sơ (quản lý 01/11/2026: bỏ mục "Ngoại lệ năng lực"): làm được mọi ca của outlet chính (quản lý vẫn
+            // chỉ tự xếp M6 / A2; ca nào được tự xếp vẫn theo auto_shift_codes). Room Service theo cờ trong hồ sơ (bên dưới).
+            if ($employee->outlet_id && (int) $employee->outlet_id !== $roomOutletKey) {
                 $skills["{$employee->outlet_id}:0"] ??= EmployeeSpec::PRIMARY;
             }
 
@@ -147,8 +137,8 @@ class ProblemBuilder
 
             // Room Service (hồ sơ, quản lý 30/10/2026): "cố định" → luôn làm Room Service (đặt cuối vòng lặp); "có thể hỗ trợ" → đủ điều kiện
             // thay thế (mức "đủ điều kiện", làm ngoài outlet chính bị phạt) nên chỉ được xếp khi ca Room Service thiếu người (sức chứa ca
-            // = định biên, ca đã có người cố định thì không còn chỗ). Người không bật không bao giờ được tự xếp vào Room Service,
-            // kể cả có dòng Ngoại lệ năng lực. Ca cứng trong hồ sơ vẫn áp dụng.
+            // = định biên, ca đã có người cố định thì không còn chỗ). Người không bật không bao giờ được tự xếp vào Room Service.
+            // Ca cứng trong hồ sơ vẫn áp dụng.
             if ($roomOutletId) {
                 foreach (array_keys($skills) as $key) {
                     if ((int) explode(':', $key)[0] === $roomOutletId) {
@@ -177,20 +167,17 @@ class ProblemBuilder
                 }
             }
 
-            if ($fromProfile) {
-                $position = $positionNames[(int) $employee->position_id] ?? '';
-                $isManagerLevel = isset($managerPositions[(int) $employee->position_id]);
+            $position = $positionNames[(int) $employee->position_id] ?? '';
+            $isManagerLevel = isset($managerPositions[(int) $employee->position_id]);
 
-                // Nữ waiter outlet nhà hàng → hỗ trợ Lobby (L); OH(L) / M9(L) vẫn lọc theo khu vực sống của mẫu ca.
-                if ($stationId && $employee->gender === 'female' && ! $isManagerLevel && $employee->outlet_id
-                    && ! in_array((int) $employee->outlet_id, [(int) $stationId, $roomOutletKey], true) && ! isset($childStaff[(int) $employee->outlet_id])
-                    && (! $femaleStaffPositions || in_array($position, $femaleStaffPositions, true))) {
-                    $skills["{$stationId}:0"] ??= EmployeeSpec::ELIGIBLE;
-                }
-
+            // Nữ waiter outlet nhà hàng → hỗ trợ Lobby (L); OH(L) / M9(L) vẫn lọc theo khu vực sống của mẫu ca.
+            if ($stationId && $employee->gender === 'female' && ! $isManagerLevel && $employee->outlet_id
+                && ! in_array((int) $employee->outlet_id, [(int) $stationId, $roomOutletKey], true) && ! isset($childStaff[(int) $employee->outlet_id])
+                && (! $femaleStaffPositions || in_array($position, $femaleStaffPositions, true))) {
+                $skills["{$stationId}:0"] ??= EmployeeSpec::ELIGIBLE;
             }
 
-            // Night: chỉ Night cố định được tự xếp ca đêm. Người khác bỏ mọi năng lực ca đêm ở outlet Night (kể cả dòng Ngoại lệ năng lực):
+            // Night: chỉ Night cố định được tự xếp ca đêm. Người khác bỏ mọi năng lực ca đêm ở outlet Night:
             // Night luân phiên do quản lý xếp tay trên Bảng xếp ca (ô xếp tay được giữ nguyên, không bị thuật toán đổi).
             $isNightCore = $employee->isNightCore();
 

@@ -1120,6 +1120,20 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertNull($fixed->fresh()->fixedShiftMismatch(), 'Hồ sơ khớp → không cảnh báo');
     }
 
+    /** Bỏ mục "Ngoại lệ năng lực" (quản lý 01/11/2026): không còn trang / menu; dòng năng lực cũ trong database không còn tác dụng. */
+    public function test_skill_exceptions_removed_and_ignored(): void
+    {
+        $this->assertFalse(app('router')->has('roster.skills.index'), 'Không còn trang Ngoại lệ năng lực');
+        $bartender = $this->employee('GB', 'GUSTO', extra: ['position_id' => Position::query()->create(['name' => 'Bartender', 'status' => 'published'])->getKey()]);
+        EmployeeSkill::query()->create(['employee_id' => $bartender->getKey(), 'outlet_id' => $this->outlets['ROOM']->getKey(), 'level' => 'primary']);
+
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
+        $spec = $problem->employees[$bartender->getKey()];
+        $this->assertSame('primary', $spec->skillLevel($this->outlets['GUSTO']->getKey(), $this->templates['M6']->getKey()), 'Outlet chính theo hồ sơ');
+        $this->assertNull($spec->skillLevel($this->outlets['ROOM']->getKey(), $this->templates['M6']->getKey()), 'Dòng năng lực cũ bị bỏ qua');
+        $this->assertStringNotContainsString('Ngoại lệ năng lực', $this->actingAs($this->user())->get(route('roster.index'))->getContent());
+    }
+
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
     public function test_restaurant_status_requires_manage_permission(): void
     {

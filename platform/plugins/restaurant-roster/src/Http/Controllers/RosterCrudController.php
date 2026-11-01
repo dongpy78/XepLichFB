@@ -25,7 +25,7 @@ abstract class RosterCrudController extends BaseController
     /** @return class-string<Request> */
     abstract protected function request(): string;
 
-    /** Tiền tố route, ví dụ "roster.skills". */
+    /** Tiền tố route, ví dụ "roster.coverage". */
     abstract protected function routePrefix(): string;
 
     abstract protected function title(): string;

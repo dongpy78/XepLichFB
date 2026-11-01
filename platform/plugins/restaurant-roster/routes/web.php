@@ -115,10 +115,6 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                     Route::resource('', 'ShiftTemplateController')->parameters(['' => 'shift_template']);
                 });
 
-                Route::group(['prefix' => 'skills', 'as' => 'skills.'], function (): void {
-                    Route::resource('', 'EmployeeSkillController')->parameters(['' => 'skill'])->except('show');
-                });
-
                 Route::group(['prefix' => 'requirements', 'as' => 'requirements.'], function (): void {
                     Route::post('preview', 'StaffingRequirementController@preview')->name('preview');
                     Route::post('{requirement}/status', 'StaffingRequirementController@status')->name('status')->wherePrimaryKey('requirement');

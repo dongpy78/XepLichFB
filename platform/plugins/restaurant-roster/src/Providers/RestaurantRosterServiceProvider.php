@@ -163,15 +163,6 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'permissions' => ['roster.settings'],
                 ])
                 ->registerItem([
-                    'id' => 'cms-plugins-restaurant-roster-skills',
-                    'priority' => 7,
-                    'parent_id' => 'cms-plugins-restaurant-roster',
-                    'name' => 'Ngoại lệ năng lực',
-                    'icon' => 'ti ti-certificate',
-                    'route' => 'roster.skills.index',
-                    'permissions' => ['roster.settings'],
-                ])
-                ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster-outlet-days',
                     'priority' => 8,
                     'parent_id' => 'cms-plugins-restaurant-roster',

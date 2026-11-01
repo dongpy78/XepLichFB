@@ -86,10 +86,6 @@ return [
         // từ 2 người của giới đó; Night, Lobby, OFF đã duyệt vẫn ưu tiên trước.
         'open_slot_gender_presence' => true,
         'cross_outlet_transfer' => 'auto',
-        // Năng lực tự suy từ hồ sơ (quản lý 25/10/2026): outlet chính → làm được mọi ca của outlet đó; nữ waiter outlet nhà hàng → hỗ trợ Lobby;
-        // nam waiter Villa / Gusto / Night bật "Luân phiên Night" → làm được ca đêm. Mục "Ngoại lệ năng lực" chỉ để khai thêm ngoài mặc định.
-        // false = như trước: chỉ theo dòng năng lực đã khai.
-        'skills_from_profile' => true,
         // Mã ca thuật toán được TỰ xếp (quản lý 24/10/2026). "OH" (OH ở nhà hàng) không có trong danh sách → chỉ quản lý xếp tay;
         // "OH(L)" là OH hỗ trợ Lobby. "N" = ca Night (chỉ người bật Night cố định). Ô quản lý xếp tay hoặc khóa không bị lọc.
         'auto_shift_codes' => ['M6', 'A2', 'N', 'OH(L)', 'M9(L)', 'M6(L)', 'A2(L)', 'M6(K)', 'A2(K)'],
