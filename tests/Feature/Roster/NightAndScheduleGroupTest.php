@@ -1097,7 +1097,9 @@ class NightAndScheduleGroupTest extends TestCase
 
     private function assertFixedOhScheduled(array $profile): void
     {
-        $oh = ShiftTemplate::query()->create(['code' => 'OH', 'name' => 'OH', 'start_time' => '08:45:00', 'end_time' => '16:45:00', 'hours' => 8, 'break_minutes' => 0, 'status' => 'published']);
+        // Cấu hình OH như dữ liệu thật (migration 2026_10_22_000005): khung Lobby 08:45–16:45, chỉ người ở Nha Trang (xe đưa đón).
+        $oh = ShiftTemplate::query()->create(['code' => 'OH', 'name' => 'OH', 'start_time' => '08:45:00', 'end_time' => '16:45:00', 'hours' => 8, 'break_minutes' => 0, 'status' => 'published',
+            'lobby_start_time' => '08:45:00', 'lobby_end_time' => '16:45:00', 'allowed_residence' => 'nha_trang']);
         ShiftTemplate::query()->update(['break_minutes' => 0]);
         $fixed = $this->employee('GOH', 'GUSTO', 'male', ['fixed_shift_template_id' => $oh->getKey(), ...$profile]);
 
@@ -1113,6 +1115,9 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame(['OH'], $shifts->where('kind', Shift::KIND_SHIFT)->map(fn (Shift $s) => $s->notation)->unique()->values()->all());
         $this->assertSame([$this->outlets['GUSTO']->getKey()], $shifts->where('kind', Shift::KIND_SHIFT)->pluck('outlet_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
         $this->assertSame(0, Shift::query()->where('employee_id', '!=', $fixed->getKey())->where('shift_template_id', $oh->getKey())->count(), 'Người khác không tự xếp OH');
+        $this->assertStringContainsString('Ca cứng OH chỉ dành cho người ở Nha Trang (xe đưa đón) (hồ sơ: chưa khai khu vực)', (string) $fixed->fixedShiftMismatch(), 'Cảnh báo hồ sơ không khớp');
+        $fixed->update(['residence' => 'nha_trang']);
+        $this->assertNull($fixed->fresh()->fixedShiftMismatch(), 'Hồ sơ khớp → không cảnh báo');
     }
 
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */

@@ -90,6 +90,29 @@ class Employee extends BaseModel
         return $code;
     }
 
+    /**
+     * Ca cứng trong hồ sơ không khớp giới hạn của mẫu ca (khu vực / giới tính / vị trí) – vẫn được xếp theo ca cứng, chỉ để cảnh báo.
+     */
+    public function fixedShiftMismatch(): ?string
+    {
+        $template = $this->fixed_shift_template_id ? ShiftTemplate::query()->find($this->fixed_shift_template_id) : null;
+
+        if (! $template) {
+            return null;
+        }
+
+        $issues = array_filter([
+            $template->allowed_residence && $template->allowed_residence !== $this->residence
+                ? 'chỉ dành cho người ở ' . (config('plugins.restaurant-roster.general.residences.' . $template->allowed_residence) ?? $template->allowed_residence)
+                    . ' (hồ sơ: ' . ($this->residence ? config('plugins.restaurant-roster.general.residences.' . $this->residence, $this->residence) : 'chưa khai khu vực') . ')'
+                : null,
+            $template->allowed_gender && $template->allowed_gender !== $this->gender ? 'chỉ dành cho nhân viên ' . ($template->allowed_gender === 'female' ? 'nữ' : 'nam') : null,
+            $template->allowed_position_id && (int) $template->allowed_position_id !== (int) $this->position_id ? 'chỉ dành cho một vị trí khác' : null,
+        ]);
+
+        return $issues ? sprintf('Ca cứng %s %s – vẫn tự xếp %s theo ca cứng; kiểm tra lại hồ sơ nếu chưa đúng.', $template->code, implode(', ', $issues), $template->code) : null;
+    }
+
     /** Vị trí sắp nữ trước nam (gender_order_positions, mặc định Waiter). */
     public static function genderOrderedPositionIds(): array
     {

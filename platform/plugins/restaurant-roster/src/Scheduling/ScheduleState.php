@@ -662,22 +662,26 @@ final class ScheduleState
             return ['transfer', sprintf('%s vẫn hoạt động ngày này – không tự điều chuyển sang %s', $this->problem->outletName($employee->homeOutletId), $this->problem->outletName($outletId))];
         }
 
-        if ($checkEligibility && $shift->allowedGender !== null && $employee->gender !== $shift->allowedGender) {
+        // Ca cứng quản lý đặt trong hồ sơ (vd ca cứng OH), làm trực tiếp (không đi Lobby): là quyết định của quản lý nên được xếp dù
+        // không khớp giới hạn của mẫu ca (khu vực / giới tính / vị trí) hay auto_shift_codes – lỗi 01/11/2026: OH chỉ cho người ở
+        // Nha Trang → người có ca cứng OH ở Cam Ranh / chưa khai khu vực bị OFF cả tuần. Khi lưu hồ sơ có cảnh báo không khớp.
+        $profileFixed = ! $support && $employee->fixed && in_array("{$outletId}:{$shiftId}", $employee->fixed, true);
+
+        if ($checkEligibility && ! $profileFixed && $shift->allowedGender !== null && $employee->gender !== $shift->allowedGender) {
             return ['gender', sprintf('Ca %s chỉ dành cho nhân viên %s', $shift->code, $shift->allowedGender === 'female' ? 'nữ' : 'nam')];
         }
 
-        if ($checkEligibility && $shift->allowedPositionId !== null && $employee->positionId !== $shift->allowedPositionId) {
+        if ($checkEligibility && ! $profileFixed && $shift->allowedPositionId !== null && $employee->positionId !== $shift->allowedPositionId) {
             return ['position', "Ca {$shift->code} chỉ dành cho một vị trí nhất định (vd Waiter)"];
         }
 
-        if ($checkEligibility && $shift->allowedResidence !== null && $employee->residence !== $shift->allowedResidence) {
+        if ($checkEligibility && ! $profileFixed && $shift->allowedResidence !== null && $employee->residence !== $shift->allowedResidence) {
             return ['residence', sprintf('Ca %s chỉ dành cho nhân viên ở khu vực "%s" (xe đưa đón)', $shift->code, $shift->allowedResidence)];
         }
 
         // Danh sách ca được tự xếp (auto_shift_codes): vd "OH(L)" được, "OH" (OH ở nhà hàng, không hỗ trợ Lobby) thì không.
         // Ngoại lệ: ca cứng quản lý đặt trong hồ sơ (vd ca cứng OH) – đúng ca đó, làm trực tiếp (không đi Lobby) luôn được xếp.
-        if ($checkEligibility && $this->problem->rules->autoShiftCodes !== null
-            && ! (! $support && $employee->fixed && in_array("{$outletId}:{$shiftId}", $employee->fixed, true))
+        if ($checkEligibility && $this->problem->rules->autoShiftCodes !== null && ! $profileFixed
             && ! in_array($code = $this->shiftKey($outletId, $shiftId, $support), $this->problem->rules->autoShiftCodes, true)) {
             return ['not_allowed', "Ca {$code} không thuộc danh sách ca được xếp tự động (chỉ quản lý xếp tay)"];
         }

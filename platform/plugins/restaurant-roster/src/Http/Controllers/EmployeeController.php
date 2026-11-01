@@ -56,7 +56,8 @@ class EmployeeController extends BaseController
             ->httpResponse()
             ->setPreviousUrl(route('roster.employees.index'))
             ->setNextUrl(route('roster.employees.edit', $employee->getKey()))
-            ->withCreatedSuccessMessage();
+            ->withCreatedSuccessMessage()
+            ->when($warning = $employee->fixedShiftMismatch(), fn ($response) => $response->setMessage($response->getMessage() . ' ⚠ ' . $warning));
     }
 
     public function edit(Employee $employee)
@@ -85,7 +86,9 @@ class EmployeeController extends BaseController
         return $this
             ->httpResponse()
             ->setPreviousUrl(route('roster.employees.index'))
-            ->withUpdatedSuccessMessage();
+            ->withUpdatedSuccessMessage()
+            // Ca cứng không khớp giới hạn của mẫu ca (vd OH chỉ cho người ở Nha Trang): vẫn tự xếp theo ca cứng, báo để quản lý kiểm tra hồ sơ.
+            ->when($warning = $employee->fresh()->fixedShiftMismatch(), fn ($response) => $response->setMessage($response->getMessage() . ' ⚠ ' . $warning));
     }
 
     public function destroy(Employee $employee)
