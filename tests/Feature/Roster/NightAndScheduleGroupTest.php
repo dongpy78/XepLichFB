@@ -1043,33 +1043,37 @@ class NightAndScheduleGroupTest extends TestCase
      */
     public function test_new_employee_gets_unique_auto_code(): void
     {
-        $this->employee('NV-0007', 'GUSTO');
-        $this->employee('NV-0012', 'GUSTO');
-        $this->employee('NV-0013X', 'GUSTO');
+        $this->employee('FB-0007', 'GUSTO');
+        $this->employee('FB-0012', 'GUSTO');
+        $this->employee('NV-9999', 'GUSTO');
+        $this->employee('FB-0013X', 'GUSTO');
         $this->employee('TS1', 'VILLA');
         $user = $this->user();
         $payload = fn (array $extra = []) => ['name' => 'Synthetic New', 'outlet_id' => $this->outlets['GUSTO']->getKey(), 'position_id' => $this->waiter->getKey(),
             'gender' => 'female', 'employment_type' => array_key_first(config('plugins.restaurant-roster.general.employment_types')), 'weekly_hours' => 48,
             'days_off_per_week' => 2, 'status' => 'published', 'code' => '', ...$extra];
 
-        $this->actingAs($user)->get(route('roster.employees.create'))->assertOk()->assertSee('Tự tạo: NV-0013', false);
+        $create = $this->actingAs($user)->get(route('roster.employees.create'))->assertOk()->assertSee('Tự tạo: FB-0013', false);
+        // Kiểm tra phía trình duyệt (Botble dựng từ quy tắc) không được bắt buộc mã khi thêm mới.
+        $this->assertStringNotContainsString('Mã nhân viên field is required', html_entity_decode((string) $create->getContent()));
+        $this->assertSame('nullable', (new \Botble\RestaurantRoster\Http\Requests\EmployeeRequest())->rules()['code'][0]);
 
         $this->actingAs($user)->post(route('roster.employees.create.store'), $payload())->assertSessionHasNoErrors();
         $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic New 2']))->assertSessionHasNoErrors();
-        $this->assertSame(['NV-0013', 'NV-0014'], Employee::query()->whereIn('name', ['Synthetic New', 'Synthetic New 2'])->orderBy('id')->pluck('code')->all());
+        $this->assertSame(['FB-0013', 'FB-0014'], Employee::query()->whereIn('name', ['Synthetic New', 'Synthetic New 2'])->orderBy('id')->pluck('code')->all());
 
         $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic Manual', 'code' => 'ABC-1']))->assertSessionHasNoErrors();
         $this->assertSame('ABC-1', Employee::query()->where('name', 'Synthetic Manual')->value('code'), 'Nhập tay giữ nguyên');
 
-        $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic Dup', 'code' => 'NV-0013']))->assertSessionHasErrors('code');
-        $this->assertSame(1, Employee::query()->where('code', 'NV-0013')->count(), 'Không trùng mã');
-        $this->assertSame('NV-0015', Employee::nextCode());
+        $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic Dup', 'code' => 'FB-0013']))->assertSessionHasErrors('code');
+        $this->assertSame(1, Employee::query()->where('code', 'FB-0013')->count(), 'Không trùng mã');
+        $this->assertSame('FB-0015', Employee::nextCode());
 
         // Form không còn ô "Thứ tự trong nhóm"; lưu hồ sơ qua form (không đổi vị trí / giới) giữ nguyên thứ tự.
-        $first = Employee::query()->where('code', 'NV-0013')->first();
+        $first = Employee::query()->where('code', 'FB-0013')->first();
         $order = $first->schedule_order;
         $this->actingAs($user)->get(route('roster.employees.edit', $first->getKey()))->assertOk()->assertDontSee('Thứ tự trong nhóm');
-        $this->actingAs($user)->post(route('roster.employees.edit.update', $first->getKey()), $payload(['name' => 'Synthetic New Renamed', 'code' => 'NV-0013']))
+        $this->actingAs($user)->post(route('roster.employees.edit.update', $first->getKey()), $payload(['name' => 'Synthetic New Renamed', 'code' => 'FB-0013']))
             ->assertSessionHasNoErrors();
         $this->assertSame([$order, 'Synthetic New Renamed'], [$first->fresh()->schedule_order, $first->fresh()->name]);
     }

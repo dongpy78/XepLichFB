@@ -14,8 +14,9 @@ class EmployeeRequest extends Request
 
         return [
             'code' => [
-                // Thêm mới: để trống = hệ thống tự tạo (prepareForValidation). Sửa: bắt buộc.
-                'required',
+                // Thêm mới: để trống = hệ thống tự tạo (prepareForValidation) – không "required", vì Botble dựng kiểm tra phía trình duyệt
+                // từ các quy tắc này và sẽ chặn form trước khi kịp tự tạo. Sửa: bắt buộc.
+                $employee ? 'required' : 'nullable',
                 'string',
                 'max:30',
                 Rule::unique('roster_employees', 'code')->ignore($employee),
