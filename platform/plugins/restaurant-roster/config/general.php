@@ -68,6 +68,8 @@ return [
         'female_staff_positions' => ['Waiter'],
         // Vị trí được tính là "nam waiter" cho định biên nam M6 / A2 (Định biên nhân sự → Nam tối thiểu / mục tiêu). Không tính cấp quản lý.
         'male_staff_positions' => ['Waiter'],
+        // Bảng xếp ca (và ảnh / Excel / PDF): trong các vị trí này, nữ hiện trước rồi đến nam (quản lý 01/11/2026).
+        'gender_order_positions' => ['Waiter'],
         // Điều chuyển giữa outlet nhà hàng (quản lý 23/10/2026: ưu tiên xếp đủ người các outlet, quản lý chỉnh sau):
         // "auto" = waiter / hostess (transfer_positions) và Night đa năng tự đủ điều kiện thay thế ở các outlet transfer_outlets;
         //          người outlet chính vẫn được ưu tiên, không rút người làm outlet nguồn dưới tối thiểu.

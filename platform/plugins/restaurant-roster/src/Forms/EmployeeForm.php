@@ -56,7 +56,7 @@ class EmployeeForm extends FormAbstract
                 'schedule_order',
                 NumberField::class,
                 NumberFieldOption::make()->label('Thứ tự trong nhóm')->min(0)->max(9999)->colspan(1)
-                    ->helperText('Số nhỏ hiện trước. Để trống = theo vị trí rồi mã nhân viên.')
+                    ->helperText('Thứ tự trong cùng vị trí (Waiter: nữ trước, nam sau). Số nhỏ hiện trước. Để trống = tự đưa xuống cuối nhóm.')
             )
             ->add(
                 'position_id',

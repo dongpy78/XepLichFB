@@ -55,6 +55,55 @@ class Employee extends BaseModel
         'training_to' => 'date',
     ];
 
+    protected static function booted(): void
+    {
+        // Thứ tự trên Bảng xếp ca (quản lý 01/11/2026): nhân viên mới, hoặc đổi vị trí / giới tính / khu hiển thị mà không tự đặt thứ tự,
+        // được đưa xuống cuối nhóm của mình (vd Waiter nữ mới: sau Waiter nữ cuối cùng, trước Waiter nam đầu tiên). Người cũ không đổi.
+        static::saving(function (Employee $employee): void {
+            $moved = $employee->exists && $employee->isDirty(['position_id', 'gender', 'schedule_group_id', 'outlet_id']) && ! $employee->isDirty('schedule_order');
+
+            if ($employee->schedule_order === null || $moved) {
+                $employee->schedule_order = $employee->nextScheduleOrder();
+            }
+        });
+    }
+
+    /** Vị trí sắp nữ trước nam (gender_order_positions, mặc định Waiter). */
+    public static function genderOrderedPositionIds(): array
+    {
+        $names = array_map(fn ($n) => mb_strtolower(trim((string) $n)), (array) config('plugins.restaurant-roster.general.scheduling.gender_order_positions', ['Waiter']));
+
+        return Position::query()->get(['id', 'name'])->filter(fn (Position $p) => in_array(mb_strtolower(trim((string) $p->name)), $names, true))
+            ->map(fn (Position $p) => (int) $p->getKey())->values()->all();
+    }
+
+    /** Hạng giới trong vị trí sắp theo giới: 0 = nữ, 1 = nam, 2 = chưa khai; vị trí khác luôn 0. */
+    public function genderOrderRank(?array $orderedPositionIds = null): int
+    {
+        if (! in_array((int) $this->position_id, $orderedPositionIds ?? self::genderOrderedPositionIds(), true)) {
+            return 0;
+        }
+
+        return ['female' => 0, 'male' => 1][$this->gender] ?? 2;
+    }
+
+    /** Thứ tự cuối nhóm: cùng khu hiển thị, cùng vị trí (và cùng giới nếu vị trí sắp theo giới) → lớn nhất + 10. */
+    public function nextScheduleOrder(): int
+    {
+        $query = self::query()->whereKeyNot($this->getKey() ?? 0)
+            ->when($this->schedule_group_id, fn ($q) => $q->where('schedule_group_id', $this->schedule_group_id),
+                fn ($q) => $q->whereNull('schedule_group_id')->where('outlet_id', $this->outlet_id))
+            ->when($this->position_id, fn ($q) => $q->where('position_id', $this->position_id), fn ($q) => $q->whereNull('position_id'));
+
+        if (in_array((int) $this->position_id, self::genderOrderedPositionIds(), true)) {
+            in_array($this->gender, ['female', 'male'], true)
+                ? $query->where('gender', $this->gender)
+                : $query->where(fn ($q) => $q->whereNull('gender')->orWhereNotIn('gender', ['female', 'male']));
+        }
+
+        return min(9990, (int) $query->max('schedule_order') + 10);
+    }
+
     public function fixedShift(): BelongsTo
     {
         return $this->belongsTo(ShiftTemplate::class, 'fixed_shift_template_id');

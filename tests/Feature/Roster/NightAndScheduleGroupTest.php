@@ -975,6 +975,68 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame($this->outlets['VILLA']->getKey(), (int) $villaWaiter->fresh()->outlet_id);
     }
 
+    /**
+     * Thứ tự Waiter (quản lý 01/11/2026): nữ trước, nam sau; nhân viên mới vào cuối nhóm giới của mình (không xuống cuối danh sách,
+     * không sắp theo tên); người cũ giữ thứ tự; tải lại / đổi tên không đảo thứ tự; ảnh lịch theo đúng thứ tự bảng.
+     */
+    public function test_waiters_female_first_and_new_staff_join_end_of_their_group(): void
+    {
+        $captain = Position::query()->create(['name' => 'Junior Restaurant Captain', 'is_manager' => true, 'order' => 1, 'status' => 'published']);
+        $this->waiter->update(['order' => 5]);
+        // Mã và tên cố ý ngược thứ tự thêm vào để chắc chắn không sắp theo tên / mã.
+        $people = [
+            'A' => $this->employee('Z9', 'GUSTO', 'female', ['name' => 'Synthetic Zeta']),
+            'C' => $this->employee('Z1', 'GUSTO', 'male', ['name' => 'Synthetic Alpha']),
+            'B' => $this->employee('Y5', 'GUSTO', 'female', ['name' => 'Synthetic Beta']),
+            'D' => $this->employee('Y1', 'GUSTO', 'male', ['name' => 'Synthetic Delta']),
+            'K' => $this->employee('ZZ', 'GUSTO', 'male', ['name' => 'Synthetic Captain', 'position_id' => $captain->getKey()]),
+        ];
+        $this->assertSame(['K', 'A', 'B', 'C', 'D'], $this->rowOrder($this->gridHtml(), $people), 'Quản lý → Waiter nữ → Waiter nam');
+
+        $people['E'] = $this->employee('A0', 'GUSTO', 'female', ['name' => 'Synthetic Aaa']);
+        $this->assertSame(['K', 'A', 'B', 'E', 'C', 'D'], $this->rowOrder($this->gridHtml(), $people), 'Waiter nữ mới: cuối nhóm nữ, trước nam đầu tiên');
+
+        $people['F'] = $this->employee('A1', 'GUSTO', 'male', ['name' => 'Synthetic Aab']);
+        $this->assertSame(['K', 'A', 'B', 'E', 'C', 'D', 'F'], $this->rowOrder($this->gridHtml(), $people), 'Waiter nam mới: cuối nhóm nam');
+
+        $people['A']->update(['name' => 'Synthetic Zeta 2']);
+        $people['A'] = $people['A']->fresh();
+        $this->assertSame(['K', 'A', 'B', 'E', 'C', 'D', 'F'], $this->rowOrder($this->gridHtml(), $people), 'Sửa hồ sơ không đảo thứ tự');
+
+        $request = request()->merge(['week' => self::WEEK]);
+        $snapshot = app(\Botble\RestaurantRoster\Services\ScheduleSnapshotService::class)->fromGrid(
+            (fn () => $this->buildGrid($request))->call(app(\Botble\RestaurantRoster\Http\Controllers\RosterController::class)));
+        $this->assertSame(array_map(fn ($k) => $people[$k]->name, ['K', 'A', 'B', 'E', 'C', 'D', 'F']), array_column($snapshot['sections'][0]['rows'], 'name'), 'Ảnh / Excel / PDF cùng thứ tự');
+    }
+
+    /** Migration đánh số "Thứ tự trong nhóm" theo thứ tự hiện tại (thứ tự đã đặt → mã); Waiter nữ / nam đánh số riêng. */
+    public function test_migration_freezes_current_order_per_group(): void
+    {
+        $a = $this->employee('B2', 'GUSTO', 'female');
+        $b = $this->employee('B1', 'GUSTO', 'female');
+        $c = $this->employee('A9', 'GUSTO', 'male');
+        \Illuminate\Support\Facades\DB::table('roster_employees')->update(['schedule_order' => null]);
+        \Illuminate\Support\Facades\DB::table('roster_employees')->where('id', $a->getKey())->update(['schedule_order' => 3]);
+
+        (require dirname(__DIR__, 3) . '/platform/plugins/restaurant-roster/database/migrations/2026_11_01_000001_freeze_schedule_order_by_position_and_gender.php')->up();
+
+        $this->assertSame([10, 20, 10], [$a->fresh()->schedule_order, $b->fresh()->schedule_order, $c->fresh()->schedule_order], 'Đã đặt thứ tự trước, trống theo mã; nữ / nam riêng');
+    }
+
+    /** Khu gộp Villa + Gusto (một nhà hàng đóng cả tuần): Waiter nữ của cả hai trước, nam sau; trong mỗi giới theo nhà hàng gốc rồi thứ tự cũ. */
+    public function test_merged_restaurants_list_female_waiters_before_male(): void
+    {
+        $people = [
+            'GM' => $this->employee('GM', 'GUSTO', 'male'),
+            'GF' => $this->employee('GF', 'GUSTO', 'female'),
+            'VM' => $this->employee('VM', 'VILLA', 'male'),
+            'VF' => $this->employee('VF', 'VILLA', 'female'),
+        ];
+        $this->closeAllWeek('VILLA');
+
+        $this->assertSame(['GF', 'VF', 'GM', 'VM'], $this->rowOrder($this->gridHtml(), $people));
+    }
+
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
     public function test_restaurant_status_requires_manage_permission(): void
     {

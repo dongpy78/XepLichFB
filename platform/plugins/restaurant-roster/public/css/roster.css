@@ -534,7 +534,7 @@
     background: currentColor;
     opacity: .45;
 }
-
+    
 .roster-mini--off.is-draft::after { display: none; }
 
 /* Cảnh báo xung đột */

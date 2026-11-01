@@ -952,12 +952,15 @@ class RosterController extends BaseController
             return $base;
         };
 
+        // Thứ tự trong khu (quản lý 01/11/2026): cấp bậc (thứ tự vị trí) → Waiter nữ trước, Waiter nam sau → (khu gộp: nhà hàng gốc) →
+        // "Thứ tự trong nhóm" (nhân viên mới tự nhận số cuối nhóm của mình) → mã nhân viên. Không sắp theo tên.
+        $genderPositions = Employee::genderOrderedPositionIds();
         $employees = $this->employeeQuery($request, $merge)
             ->with(['position:id,name,order', 'outlet:id,name,code,order', 'fixedShift:id,code,start_time', 'scheduleGroup'])
             ->get()
-            ->sortBy(fn (Employee $employee) => ($s = $section($employee)) && ! empty($s['merged'])
-                ? sprintf('%05d|%s|%05d|%05d|%s', $s['order'], $s['key'], $employee->position->order ?? 99999, $employee->schedule_order ?? 99999, $employee->code)
-                : sprintf('%05d|%s|%05d|%05d|%s', $s['order'], $s['key'], $employee->schedule_order ?? 99999, $employee->position->order ?? 99999, $employee->code))
+            ->sortBy(fn (Employee $employee) => sprintf('%05d|%s|%05d|%d|%05d|%05d|%s', ($s = $section($employee))['order'], $s['key'],
+                $employee->position->order ?? 99999, $employee->genderOrderRank($genderPositions),
+                ! empty($s['merged']) ? $baseSection($employee)['order'] : 0, $employee->schedule_order ?? 99999, $employee->code))
             ->values();
 
         // Lấy thêm 7 ngày trước tuần đang xem để kiểm tra ngày làm liên tục và giờ nghỉ đầu tuần.
