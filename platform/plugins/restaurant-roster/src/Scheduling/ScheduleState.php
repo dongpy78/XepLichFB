@@ -675,7 +675,9 @@ final class ScheduleState
         }
 
         // Danh sách ca được tự xếp (auto_shift_codes): vd "OH(L)" được, "OH" (OH ở nhà hàng, không hỗ trợ Lobby) thì không.
+        // Ngoại lệ: ca cứng quản lý đặt trong hồ sơ (vd ca cứng OH) – đúng ca đó, làm trực tiếp (không đi Lobby) luôn được xếp.
         if ($checkEligibility && $this->problem->rules->autoShiftCodes !== null
+            && ! (! $support && $employee->fixed && in_array("{$outletId}:{$shiftId}", $employee->fixed, true))
             && ! in_array($code = $this->shiftKey($outletId, $shiftId, $support), $this->problem->rules->autoShiftCodes, true)) {
             return ['not_allowed', "Ca {$code} không thuộc danh sách ca được xếp tự động (chỉ quản lý xếp tay)"];
         }

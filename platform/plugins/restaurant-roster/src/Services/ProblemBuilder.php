@@ -1123,6 +1123,12 @@ class ProblemBuilder
         $closed = OutletDay::query()->whereIn('outlet_id', $outletIds)->where('is_closed', true)
             ->whereDate('date', '>=', reset($days))->whereDate('date', '<=', end($days))->get()
             ->mapWithKeys(fn ($d) => [$d->outlet_id . '|' . $d->date->toDateString() => true]);
+        // Ca cứng trong hồ sơ ngoài M6 / A2 (vd OH ở nhà hàng): mở chỗ đúng ca đó, sức chứa = số người có ca cứng này. Chỉ người có
+        // ca cứng được xếp vào (ca ngoài auto_shift_codes vẫn bị chặn với người khác). Mở ở mọi nhà hàng để ngày nhà hàng gốc đóng
+        // cửa họ vẫn làm được ca cứng tại nhà hàng còn mở.
+        $fixedShifts = Employee::query()->where('status', BaseStatusEnum::PUBLISHED)->whereIn('outlet_id', $outletIds)
+            ->whereNotNull('fixed_shift_template_id')->whereNotIn('fixed_shift_template_id', $templates)
+            ->selectRaw('fixed_shift_template_id, count(*) as n')->groupBy('fixed_shift_template_id')->pluck('n', 'fixed_shift_template_id');
         $slots = [];
 
         foreach ($days as $date) {
@@ -1133,6 +1139,10 @@ class ProblemBuilder
 
                 foreach ($templates as $templateId) {
                     $slots[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, (int) $outletId, (int) $templateId, 0, 0, max(1, (int) ($staff[$outletId] ?? 0) + 2));
+                }
+
+                foreach ($fixedShifts as $templateId => $count) {
+                    $slots[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, (int) $outletId, (int) $templateId, 0, 0, (int) $count);
                 }
             }
         }

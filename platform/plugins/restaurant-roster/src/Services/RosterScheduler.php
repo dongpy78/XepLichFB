@@ -281,6 +281,8 @@ class RosterScheduler
         $existing = Shift::query()->whereBetween('date', [$run->scope_from->toDateString(), $run->scope_to->toDateString()])->get()
             ->keyBy(fn (Shift $s) => $s->employee_id . '|' . $s->date->toDateString());
         $names = Employee::query()->pluck('name', 'id');
+        // Ca cứng trong hồ sơ (vd OH) là quyết định của quản lý – được tự xếp dù không thuộc auto_shift_codes.
+        $fixedShifts = Employee::query()->whereNotNull('fixed_shift_template_id')->pluck('fixed_shift_template_id', 'id');
         $invalid = [];
 
         foreach ($run->proposal['assignments'] ?? [] as $row) {
@@ -297,7 +299,9 @@ class RosterScheduler
             $current = $existing[$row['employee_id'] . '|' . $row['date']] ?? null;
             $unchanged = $current && $current->kind === Shift::KIND_SHIFT && (int) $current->shift_template_id === (int) $row['shift_id'] && (int) $current->outlet_id === $outletId;
 
-            if (! in_array($code, $allowed, true) && ! $unchanged) {
+            $isFixedShift = empty($row['support']) && (int) ($fixedShifts[$row['employee_id']] ?? 0) === (int) $row['shift_id'];
+
+            if (! in_array($code, $allowed, true) && ! $unchanged && ! $isFixedShift) {
                 $invalid[] = sprintf('%s %s %s', $names[$row['employee_id']] ?? "#{$row['employee_id']}", date('d/m', strtotime($row['date'])), $code);
             }
         }

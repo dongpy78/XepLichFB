@@ -1078,6 +1078,31 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame([$order, 'Synthetic New Renamed'], [$first->fresh()->schedule_order, $first->fresh()->name]);
     }
 
+    /**
+     * Ca cứng OH trong hồ sơ (lỗi 01/11/2026: bị OFF cả tuần): "OH" ở nhà hàng không thuộc auto_shift_codes và nhà hàng chỉ có chỗ M6 / A2
+     * → người có ca cứng OH không còn ô nào. Nay: chỗ OH được mở cho đúng người có ca cứng, xếp OH đủ ngày công, áp dụng không bị chặn;
+     * người khác vẫn không được tự xếp OH.
+     */
+    public function test_fixed_oh_shift_in_profile_is_scheduled(): void
+    {
+        $oh = ShiftTemplate::query()->create(['code' => 'OH', 'name' => 'OH', 'start_time' => '08:45:00', 'end_time' => '16:45:00', 'hours' => 8, 'break_minutes' => 0, 'status' => 'published']);
+        ShiftTemplate::query()->update(['break_minutes' => 0]);
+        $fixed = $this->employee('GOH', 'GUSTO', 'male', ['fixed_shift_template_id' => $oh->getKey()]);
+
+        foreach (['W1' => 'male', 'W2' => 'female', 'W3' => 'female'] as $k => $gender) {
+            $this->employee('G' . $k, 'GUSTO', $gender);
+        }
+
+        $scheduler = app(\Botble\RestaurantRoster\Services\RosterScheduler::class);
+        $scheduler->apply($scheduler->run(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, 'generate', 1, ['time_limit_seconds' => 3]), 1);
+
+        $shifts = Shift::query()->with('template')->where('employee_id', $fixed->getKey())->get();
+        $this->assertSame(5, $shifts->where('kind', Shift::KIND_SHIFT)->count(), 'Đủ 5 ngày công, không OFF cả tuần');
+        $this->assertSame(['OH'], $shifts->where('kind', Shift::KIND_SHIFT)->map(fn (Shift $s) => $s->notation)->unique()->values()->all());
+        $this->assertSame([$this->outlets['GUSTO']->getKey()], $shifts->where('kind', Shift::KIND_SHIFT)->pluck('outlet_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
+        $this->assertSame(0, Shift::query()->where('employee_id', '!=', $fixed->getKey())->where('shift_template_id', $oh->getKey())->count(), 'Người khác không tự xếp OH');
+    }
+
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
     public function test_restaurant_status_requires_manage_permission(): void
     {
