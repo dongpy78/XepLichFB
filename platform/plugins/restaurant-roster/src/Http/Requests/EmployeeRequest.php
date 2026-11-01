@@ -14,6 +14,7 @@ class EmployeeRequest extends Request
 
         return [
             'code' => [
+                // Thêm mới: để trống = hệ thống tự tạo (prepareForValidation). Sửa: bắt buộc.
                 'required',
                 'string',
                 'max:30',
@@ -25,7 +26,6 @@ class EmployeeRequest extends Request
             'birthday' => ['nullable', 'regex:/^(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])$/'],
             'outlet_id' => ['required', 'integer', 'exists:roster_outlets,id'],
             'schedule_group_id' => ['nullable', 'integer', 'exists:roster_schedule_groups,id'],
-            'schedule_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'night_role' => ['nullable', Rule::in(array_keys(\Botble\RestaurantRoster\Models\Employee::NIGHT_ROLES))],
             'is_trainee' => ['nullable', 'boolean'],
             'can_room_service' => ['nullable', 'boolean'],
@@ -70,13 +70,17 @@ class EmployeeRequest extends Request
 
     protected function prepareForValidation(): void
     {
+        // Thêm mới mà để trống mã → tự tạo mã kế tiếp, không trùng (EmployeeController::store tạo lại nếu bị trùng lúc lưu).
+        if (! $this->route('employee') && trim((string) $this->input('code')) === '') {
+            $this->merge(['code' => \Botble\RestaurantRoster\Models\Employee::nextCode(), 'code_auto' => true]);
+        }
+
         $this->merge([
             'gender' => $this->input('gender') ?: null,
             'hire_date' => $this->input('hire_date') ?: null,
             'fixed_shift_template_id' => $this->input('fixed_shift_template_id') ?: null,
             'residence' => $this->input('residence') ?: null,
             'schedule_group_id' => $this->input('schedule_group_id') ?: null,
-            'schedule_order' => $this->input('schedule_order') === '' ? null : $this->input('schedule_order'),
             'night_role' => $this->input('night_role') ?: null,
             'mentor_id' => $this->input('mentor_id') ?: null,
             'training_from' => $this->input('training_from') ?: null,

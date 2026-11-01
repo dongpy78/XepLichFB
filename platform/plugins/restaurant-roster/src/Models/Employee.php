@@ -68,6 +68,42 @@ class Employee extends BaseModel
         });
     }
 
+    /**
+     * Mã nhân viên kế tiếp (quản lý 01/11/2026): theo mẫu mã đang dùng nhiều nhất (tiền tố + số, vd "NV-8804" → "NV-8805"),
+     * số lớn nhất + 1, giữ độ dài số; chưa có dữ liệu thì employee_code_prefix + 0001. Bỏ qua mã đã tồn tại (cột code là unique).
+     */
+    public static function nextCode(): string
+    {
+        $groups = [];
+
+        foreach (self::query()->pluck('code') as $code) {
+            if (preg_match('/^(.*?)(\d+)$/', trim((string) $code), $m)) {
+                $groups[$m[1]] = [
+                    'count' => ($groups[$m[1]]['count'] ?? 0) + 1,
+                    'max' => max($groups[$m[1]]['max'] ?? 0, (int) $m[2]),
+                    'width' => max($groups[$m[1]]['width'] ?? 0, strlen($m[2])),
+                ];
+            }
+        }
+
+        $prefix = (string) config('plugins.restaurant-roster.general.employee_code_prefix', 'NV-');
+        $group = ['max' => 0, 'width' => 4];
+
+        if ($groups) {
+            uasort($groups, fn ($a, $b) => [$b['count'], $b['max']] <=> [$a['count'], $a['max']]);
+            $prefix = (string) array_key_first($groups);
+            $group = reset($groups);
+        }
+
+        $number = $group['max'];
+
+        do {
+            $code = $prefix . str_pad((string) ++$number, $group['width'], '0', STR_PAD_LEFT);
+        } while (self::query()->where('code', $code)->exists());
+
+        return $code;
+    }
+
     /** Vị trí sắp nữ trước nam (gender_order_positions, mặc định Waiter). */
     public static function genderOrderedPositionIds(): array
     {

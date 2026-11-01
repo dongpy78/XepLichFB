@@ -1037,6 +1037,43 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame(['GF', 'VF', 'GM', 'VM'], $this->rowOrder($this->gridHtml(), $people));
     }
 
+    /**
+     * Mã nhân viên tự tạo (quản lý 01/11/2026): để trống → mã kế tiếp theo mẫu đang dùng nhiều nhất, không trùng; nhập tay vẫn được;
+     * nhập trùng bị từ chối; sửa hồ sơ không đổi mã.
+     */
+    public function test_new_employee_gets_unique_auto_code(): void
+    {
+        $this->employee('NV-0007', 'GUSTO');
+        $this->employee('NV-0012', 'GUSTO');
+        $this->employee('NV-0013X', 'GUSTO');
+        $this->employee('TS1', 'VILLA');
+        $user = $this->user();
+        $payload = fn (array $extra = []) => ['name' => 'Synthetic New', 'outlet_id' => $this->outlets['GUSTO']->getKey(), 'position_id' => $this->waiter->getKey(),
+            'gender' => 'female', 'employment_type' => array_key_first(config('plugins.restaurant-roster.general.employment_types')), 'weekly_hours' => 48,
+            'days_off_per_week' => 2, 'status' => 'published', 'code' => '', ...$extra];
+
+        $this->actingAs($user)->get(route('roster.employees.create'))->assertOk()->assertSee('Tự tạo: NV-0013', false);
+
+        $this->actingAs($user)->post(route('roster.employees.create.store'), $payload())->assertSessionHasNoErrors();
+        $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic New 2']))->assertSessionHasNoErrors();
+        $this->assertSame(['NV-0013', 'NV-0014'], Employee::query()->whereIn('name', ['Synthetic New', 'Synthetic New 2'])->orderBy('id')->pluck('code')->all());
+
+        $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic Manual', 'code' => 'ABC-1']))->assertSessionHasNoErrors();
+        $this->assertSame('ABC-1', Employee::query()->where('name', 'Synthetic Manual')->value('code'), 'Nhập tay giữ nguyên');
+
+        $this->actingAs($user)->post(route('roster.employees.create.store'), $payload(['name' => 'Synthetic Dup', 'code' => 'NV-0013']))->assertSessionHasErrors('code');
+        $this->assertSame(1, Employee::query()->where('code', 'NV-0013')->count(), 'Không trùng mã');
+        $this->assertSame('NV-0015', Employee::nextCode());
+
+        // Form không còn ô "Thứ tự trong nhóm"; lưu hồ sơ qua form (không đổi vị trí / giới) giữ nguyên thứ tự.
+        $first = Employee::query()->where('code', 'NV-0013')->first();
+        $order = $first->schedule_order;
+        $this->actingAs($user)->get(route('roster.employees.edit', $first->getKey()))->assertOk()->assertDontSee('Thứ tự trong nhóm');
+        $this->actingAs($user)->post(route('roster.employees.edit.update', $first->getKey()), $payload(['name' => 'Synthetic New Renamed', 'code' => 'NV-0013']))
+            ->assertSessionHasNoErrors();
+        $this->assertSame([$order, 'Synthetic New Renamed'], [$first->fresh()->schedule_order, $first->fresh()->name]);
+    }
+
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
     public function test_restaurant_status_requires_manage_permission(): void
     {

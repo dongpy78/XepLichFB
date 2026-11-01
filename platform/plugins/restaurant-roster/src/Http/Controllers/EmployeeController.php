@@ -35,7 +35,22 @@ class EmployeeController extends BaseController
 
     public function store(EmployeeRequest $request)
     {
-        $employee = Employee::query()->create($request->validated());
+        $data = $request->validated();
+
+        // Mã tự tạo: hai người lưu cùng lúc có thể nhận cùng mã – cột code là unique nên database từ chối, tạo mã mới rồi lưu lại.
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                $employee = Employee::query()->create($data);
+
+                break;
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                if (! $request->boolean('code_auto') || $attempt >= 5) {
+                    throw $e;
+                }
+
+                $data['code'] = Employee::nextCode();
+            }
+        }
 
         return $this
             ->httpResponse()

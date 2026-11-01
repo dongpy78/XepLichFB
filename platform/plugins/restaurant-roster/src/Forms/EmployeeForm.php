@@ -38,7 +38,10 @@ class EmployeeForm extends FormAbstract
             ->add(
                 'code',
                 TextField::class,
-                TextFieldOption::make()->label('Mã nhân viên')->placeholder('VD: NV-8804')->required()->maxLength(30)->colspan(1)
+                $model instanceof Employee && $model->exists
+                    ? TextFieldOption::make()->label('Mã nhân viên')->placeholder('VD: NV-8804')->required()->maxLength(30)->colspan(1)
+                    : TextFieldOption::make()->label('Mã nhân viên')->placeholder('Tự tạo: ' . Employee::nextCode())->maxLength(30)->colspan(1)
+                        ->helperText('Để trống – hệ thống tự tạo mã kế tiếp, không trùng. Có thể nhập mã riêng nếu cần.')
             )
             ->add('name', TextField::class, NameFieldOption::make()->label('Họ và tên')->required()->maxLength(120)->colspan(1))
             ->add(
@@ -51,12 +54,6 @@ class EmployeeForm extends FormAbstract
                 SelectField::class,
                 SelectFieldOption::make()->label('Nhóm hiển thị trên Bảng xếp ca')->choices(['' => '— Theo outlet chính —'] + $groups)->colspan(1)
                     ->helperText('Chỉ là khu vực hiển thị (GUS, Villa, Night, Trainer…) – không đổi outlet làm việc, không ảnh hưởng xếp lịch.')
-            )
-            ->add(
-                'schedule_order',
-                NumberField::class,
-                NumberFieldOption::make()->label('Thứ tự trong nhóm')->min(0)->max(9999)->colspan(1)
-                    ->helperText('Thứ tự trong cùng vị trí (Waiter: nữ trước, nam sau). Số nhỏ hiện trước. Để trống = tự đưa xuống cuối nhóm.')
             )
             ->add(
                 'position_id',
