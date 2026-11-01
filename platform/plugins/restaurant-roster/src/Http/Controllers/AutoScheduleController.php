@@ -86,19 +86,31 @@ class AutoScheduleController extends BaseController
             ));
         }
 
+        // Một lượt xếp lịch tại một thời điểm (hai quản lý / hai tab bấm cùng lúc): thuật toán dùng nhiều CPU ~30 giây và hai phương án
+        // song song cho cùng tuần dễ gây nhầm khi áp dụng. Khóa tự hết hạn sau 3 phút nếu tiến trình bị dừng giữa chừng.
+        $lock = \Illuminate\Support\Facades\Cache::lock('roster-auto-run', 180);
+
+        if (! $lock->get()) {
+            return $this->httpResponse()->setError()->setMessage('Đang có một lượt xếp lịch tự động khác chạy (có thể của quản lý khác). Đợi khoảng 30 giây rồi thử lại.');
+        }
+
+        $startedAt = microtime(true);
+
         try {
             $run = $data['type'] === 'validate'
                 ? $this->scheduler->validate($from, $to, $data['outlet_ids'] ?? null, $request->user()?->getKey())
                 : $this->scheduler->run($from, $to, $data['outlet_ids'] ?? null, $data['type'], $request->user()?->getKey(), $overrides);
         } catch (RuntimeException $exception) {
             return $this->httpResponse()->setError()->setMessage($exception->getMessage());
+        } finally {
+            $lock->release();
         }
 
         return $this
             ->httpResponse()
             ->setNextUrl(route('roster.auto.show', $run->getKey()))
             ->setPreviousUrl(route('roster.auto.show', $run->getKey()))
-            ->setMessage('Đã chạy xong – xem kết quả bên dưới.');
+            ->setMessage(sprintf('Đã chạy xong trong %s giây – xem kết quả bên dưới.', number_format(microtime(true) - $startedAt, 1, ',', '')));
     }
 
     public function show(int|string $id)

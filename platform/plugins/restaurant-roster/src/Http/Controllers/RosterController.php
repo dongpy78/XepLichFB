@@ -43,8 +43,10 @@ class RosterController extends BaseController
     {
         $this->pageTitle('Bảng xếp ca');
 
-        Assets::addStylesDirectly('vendor/core/plugins/restaurant-roster/css/roster.css')
-            ->addScriptsDirectly('vendor/core/plugins/restaurant-roster/js/roster.js');
+        // ?v=<thời điểm sửa file>: sau mỗi lần cập nhật, trình duyệt tải CSS / JS mới (không cần Ctrl+F5).
+        $version = fn (string $path) => $path . '?v=' . (@filemtime(public_path($path)) ?: '1');
+        Assets::addStylesDirectly($version('vendor/core/plugins/restaurant-roster/css/roster.css'))
+            ->addScriptsDirectly($version('vendor/core/plugins/restaurant-roster/js/roster.js'));
 
         $outlets = Outlet::query()
             ->wherePublished()
@@ -65,7 +67,8 @@ class RosterController extends BaseController
             'shiftTags' => $this->assigner->tagDefinitions(),
             'canManage' => $this->canManage($request),
             'waiterSwap' => $request->user()?->hasPermission('roster.settings') ? rescue(fn () => app(OutletRotationService::class)->preview(), null, false) : null,
-            'grid' => $this->buildGrid($request),
+            'grid' => $grid = $this->buildGrid($request),
+            'gridHtml' => $this->renderGrid($grid, $this->canManage($request)),
         ]);
     }
 
@@ -100,13 +103,16 @@ class RosterController extends BaseController
                 : "Ô {$existing->notation} đang khóa. Mở khóa ô trước khi sửa.");
         }
 
+        // Trạng thái ô trước khi sửa – để "Hoàn tác" lần sửa gần nhất.
+        $undoBefore = $existing?->getRawOriginal();
+
         if ($data['action'] === 'clear') {
             if ($existing) {
                 $this->logChange($request, $employee->getKey(), $date, $existing, null, 'delete');
                 $existing->delete();
             }
 
-            return $this->gridResponse($request, 'Đã xóa ca.');
+            return $this->gridResponse($request, 'Đã xóa ca.', $this->rememberEdit($request, $employee, $date, $undoBefore, null));
         }
 
         if ($data['action'] === 'notation') {
@@ -185,7 +191,66 @@ class RosterController extends BaseController
 
         $this->logChange($request, $employee->getKey(), $date, $before, $shift->load('template'), 'manual');
 
-        return $this->gridResponse($request, $message);
+        return $this->gridResponse($request, $message, $this->rememberEdit($request, $employee, $date, $undoBefore, $shift->fresh()));
+    }
+
+    /**
+     * Ghi nhớ lần sửa ô gần nhất của người dùng (30 phút) để hoàn tác: ô trước khi sửa (dòng gốc) và ô sau khi sửa (để biết ô đã
+     * bị sửa tiếp hay chưa). Trả về dữ liệu cho giao diện hiện nút "Hoàn tác".
+     */
+    protected function rememberEdit(Request $request, Employee $employee, Carbon $date, ?array $before, ?Shift $after): array
+    {
+        $label = $employee->name . ' ' . $date->format('d/m');
+
+        Cache::put($this->editUndoKey($request), [
+            'employee_id' => $employee->getKey(),
+            'date' => $date->toDateString(),
+            'before' => $before,
+            'after' => $after ? $this->snapshot($after) : null,
+            'label' => $label,
+        ], now()->addMinutes(30));
+
+        return ['edit_undo' => $label];
+    }
+
+    protected function editUndoKey(Request $request): string
+    {
+        return 'roster-edit-undo:' . ($request->user()?->getKey() ?? 0);
+    }
+
+    /** Hoàn tác lần sửa ô gần nhất: trả ô về đúng như trước khi sửa, nếu ô chưa bị sửa tiếp sau đó. */
+    public function undoEdit(Request $request)
+    {
+        $saved = Cache::get($this->editUndoKey($request));
+
+        if (! $saved) {
+            return $this->httpResponse()->setError()->setMessage('Không còn lần sửa ô nào để hoàn tác (đã quá 30 phút hoặc đã hoàn tác).');
+        }
+
+        $date = Carbon::parse($saved['date']);
+        $current = Shift::query()->with('template')->where('employee_id', $saved['employee_id'])->whereDate('date', $date)->first();
+
+        // Ô đã được sửa tiếp (bởi người khác, xếp tự động, khóa…) → không ghi đè thay đổi mới hơn.
+        if (($current ? $this->snapshot($current) : null) != $saved['after']) {
+            Cache::forget($this->editUndoKey($request));
+
+            return $this->httpResponse()->setError()->setMessage("Ô {$saved['label']} đã được sửa tiếp sau đó – không hoàn tác để tránh ghi đè thay đổi mới hơn.");
+        }
+
+        DB::transaction(function () use ($request, $saved, $current, $date): void {
+            $current?->delete();
+
+            if ($saved['before']) {
+                DB::table('roster_shifts')->insert($saved['before']);
+            }
+
+            $restored = Shift::query()->with('template')->where('employee_id', $saved['employee_id'])->whereDate('date', $date)->first();
+            $this->logChange($request, (int) $saved['employee_id'], $date, $current, $restored, 'undo_edit');
+        });
+
+        Cache::forget($this->editUndoKey($request));
+
+        return $this->gridResponse($request, "Đã hoàn tác lần sửa ô {$saved['label']}.", ['edit_undone' => true]);
     }
 
     public function copyPreviousWeek(Request $request)
@@ -913,15 +978,29 @@ class RosterController extends BaseController
         return $this
             ->httpResponse()
             ->setData([
-                'html' => view('plugins/restaurant-roster::roster.grid', [
-                    'grid' => $grid,
-                    'canManage' => $this->canManage($request),
-                ])->render(),
+                'html' => $this->renderGrid($grid, $this->canManage($request)),
                 'week_label' => $grid['weekLabel'],
                 'week' => $grid['weekStart']->toDateString(),
                 ...$extra,
             ])
             ->setMessage($message);
+    }
+
+    /**
+     * HTML bảng xếp ca, gộp khoảng trắng thụt lề (đo 01/11/2026: ~75% dung lượng bảng là khoảng trắng của Blade, cả giữa các thẻ lẫn
+     * giữa các thuộc tính do @if). Chỉ gộp đoạn khoảng trắng nằm ngoài giá trị trong dấu ngoặc kép → ghi chú / tooltip của người dùng
+     * giữ nguyên; trình duyệt vốn gộp khoảng trắng nên hiển thị không đổi (bảng không có <pre> / <textarea>).
+     */
+    protected function renderGrid(array $grid, bool $canManage): string
+    {
+        $html = view('plugins/restaurant-roster::roster.grid', ['grid' => $grid, 'canManage' => $canManage])->render();
+
+        // class="…": gộp cả khoảng trắng bên trong (lớp rỗng của các điều kiện) – tên lớp không phụ thuộc khoảng trắng.
+        return preg_replace_callback('/class="[^"]*"|"[^"]*"|\s{2,}|\n/', fn ($m) => match (true) {
+            str_starts_with($m[0], 'class="') => 'class="' . trim(preg_replace('/\s+/', ' ', substr($m[0], 7, -1))) . '"',
+            $m[0][0] === '"' => $m[0],
+            default => ' ',
+        }, $html) ?? $html;
     }
 
     protected function buildGrid(Request $request): array

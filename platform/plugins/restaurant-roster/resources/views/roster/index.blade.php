@@ -5,6 +5,7 @@
         id="roster-app"
         data-grid-url="{{ route('roster.grid') }}"
         data-assign-url="{{ route('roster.assign') }}"
+        data-assign-undo-url="{{ route('roster.assign-undo') }}"
         data-copy-url="{{ route('roster.copy-previous-week') }}"
         data-publish-url="{{ route('roster.publish') }}"
         data-clear-url="{{ route('roster.clear-week') }}"
@@ -106,10 +107,11 @@
             </div>
         @endif
 
+        {{-- Hoàn tác: lần xóa lịch (hàng / cột / tuần) hoặc lần sửa ô gần nhất – roster.js điền nội dung. --}}
         <div id="roster-undo" class="alert alert-warning d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
             <div>
-                <x-core::icon name="ti ti-eraser" />
-                Đã xóa lịch của <strong id="roster-undo-label"></strong> – xếp tay lại các ô trống, hoặc hoàn tác nếu xóa nhầm.
+                <x-core::icon name="ti ti-arrow-back-up" />
+                <span id="roster-undo-text"></span>
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-sm btn-warning" data-roster-undo><x-core::icon name="ti ti-arrow-back-up" /> Hoàn tác</button>
@@ -117,8 +119,40 @@
             </div>
         </div>
 
+        {{-- Lọc / tìm trên bảng ngay trên trình duyệt (không tải lại trang); giữ nguyên khi bảng được vẽ lại sau khi sửa ô / đổi tuần. --}}
+        <div class="card mb-3 roster-filters" id="roster-filters">
+            <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
+                <div class="input-icon roster-filters__search">
+                    <span class="input-icon-addon"><x-core::icon name="ti ti-search" /></span>
+                    <input type="search" class="form-control form-control-sm" id="rf-search" placeholder="Tìm nhân viên…" autocomplete="off" aria-label="Tìm nhân viên">
+                </div>
+                <select class="form-select form-select-sm" id="rf-position" aria-label="Lọc theo vị trí">
+                    <option value="">Mọi vị trí</option>
+                </select>
+                <select class="form-select form-select-sm" id="rf-gender" aria-label="Lọc theo giới tính">
+                    <option value="">Nam &amp; nữ</option>
+                    <option value="female">Nữ</option>
+                    <option value="male">Nam</option>
+                </select>
+                <select class="form-select form-select-sm" id="rf-code" aria-label="Lọc theo ca" title="Hiện người có ca này trong tuần và làm mờ các ô khác">
+                    <option value="">Mọi ca</option>
+                </select>
+                <label class="form-check form-check-inline mb-0" title="Có ngày làm ở nhà hàng khác outlet chính (Villa ↔ Gusto)">
+                    <input class="form-check-input" type="checkbox" id="rf-transfer"> <span class="form-check-label">Điều chuyển</span>
+                </label>
+                <label class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" id="rf-warn"> <span class="form-check-label">Có cảnh báo</span>
+                </label>
+                <label class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" id="rf-unscheduled"> <span class="form-check-label">Chưa xếp lịch</span>
+                </label>
+                <span class="small text-muted ms-auto" id="rf-count"></span>
+                <button type="button" class="btn btn-sm btn-link d-none" id="rf-reset">Bỏ lọc</button>
+            </div>
+        </div>
+
         <div id="roster-grid">
-            @include('plugins/restaurant-roster::roster.grid')
+            {!! $gridHtml !!}
         </div>
 
         <div class="card mt-3">

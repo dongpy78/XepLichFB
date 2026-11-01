@@ -42,8 +42,25 @@ $(() => {
         window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
     }
 
-    const render = (data) => {
+    // Ô trên bảng theo nhân viên / ngày.
+    const findCell = (employeeId, date) => $grid.find(`.roster-cell[data-employee="${employeeId}"][data-date="${date}"]`)
+
+    // Nháy sáng một ô / hàng để mắt tìm thấy ngay (sau khi lưu, khi bấm cảnh báo).
+    const flash = ($el) => {
+        $el.removeClass('is-flash')
+        void $el[0]?.offsetWidth
+        $el.addClass('is-flash')
+        window.setTimeout(() => $el.removeClass('is-flash'), 1800)
+    }
+
+    let applyFilters = () => {}
+
+    const render = (data, focus = null) => {
+        // Giữ vị trí cuộn ngang của bảng (màn hình hẹp) khi vẽ lại.
+        const scrollLeft = $grid.find('.roster-scroll').scrollLeft() || 0
+
         $grid.html(data.html)
+        $grid.find('.roster-scroll').scrollLeft(scrollLeft)
         state.week = data.week
         $('#roster-week-label').contents().last().replaceWith(` ${data.week_label}`)
         // Nút "Tự động xếp lịch" mở đúng tuần đang xem.
@@ -51,10 +68,37 @@ $(() => {
             link.href = `${link.dataset.autoBase}?week=${data.week}`
         })
         syncUrl()
+        applyFilters()
+
+        if (focus) {
+            flash(findCell(focus.employee_id, focus.date))
+        }
     }
 
-    const request = (method, url, payload = {}) => {
-        $grid.addClass('is-loading')
+    // Thanh hoàn tác: lần xóa lịch (clear) hoặc lần sửa ô gần nhất (edit).
+    const $undo = $('#roster-undo')
+    let undoKind = null
+
+    const showUndo = (kind, text) => {
+        undoKind = kind
+        $('#roster-undo-text').text(text)
+        $undo.removeClass('d-none')
+    }
+
+    const hideUndo = () => {
+        undoKind = null
+        $undo.addClass('d-none')
+    }
+
+    // options.cell: thao tác trên một ô → chỉ ô đó hiện "đang lưu" (bảng vẫn dùng được), vẽ lại xong ô được nháy sáng.
+    const request = (method, url, payload = {}, options = {}) => {
+        const $cell = options.cell ? findCell(options.cell.employee_id, options.cell.date) : null
+
+        if ($cell && $cell.length) {
+            $cell.addClass('is-saving')
+        } else {
+            $grid.addClass('is-loading')
+        }
 
         return $.ajax({
             url,
@@ -69,14 +113,23 @@ $(() => {
                     return
                 }
 
-                render(response.data)
+                render(response.data, options.cell)
+
+                if (response.data.edit_undo) {
+                    showUndo('edit', `Đã sửa ô ${response.data.edit_undo}. Bấm Hoàn tác (hoặc Ctrl+Z) nếu sửa nhầm.`)
+                } else if (response.data.edit_undone && undoKind === 'edit') {
+                    hideUndo()
+                }
 
                 if (method !== 'GET' && response.message) {
                     Botble.showSuccess(response.message)
                 }
             })
             .fail((xhr) => Botble.handleError(xhr))
-            .always(() => $grid.removeClass('is-loading'))
+            .always(() => {
+                $grid.removeClass('is-loading')
+                $cell?.removeClass('is-saving')
+            })
     }
 
     const load = () => request('GET', urls.gridUrl)
@@ -89,6 +142,129 @@ $(() => {
     $('#roster-outlet').on('change', (event) => {
         state.outlet_id = $(event.currentTarget).val() || ''
         load()
+    })
+
+    // ---------------------------------------------------------------- Bộ lọc trên bảng (chạy trên trình duyệt, không gọi máy chủ)
+    const $filters = $('#roster-filters')
+    const filter = { search: '', position: '', gender: '', code: '', transfer: false, warn: false, unscheduled: false }
+    // Bỏ dấu tiếng Việt: gõ "phien" vẫn tìm ra "Phiên".
+    const plain = (text) => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
+    // Mã ca của ô: "M6(L)+2" → "M6", "OFF" → "OFF", nghỉ phép → mã loại nghỉ.
+    const codeOf = (cell) => String(cell.dataset.notation || '').split(/[(+]/)[0]
+
+    const fillSelect = ($select, options, value) => {
+        $select.find('option:not(:first)').remove()
+        options.forEach(([optionValue, label]) => $select.append(new Option(label, optionValue)))
+        $select.val(options.some(([optionValue]) => String(optionValue) === String(value)) ? value : '')
+    }
+
+    applyFilters = () => {
+        if (!$filters.length) {
+            return
+        }
+
+        const $rows = $grid.find('tr.roster-row')
+        const positions = new Map()
+        const codes = new Set()
+
+        $rows.each((_, row) => {
+            if (row.dataset.position) {
+                positions.set(row.dataset.position, row.dataset.positionName || '—')
+            }
+
+            String(row.dataset.codes || '').split(' ').filter(Boolean).forEach((code) => codes.add(code))
+        })
+
+        // Danh sách vị trí / ca lấy từ chính bảng đang xem (đổi tuần, đổi nhà hàng vẫn đúng); giữ lựa chọn nếu còn.
+        fillSelect($('#rf-position'), [...positions].sort((a, b) => a[1].localeCompare(b[1], 'vi')), filter.position)
+        fillSelect($('#rf-code'), [...codes].sort().map((code) => [code, code]), filter.code)
+        filter.position = $('#rf-position').val() || ''
+        filter.code = $('#rf-code').val() || ''
+
+        const query = plain(filter.search.trim())
+        const active = Boolean(query || filter.position || filter.gender || filter.code || filter.transfer || filter.warn || filter.unscheduled)
+        let shown = 0
+
+        $rows.each((_, row) => {
+            const d = row.dataset
+            const visible = (!query || plain(d.employeeName).includes(query))
+                && (!filter.position || d.position === filter.position)
+                && (!filter.gender || d.gender === filter.gender)
+                && (!filter.code || String(d.codes || '').split(' ').includes(filter.code))
+                && (!filter.transfer || d.transfer === '1')
+                && (!filter.warn || d.warn === '1')
+                && (!filter.unscheduled || d.unscheduled === '1')
+
+            row.classList.toggle('d-none', !visible)
+            shown += visible ? 1 : 0
+        })
+
+        // Khu không còn ai hiện: ẩn dòng tên khu.
+        let $section = null
+        let sectionHasRows = false
+        const closeSection = () => $section && $section.toggleClass('d-none', active && !sectionHasRows)
+
+        $grid.find('tbody > tr').each((_, row) => {
+            if (row.classList.contains('roster-section')) {
+                closeSection()
+                $section = $(row)
+                sectionHasRows = false
+            } else if (row.classList.contains('roster-row') && !row.classList.contains('d-none')) {
+                sectionHasRows = true
+            }
+        })
+        closeSection()
+
+        // Lọc theo ca: làm mờ các ô khác ca đang lọc để thấy ngay ai làm ca đó ngày nào.
+        $grid.find('.roster-cell').each((_, cell) => cell.classList.toggle('is-dimmed', Boolean(filter.code) && codeOf(cell) !== filter.code))
+        $grid.toggleClass('is-filtering', active)
+        $('#rf-count').text(active ? `Hiển thị ${shown}/${$rows.length} nhân viên` : `${$rows.length} nhân viên`)
+        $('#rf-reset').toggleClass('d-none', !active)
+    }
+
+    const resetFilters = () => {
+        Object.assign(filter, { search: '', position: '', gender: '', code: '', transfer: false, warn: false, unscheduled: false })
+        $('#rf-search').val('')
+        $filters.find('select').val('')
+        $filters.find('input[type="checkbox"]').prop('checked', false)
+        applyFilters()
+    }
+
+    let searchTimer = null
+
+    $('#rf-search').on('input', (event) => {
+        window.clearTimeout(searchTimer)
+        searchTimer = window.setTimeout(() => {
+            filter.search = event.target.value
+            applyFilters()
+        }, 120)
+    })
+    $('#rf-position, #rf-gender, #rf-code').on('change', (event) => {
+        filter[event.target.id.slice(3)] = event.target.value
+        applyFilters()
+    })
+    $('#rf-transfer, #rf-warn, #rf-unscheduled').on('change', (event) => {
+        filter[event.target.id.slice(3)] = event.target.checked
+        applyFilters()
+    })
+    $('#rf-reset').on('click', resetFilters)
+    applyFilters()
+
+    // Bảng cảnh báo: bấm một dòng → cuộn tới đúng ô (hoặc hàng nhân viên) và nháy sáng; bỏ lọc nếu ô đang bị ẩn.
+    $grid.on('click', '[data-roster-jump]', (event) => {
+        const d = event.currentTarget.dataset
+        const target = () => d.date ? findCell(d.employee, d.date) : $grid.find(`tr.roster-row[data-employee-id="${d.employee}"] > td:first-child`)
+        let $target = target()
+
+        if ($target.closest('tr').hasClass('d-none')) {
+            resetFilters()
+            $target = target()
+        }
+
+        if ($target.length) {
+            $target[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+            flash($target)
+        }
     })
 
     // Công bố lịch tuần: xem trước (tuần, phạm vi, số nhân viên, lỗi chặn công bố) → xác nhận → công bố (lưu phiên bản chính thức).
@@ -153,8 +329,6 @@ $(() => {
     })
 
     // Xóa lịch theo hàng (1 nhân viên cả tuần) hoặc cột (1 ngày của outlet chính) để xếp tay lại.
-    const $undo = $('#roster-undo')
-
     const clearCells = (payload) => {
         $.ajax({
             url: urls.clearCellsUrl,
@@ -203,8 +377,7 @@ $(() => {
 
                 request('POST', urls.clearCellsUrl, { ...payload, include_locked: includeLocked ? 1 : 0 }).done((result) => {
                     if (result.data && result.data.undo) {
-                        $('#roster-undo-label').text(result.data.undo)
-                        $undo.removeClass('d-none')
+                        showUndo('clear', `Đã xóa lịch của ${result.data.undo} – xếp tay lại các ô trống, hoặc hoàn tác nếu xóa nhầm.`)
                     }
                 })
             })
@@ -223,11 +396,26 @@ $(() => {
             : { mode: 'column', outlet_id_clear: $button.data('outlet'), date: $button.data('date') })
     })
 
-    $app.on('click', '[data-roster-undo]', () => {
-        request('POST', urls.clearUndoUrl).done(() => $undo.addClass('d-none'))
-    })
+    const undo = () => {
+        if (undoKind === 'edit') {
+            // Thành công hay bị từ chối (ô đã được sửa tiếp), máy chủ đều đã bỏ bản ghi nhớ → ẩn thanh hoàn tác.
+            request('POST', urls.assignUndoUrl).always(hideUndo)
+        } else if (undoKind === 'clear') {
+            request('POST', urls.clearUndoUrl).done(() => hideUndo())
+        }
+    }
 
-    $app.on('click', '[data-roster-undo-dismiss]', () => $undo.addClass('d-none'))
+    $app.on('click', '[data-roster-undo]', undo)
+    $app.on('click', '[data-roster-undo-dismiss]', hideUndo)
+
+    // Ctrl+Z (ngoài ô nhập liệu / hộp thoại): hoàn tác lần sửa ô / xóa lịch gần nhất.
+    $(document).on('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && undoKind
+            && !$(event.target).is('input, textarea, select, [contenteditable]') && !$('.modal.show').length) {
+            event.preventDefault()
+            undo()
+        }
+    })
 
     // Ghi OFF trên bảng: bật chế độ chọn ô, bấm các ô cần OFF (Shift = chọn liền nhiều ngày của một người), rồi ghi & khóa.
     const $offBar = $('#roster-off-bar')
@@ -354,8 +542,9 @@ $(() => {
             date: $cell.data('date'),
         }
 
-        $('#roster-cell-title').text($cell.data('employee-name'))
-        $('#roster-cell-subtitle').text($cell.data('date-label'))
+        // Tên nhân viên ở <tr>, nhãn ngày ở <th> cùng cột (không lặp ở từng ô cho bảng gọn).
+        $('#roster-cell-title').text($cell.closest('tr').data('employee-name'))
+        $('#roster-cell-subtitle').text($grid.find('thead th').eq($cell.index()).data('date-label') || $cell.data('date'))
         $('#roster-cell-note').val($cell.data('note') || '')
         $('#roster-cell-notation').val($cell.data('notation') || '')
         $('#roster-cell-overtime').val($cell.data('overtime') || '')
@@ -411,7 +600,7 @@ $(() => {
             notation: $('#roster-cell-notation').val(),
             note: $('#roster-cell-note').val(),
             ...extra,
-        }).done((response) => {
+        }, { cell: currentCell }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
             }
@@ -436,7 +625,7 @@ $(() => {
             employee_id: currentCell.employee_id,
             date: currentCell.date,
             status: $(event.currentTarget).data('ot-status'),
-        }).done((response) => {
+        }, { cell: currentCell }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
             }
@@ -452,7 +641,7 @@ $(() => {
             employee_id: currentCell.employee_id,
             date: currentCell.date,
             locked: currentCell.locked ? 0 : 1,
-        }).done((response) => {
+        }, { cell: currentCell }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
             }
@@ -464,7 +653,7 @@ $(() => {
             return
         }
 
-        request('POST', urls.offRemoveUrl, { employee_id: currentCell.employee_id, date: currentCell.date }).done((response) => {
+        request('POST', urls.offRemoveUrl, { employee_id: currentCell.employee_id, date: currentCell.date }, { cell: currentCell }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
             }
@@ -480,7 +669,7 @@ $(() => {
             employee_id: currentCell.employee_id,
             date: currentCell.date,
             decision: $(event.currentTarget).data('review'),
-        }).done((response) => {
+        }, { cell: currentCell }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
             }

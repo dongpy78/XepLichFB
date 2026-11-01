@@ -122,10 +122,21 @@
     </div>
 
     <script>
+        // Đang chạy: khóa mọi nút (không bấm nhiều lần) và đếm giây thực tế đã chạy – không hiện phần trăm giả vì máy chủ không báo tiến độ.
         document.getElementById('roster-auto-form').addEventListener('submit', function (event) {
             var buttons = this.querySelectorAll('button[type=submit]');
+            var submitter = event.submitter;
+            var started = Date.now();
             setTimeout(function () { buttons.forEach(function (b) { b.disabled = true; }); }, 0);
-            event.submitter && (event.submitter.innerHTML = 'Đang xếp lịch… (tối đa ~30 giây)');
+
+            if (submitter) {
+                var tick = function () {
+                    var seconds = Math.floor((Date.now() - started) / 1000);
+                    submitter.textContent = 'Đang xếp lịch… ' + seconds + ' giây (thường ~30–45 giây)';
+                };
+                tick();
+                setInterval(tick, 1000);
+            }
         });
     </script>
 @endsection

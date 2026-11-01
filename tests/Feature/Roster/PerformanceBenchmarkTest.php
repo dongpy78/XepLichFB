@@ -299,8 +299,12 @@ class PerformanceBenchmarkTest extends TestCase
                 $prev = $t;
             }
         }
-        [$ms, $q, $html] = $this->measure(fn () => view('plugins/restaurant-roster::roster.grid', ['grid' => $data, 'canManage' => true])->render());
+        [$ms, $q, $html] = $this->measure(fn () => (fn () => $this->renderGrid($data, true))->call($controller));
         $this->report('  – kết xuất HTML (Blade)', $ms, $q, round(strlen($html) / 1024) . ' KB');
+
+        if ($dump = getenv('ROSTER_BENCH_DUMP')) {
+            file_put_contents($dump, $html);
+        }
 
         // Chi phí từng kiểu đọc thuộc tính trên ô lịch đã tải (µs / lần).
         $loaded = Shift::query()->with(['template', 'employee'])->get();

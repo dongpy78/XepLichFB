@@ -30,6 +30,7 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
 
             Route::group(['permission' => 'roster.manage'], function (): void {
                 Route::post('assign', 'RosterController@assign')->name('assign');
+                Route::post('assign-undo', 'RosterController@undoEdit')->name('assign-undo');
                 Route::post('lock', 'RosterController@lock')->name('lock');
                 Route::post('copy-previous-week', 'RosterController@copyPreviousWeek')->name('copy-previous-week');
                 Route::post('publish', 'RosterController@publish')->name('publish');

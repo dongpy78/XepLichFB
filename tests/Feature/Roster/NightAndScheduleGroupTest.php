@@ -685,8 +685,8 @@ class NightAndScheduleGroupTest extends TestCase
         $positions = [];
 
         foreach ($people as $code => $employee) {
-            // Mỗi hàng có 7 ô ngày mang tên nhân viên: đúng 7 lần = đúng một hàng (không nhân đôi).
-            $this->assertSame(7, substr_count($html, 'data-employee-name="' . $employee->name . '"'), "{$code}: xuất hiện đúng 1 hàng");
+            // Tên nhân viên ghi một lần trên <tr> của hàng (không lặp ở từng ô): đúng 1 lần = đúng một hàng (không nhân đôi).
+            $this->assertSame(1, substr_count($html, 'data-employee-name="' . $employee->name . '"'), "{$code}: xuất hiện đúng 1 hàng");
             $positions[$code] = strpos($html, 'data-employee-name="' . $employee->name . '"');
         }
 

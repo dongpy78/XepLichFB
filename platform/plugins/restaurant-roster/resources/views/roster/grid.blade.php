@@ -3,7 +3,55 @@
     $summary = $grid['summary'];
     $today = now()->toDateString();
     $fmt = fn ($value) => rtrim(rtrim(number_format((float) $value, 1, '.', ''), '0'), '.');
+    // Biểu tượng dùng chung (tối ưu 01/11/2026): mỗi ô trống / nút xóa từng chèn nguyên một SVG ~400 byte. Vẽ mỗi biểu tượng
+    // một lần thành <symbol>, các chỗ dùng chỉ tham chiếu <use>.
+    $iconBody = fn (string $name) => preg_replace(['/^\s*<svg[^>]*>/', '/<\/svg>\s*$/'], '', \Illuminate\Support\Facades\Blade::render('<x-core::icon name="' . $name . '" />'));
+    $icon = fn (string $id) => '<svg class="icon" aria-hidden="true"><use href="#roster-i-' . $id . '"/></svg>';
+    // Nhà hàng điều chuyển cho nhau (Villa / Gusto): ô làm ở nhà hàng khác outlet chính = người được điều chuyển (bộ lọc).
+    $restaurantIds = collect($grid['stats']['outlets'] ?? [])
+        ->filter(fn ($o) => in_array($o->code, (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']), true))
+        ->keys()->map(fn ($id) => (int) $id)->all();
+
+    // Bảng cảnh báo: từng vấn đề kèm nhân viên / ngày để bấm nhảy tới đúng ô.
+    $alerts = [];
+
+    foreach ($grid['rows'] as $alertRow) {
+        $alertEmployee = $alertRow['employee'];
+
+        foreach ($alertRow['check']['cells'] as $alertDate => $messages) {
+            foreach ($messages as $message) {
+                $alerts[] = ['level' => 'danger', 'employee' => $alertEmployee->id, 'date' => $alertDate, 'who' => $alertEmployee->name, 'text' => $message];
+            }
+        }
+
+        foreach ($alertRow['check']['messages'] as $message) {
+            $alerts[] = ['level' => $alertRow['check']['level'] === 'danger' ? 'danger' : 'warning', 'employee' => $alertEmployee->id, 'date' => null, 'who' => $alertEmployee->name, 'text' => $message];
+        }
+
+        foreach ($alertRow['cells'] as $alertDate => $alertShift) {
+            if ($alertShift->needs_review) {
+                $alerts[] = ['level' => 'warning', 'employee' => $alertEmployee->id, 'date' => $alertDate, 'who' => $alertEmployee->name, 'text' => 'Cần xem xét: ' . $alertShift->review_note];
+            }
+        }
+
+        if (! $alertRow['cells'] && $alertEmployee->auto_schedule && ! $alertEmployee->is_trainee) {
+            $alerts[] = ['level' => 'info', 'employee' => $alertEmployee->id, 'date' => null, 'who' => $alertEmployee->name, 'text' => 'Chưa có ô lịch nào trong tuần'];
+        }
+    }
+
+    foreach ($grid['restaurantStatus']['warnings'] ?? [] as $message) {
+        $alerts[] = ['level' => 'danger', 'employee' => null, 'date' => null, 'who' => 'Nhà hàng', 'text' => $message];
+    }
+
+    $alertOrder = ['danger' => 0, 'warning' => 1, 'info' => 2];
+    usort($alerts, fn ($a, $b) => [$alertOrder[$a['level']], $a['date'] ?? '9999'] <=> [$alertOrder[$b['level']], $b['date'] ?? '9999']);
 @endphp
+
+<svg style="position: absolute; width: 0; height: 0; overflow: hidden" aria-hidden="true">
+    @foreach (['plus' => 'ti ti-plus', 'eraser' => 'ti ti-eraser', 'alert' => 'ti ti-alert-circle'] as $iconId => $iconName)
+        <symbol id="roster-i-{{ $iconId }}" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{!! $iconBody($iconName) !!}</g></symbol>
+    @endforeach
+</svg>
 
 @if (! empty($grid['pendingRun']))
     @php $pending = $grid['pendingRun']; @endphp
@@ -165,6 +213,40 @@
     </div>
 </div>
 
+@if ($alerts)
+    @php
+        $alertCounts = array_count_values(array_column($alerts, 'level'));
+        $alertLimit = 60;
+    @endphp
+    {{-- Cảnh báo cần xử lý: bấm một dòng để cuộn tới đúng nhân viên / ngày (bỏ bộ lọc đang che nếu cần). --}}
+    <details class="card mb-3 roster-alerts" @if (count($alerts) <= 8) open @endif>
+        <summary class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
+            <strong><x-core::icon name="ti ti-alert-triangle" /> Cảnh báo cần xử lý ({{ count($alerts) }})</strong>
+            @foreach (['danger' => ['bg-danger', 'vi phạm'], 'warning' => ['bg-warning', 'cần xem'], 'info' => ['bg-secondary', 'thông tin']] as $level => [$badge, $label])
+                @if ($alertCounts[$level] ?? 0)
+                    <span class="badge {{ $badge }} text-white">{{ $alertCounts[$level] }} {{ $label }}</span>
+                @endif
+            @endforeach
+            <span class="small text-muted">Bấm một dòng để tới đúng ô trên bảng.</span>
+        </summary>
+        <div class="roster-alerts__list">
+            @foreach (array_slice($alerts, 0, $alertLimit) as $alert)
+                <button type="button" class="roster-alert roster-alert--{{ $alert['level'] }}"
+                    @if ($alert['employee']) data-roster-jump data-employee="{{ $alert['employee'] }}" @if ($alert['date']) data-date="{{ $alert['date'] }}" @endif @endif>
+                    <span class="roster-alert__who">{{ $alert['who'] }}</span>
+                    @if ($alert['date'])
+                        <span class="roster-alert__when">{{ $dayNames[\Carbon\Carbon::parse($alert['date'])->dayOfWeekIso] }} {{ \Carbon\Carbon::parse($alert['date'])->format('d/m') }}</span>
+                    @endif
+                    <span class="roster-alert__text">{{ $alert['text'] }}</span>
+                </button>
+            @endforeach
+            @if (count($alerts) > $alertLimit)
+                <div class="small text-muted px-3 py-2">… và {{ count($alerts) - $alertLimit }} cảnh báo khác – dùng bộ lọc “Có cảnh báo” để xem trên bảng.</div>
+            @endif
+        </div>
+    </details>
+@endif
+
 <div class="card">
     @if (! count($grid['rows']))
         <div class="card-body text-center py-5">
@@ -185,7 +267,7 @@
                         </th>
                         @foreach ($grid['days'] as $day)
                             @php $key = $day->toDateString(); @endphp
-                            <th class="{{ $key === $today ? 'is-today' : '' }} {{ $day->isWeekend() ? 'is-weekend' : '' }}">
+                            <th class="{{ $key === $today ? 'is-today' : '' }} {{ $day->isWeekend() ? 'is-weekend' : '' }}" data-date-label="{{ $dayNames[$day->dayOfWeekIso] }}, {{ $day->format('d/m/Y') }}">
                                 <div class="roster-th-day">{{ $dayNames[$day->dayOfWeekIso] }} <span class="roster-th-date">{{ $day->format('d/m') }}</span></div>
                             </th>
                         @endforeach
@@ -222,14 +304,33 @@
                                                 data-outlet="{{ $currentStatOutlet }}"
                                                 data-date="{{ $day->toDateString() }}"
                                                 title="Xóa lịch nhân viên outlet {{ $row['section']['label'] }} ngày {{ $dayNames[$day->dayOfWeekIso] }} {{ $day->format('d/m') }} để xếp lại">
-                                                <x-core::icon name="ti ti-eraser" /> <span>Xóa cột</span>
+                                                {!! $icon('eraser') !!} <span>Xóa cột</span>
                                             </button>
                                         @endif
                                     </td>
                                 @endforeach
                             </tr>
                         @endif
-                        <tr>
+                        @php
+                            // Thông tin cho bộ lọc trên trình duyệt (tìm tên, vị trí, giới tính, ca trong tuần, điều chuyển, cảnh báo, chưa xếp).
+                            $rowCodes = [];
+                            $rowTransfer = false;
+                            $rowWarn = $check['level'] !== 'ok' || $check['cells'];
+
+                            foreach ($row['cells'] as $rowShift) {
+                                $rowCodes[] = match ($rowShift->kind) {
+                                    'shift' => $rowShift->template?->code ?? 'Ca',
+                                    'off' => 'OFF',
+                                    default => (string) $rowShift->leave_type,
+                                };
+                                $rowTransfer = $rowTransfer || ($rowShift->isWorking() && in_array((int) $rowShift->outlet_id, $restaurantIds, true)
+                                    && (int) $rowShift->outlet_id !== (int) $employee->outlet_id);
+                                $rowWarn = $rowWarn || $rowShift->needs_review;
+                            }
+                        @endphp
+                        <tr class="roster-row" data-employee-name="{{ $employee->name }}" data-employee-id="{{ $employee->id }}" data-position="{{ $employee->position_id }}"
+                            data-position-name="{{ $employee->position?->name }}" data-gender="{{ $employee->gender }}" data-codes="{{ implode(' ', array_unique($rowCodes)) }}"
+                            @if ($rowTransfer) data-transfer="1" @endif @if ($rowWarn) data-warn="1" @endif @if (! $row['cells']) data-unscheduled="1" @endif>
                             <td class="roster-table__staff" @if ($check['messages']) title="{{ implode(' · ', $check['messages']) }}" @endif>
                                 <div class="roster-staff__name">
                                     {{ $employee->name }}@if ($employee->birthday)<span @class(['roster-staff__birthday', 'is-upcoming' => $employee->hasUpcomingBirthdayThisMonth()]) @if ($employee->hasUpcomingBirthdayThisMonth()) title="Sinh nhật ngày {{ $employee->birthday }} (tháng này)" @endif>({{ $employee->birthday }})</span>@endif
@@ -238,11 +339,11 @@
                                             data-roster-clear="row"
                                             data-employee="{{ $employee->id }}"
                                             title="Xóa lịch cả tuần của {{ $employee->name }} để xếp lại">
-                                            <x-core::icon name="ti ti-eraser" />
+                                            {!! $icon('eraser') !!}
                                         </button>
                                     @endif
                                     @if ($check['level'] !== 'ok' && $check['messages'])
-                                        <span class="roster-row-flag roster-row-flag--{{ $check['level'] }}"><x-core::icon name="ti ti-alert-circle" /></span>
+                                        <span class="roster-row-flag roster-row-flag--{{ $check['level'] }}">{!! $icon('alert') !!}</span>
                                     @endif
                                 </div>
                                 @php $nightRole = $employee->isNightCore() ? 'core' : $employee->night_role; @endphp
@@ -320,23 +421,20 @@
                                         default => $shift->template?->color ?? 'slate',
                                     };
                                 @endphp
+                                {{-- Chỉ ghi thuộc tính có giá trị; tên nhân viên ở <tr>, nhãn ngày ở <th> (roster.js đọc từ đó). --}}
                                 <td
                                     class="roster-cell {{ $day->isWeekend() ? 'is-weekend' : '' }} {{ $key === $today ? 'is-today' : '' }} {{ $warnings ? 'has-warning' : '' }}"
-                                    data-employee="{{ $employee->id }}"
-                                    data-employee-name="{{ $employee->name }}"
-                                    data-date="{{ $key }}"
-                                    data-date-label="{{ $dayNames[$day->dayOfWeekIso] }}, {{ $day->format('d/m/Y') }}"
-                                    data-note="{{ $shift?->note }}"
-                                    data-notation="{{ $shift?->notation }}"
-                                    data-template="{{ $shift?->shift_template_id }}"
-                                    data-tags="{{ json_encode($shift?->tags ?: []) }}"
-                                    data-overtime="{{ $shift?->overtime_hours ?: '' }}"
-                                    data-ot-status="{{ $shift?->overtime_status }}"
-                                    data-locked="{{ $shift?->is_locked ? 1 : 0 }}"
-                                    data-state="{{ $shift?->cellState() }}"
-                                    data-recorded-off="{{ $shift?->isRecordedOff() ? 1 : 0 }}"
-                                    data-review="{{ $shift?->needs_review ? $shift->review_note : '' }}"
-                                    data-warnings="{{ json_encode($warnings, JSON_UNESCAPED_UNICODE) }}"
+                                    data-employee="{{ $employee->id }}" data-date="{{ $key }}"
+                                    @if ($shift) data-notation="{{ $shift->notation }}" @endif
+                                    @if ($shift?->note) data-note="{{ $shift->note }}" @endif
+                                    @if ($shift?->shift_template_id) data-template="{{ $shift->shift_template_id }}" @endif
+                                    @if ($shift?->tags) data-tags="{{ json_encode($shift->tags) }}" @endif
+                                    @if ($shift?->overtime_hours > 0) data-overtime="{{ $shift->overtime_hours }}" @endif
+                                    @if ($shift?->overtime_status) data-ot-status="{{ $shift->overtime_status }}" @endif
+                                    @if ($shift?->is_locked) data-locked="1" @endif
+                                    @if ($shift?->isRecordedOff()) data-recorded-off="1" @endif
+                                    @if ($shift?->needs_review) data-review="{{ $shift->review_note }}" @endif
+                                    @if ($warnings) data-warnings="{{ json_encode($warnings, JSON_UNESCAPED_UNICODE) }}" @endif
                                     @if ($shift || $warnings) title="{{ implode("\n", [...$tooltip, ...$warnings]) }}" @endif
                                 >
                                     <div class="roster-mini roster-mini--{{ $variant }} {{ $shift?->status === 'draft' ? 'is-draft' : '' }} {{ $shift?->is_locked ? 'is-locked' : '' }} {{ $shift?->isRecordedOff() ? 'is-recorded-off' : '' }} {{ $shift?->needs_review ? 'needs-review' : '' }}">
@@ -351,7 +449,7 @@
                                         @elseif ($shift)
                                             <span class="roster-mini__code">{{ $shift->notation }}</span>
                                         @else
-                                            <x-core::icon name="ti ti-plus" />
+                                            {!! $icon('plus') !!}
                                         @endif
                                     </div>
                                 </td>
