@@ -34,42 +34,53 @@ final class HeuristicSolver implements SolverInterface
     public function solve(Problem $problem): SolveResult
     {
         $startedAt = microtime(true);
-        mt_srand($problem->rules->seed);
+        $rules = $problem->rules;
+        $limit = $rules->timeLimitSeconds;
+        // Thời gian mỗi lượt: null = một lượt duy nhất hết giới hạn.
+        $attemptSeconds = min($limit, $rules->searchMinSeconds ?? $limit);
 
         try {
-            $state = new ScheduleState($problem);
-            $deadline = $startedAt + $problem->rules->timeLimitSeconds;
+            $best = null;
+            $costs = [];
+            $iterations = 0;
 
-            $this->warmStart($state);
-            $constructed = $this->construct($state, $deadline);
-            $afterConstruction = $state->objective();
+            // Nhiều lượt độc lập (quản lý 02/11/2026): đo trên dữ liệu 54 người, chênh lệch giữa hai lần chạy khác hạt giống (ca nặng 2 so với 8) lớn hơn
+            // nhiều so với lợi ích của chạy lâu hơn → dùng thời gian để chạy nhiều lượt rồi giữ lịch tốt nhất. Lượt mới cho điểm sát lịch tốt nhất
+            // (trong searchConvergeGain) = đã gần tốt nhất → dừng sớm; lượt mới lệch xa (dao động còn lớn) thì chạy tiếp. Lượt đầu giữ đúng hạt giống cấu hình.
+            do {
+                $attempt = count($costs);
+                mt_srand($rules->seed + $attempt);
+                $this->resetAttempt();
+                $run = $this->runAttempt($problem, microtime(true) + $attemptSeconds);
+                $iterations += $run['stats']['iterations'];
 
-            $stats = $constructed
-                ? $this->localSearch($state, $deadline)
-                : ['iterations' => 0, 'accepted' => 0, 'improved' => 0, 'time_limit_reached' => true];
+                if (! $run['constructed']) {
+                    $best ??= $run;
 
-            if ($constructed) {
-                // Sửa OFF lẻ còn sót (thêm tối đa 3 giây).
-                $stats['off_repaired'] = $this->repairOffSplits($state, microtime(true) + 3);
-                // Đánh bóng có hệ thống: đổi ca trong ngày cho người còn ca nặng / lệch sáng–chiều (thêm tối đa 2 giây).
-                $stats['polished'] = $this->polishSwaps($state, microtime(true) + min(2, max(0.5, $problem->rules->timeLimitSeconds * 0.15)));
-                // Chỉnh Lobby: thay M6(L) / A2(L) bằng ca ưu tiên của người chưa có ca trong tuần (thêm tối đa 2 giây).
-                $stats['lobby_polished'] = $this->polishLobby($state, microtime(true) + 2);
-                // Duyệt lần lượt từng ngày (thứ Hai → Chủ nhật): ngày còn lệch Waiter M6 / A2 hoặc còn điểm phạt thì thử đổi ca các ô chưa khóa
-                // của ngày đó; đổi ca kéo theo kiểm tra giờ nghỉ với ngày kề (violation) và chấm lại toàn bộ lịch (cost) – chỉ nhận khi tốt hơn.
-                // Dời cặp ngày OFF của từng người sang vị trí khác trong tuần khi lịch tốt hơn (OFF rải đều, ca có đủ nam / nữ).
-                $stats['off_relocated'] = $this->relocateOffs($state, microtime(true) + 4);
-                $stats['day_repaired'] = $this->repairDays($state, microtime(true) + 3);
-            }
+                    break;
+                }
 
-            return (new ResultBuilder())->build($state, $constructed, [
+                $costs[] = $run['cost'];
+                $converged = $attempt > 0 && abs($best['cost'] - $run['cost']) < $rules->searchConvergeGain;
+
+                if (! $best || ! $best['constructed'] || $run['cost'] < $best['cost']) {
+                    $best = $run;
+                }
+            } while (! $converged && $iterations < $rules->maxIterations && microtime(true) - $startedAt + $attemptSeconds * 0.7 <= $limit);
+
+            return (new ResultBuilder())->build($best['state'], $best['constructed'], [
                 'solver' => $this->name(),
-                'seed' => $problem->rules->seed,
+                'seed' => $rules->seed,
                 'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
-                'time_limit_seconds' => $problem->rules->timeLimitSeconds,
-                'objective_after_construction' => $afterConstruction,
+                'time_limit_seconds' => $limit,
+                'objective_after_construction' => $best['after_construction'],
                 'input_hash' => $problem->hash(),
-                ...$stats,
+                ...$best['stats'],
+                'iterations' => $iterations,
+                'attempts' => count($costs),
+                'attempt_costs' => $costs,
+                // Điểm cuối cùng: để "Cải thiện thêm" chỉ nhận phương án tốt hơn thật sự.
+                'final_cost' => $best['constructed'] ? $best['cost'] : null,
             ]);
         } catch (Throwable $exception) {
             return new SolveResult(SolveResult::ERROR, explanation: ['Lỗi khi xếp lịch: ' . $exception->getMessage()], solverMetadata: [
@@ -80,11 +91,56 @@ final class HeuristicSolver implements SolverInterface
         }
     }
 
+    /** Bỏ các gợi ý của lượt trước (OFF dự kiến, trực đêm) – mỗi lượt tự lên lại theo hạt giống của mình. */
+    private function resetAttempt(): void
+    {
+        $this->plannedOff = [];
+        $this->nightDuty = [];
+    }
+
+    /**
+     * Một lượt xếp hoàn chỉnh trên trạng thái mới: dựng lịch (hoặc chạy tiếp từ seedPlan), tìm kiếm, các bước sửa cuối.
+     *
+     * @return array{state: ScheduleState, constructed: bool, cost: ?float, stats: array, after_construction: array}
+     */
+    private function runAttempt(Problem $problem, float $deadline): array
+    {
+        $state = new ScheduleState($problem);
+        $continuing = $problem->seedPlan !== [];
+
+        $this->warmStart($state);
+        // "Cải thiện thêm": phương án trước đã đầy đủ – không dựng lại (giữ nguyên ô, chỉ tìm cách tốt hơn).
+        $constructed = $continuing || $this->construct($state, $deadline);
+        $afterConstruction = $state->objective();
+
+        $stats = $constructed
+            ? $this->localSearch($state, $deadline, $continuing)
+            : ['iterations' => 0, 'accepted' => 0, 'improved' => 0, 'time_limit_reached' => true];
+
+        if ($constructed) {
+            // Sửa OFF lẻ còn sót (thêm tối đa 3 giây).
+            $stats['off_repaired'] = $this->repairOffSplits($state, microtime(true) + 3);
+            // Đánh bóng có hệ thống: đổi ca trong ngày cho người còn ca nặng / lệch sáng–chiều (thêm tối đa 2 giây).
+            $stats['polished'] = $this->polishSwaps($state, microtime(true) + min(2, max(0.5, $problem->rules->timeLimitSeconds * 0.15)));
+            // Chỉnh Lobby: thay M6(L) / A2(L) bằng ca ưu tiên của người chưa có ca trong tuần (thêm tối đa 2 giây).
+            $stats['lobby_polished'] = $this->polishLobby($state, microtime(true) + 2);
+            // Duyệt lần lượt từng ngày (thứ Hai → Chủ nhật): ngày còn lệch Waiter M6 / A2 hoặc còn điểm phạt thì thử đổi ca các ô chưa khóa
+            // của ngày đó; đổi ca kéo theo kiểm tra giờ nghỉ với ngày kề (violation) và chấm lại toàn bộ lịch (cost) – chỉ nhận khi tốt hơn.
+            // Dời cặp ngày OFF của từng người sang vị trí khác trong tuần khi lịch tốt hơn (OFF rải đều, ca có đủ nam / nữ).
+            $stats['off_relocated'] = $this->relocateOffs($state, microtime(true) + 4);
+            $stats['day_repaired'] = $this->repairDays($state, microtime(true) + 3);
+            // Sửa riêng ca nặng còn lại (vd A2 nối M6): đổi ca trong tuần của một người, hoặc đổi cả đoạn ngày giữa hai người.
+            $stats['heavy_repaired'] = $this->repairHeavy($state, microtime(true) + 3);
+        }
+
+        return ['state' => $state, 'constructed' => $constructed, 'cost' => $constructed ? $state->cost() : null, 'stats' => $stats, 'after_construction' => $afterConstruction];
+    }
+
     // ------------------------------------------------------------------ Giai đoạn 1
 
     private function warmStart(ScheduleState $state): void
     {
-        foreach ($state->problem->baseline as $employeeId => $cells) {
+        foreach ($state->problem->seedPlan ?: $state->problem->baseline as $employeeId => $cells) {
             if (! isset($state->problem->employees[$employeeId])) {
                 continue;
             }
@@ -1118,11 +1174,17 @@ final class HeuristicSolver implements SolverInterface
      * cuối kỳ chỉ còn tinh chỉnh. Nhóm "Bắt buộc" có trọng số rất lớn nên thực tế không bao giờ bị nhận xấu đi.
      * Luôn giữ lại phương án tốt nhất đã gặp và trả lịch về phương án đó khi kết thúc.
      */
-    private function localSearch(ScheduleState $state, float $deadline): array
+    /** Nhiệt độ đầu khi chạy tiếp từ phương án tốt ("Cải thiện thêm"): chỉ dò quanh phương án hiện có. */
+    private const CONTINUE_TEMPERATURE = 200;
+
+    /**
+     * @param bool $continuing true = chạy tiếp từ phương án đã tốt: bỏ pha dựng khung, nhiệt độ thấp
+     */
+    private function localSearch(ScheduleState $state, float $deadline, bool $continuing = false): array
     {
         $rules = $state->problem->rules;
         // Pha dựng khung (Rules::FRAME_PHASE_WEIGHTS) – bỏ qua khi tối ưu lại lịch đang dùng (ưu tiên ít thay đổi).
-        $frame = $rules->stabilityFirst ? null : Rules::FRAME_PHASE_WEIGHTS;
+        $frame = $rules->stabilityFirst || $continuing ? null : Rules::FRAME_PHASE_WEIGHTS;
         [$real, $framed] = $state->costs($frame ?? []);
         $current = $frame ? $framed : $real;
         $best = $real;
@@ -1137,7 +1199,7 @@ final class HeuristicSolver implements SolverInterface
 
         $startedAt = microtime(true);
         $span = max(1e-3, $deadline - $startedAt);
-        $t0 = max(1e-6, $rules->annealStartTemperature);
+        $t0 = max(1e-6, $continuing ? min($rules->annealStartTemperature, self::CONTINUE_TEMPERATURE) : $rules->annealStartTemperature);
         $t1 = max(1e-6, min($t0, $rules->annealEndTemperature));
         $temperature = $t0;
         $moves = [];
@@ -2351,6 +2413,131 @@ final class HeuristicSolver implements SolverInterface
      * toàn lịch giảm (OFF, Night, Lobby, giờ nghỉ, ô khóa là ràng buộc trong violation / cost nên không bị phá).
      * Ngày có thay đổi thì kiểm tra lại ngày trước và sau (giờ nghỉ giữa hai ngày).
      */
+    /**
+     * Sửa ca nặng (vd A2 hôm trước nối M6 hôm sau): tại ranh giới ca nặng của người A giữa ngày i và i + 1, thử
+     * (1) A đổi ca của một trong hai ngày đó với một ngày khác của chính mình;
+     * (2) A và B đổi cho nhau cả một đoạn ngày liền nhau bắt đầu / kết thúc ở ranh giới – số người mỗi ca mỗi ngày giữ nguyên, nên các cân bằng
+     *     theo ngày không lệch. Đổi lẻ từng ngày thường chỉ làm ca nặng chuyển chỗ; đổi cả đoạn mới gỡ được mẫu như A2 A2 A2 M6 M6.
+     * Chỉ nhận khi điểm tổng giảm; mọi ô đều qua kiểm tra ràng buộc; số ngày làm của mỗi người không đổi.
+     */
+    private function repairHeavy(ScheduleState $state, float $deadline): int
+    {
+        $improved = 0;
+        $current = $state->cost();
+        $employeeIds = array_keys($state->problem->employees);
+        $scope = $state->scopeIndexes();
+
+        // Thử một nhóm đổi ô [[người, ngày, ô mới], ...]: gỡ hết rồi đặt lại; không tốt hơn thì trả về như cũ.
+        $attempt = function (array $changes) use ($state, &$current, &$improved): bool {
+            $metrics = $state->metricsSnapshot();
+            $journal = [];
+            $valid = true;
+
+            foreach ($changes as [$e, $d]) {
+                $valid = $valid && $this->journalPut($state, $journal, $e, $d, null);
+            }
+
+            foreach ($changes as [$e, $d, $slot]) {
+                $valid = $valid && $this->journalPut($state, $journal, $e, $d, $slot);
+            }
+
+            if ($valid && ($candidate = $state->cost()) < $current) {
+                $current = $candidate;
+                $improved++;
+
+                return true;
+            }
+
+            $this->rollback($state, $journal);
+            $state->restoreMetrics($metrics);
+
+            return false;
+        };
+
+        // Đổi đoạn ngày giữa A và B: mọi ngày trong đoạn phải cùng đi làm hoặc cùng nghỉ, không ô nào cố định. null = không đổi được.
+        $exchange = function (int $a, int $b, array $days) use ($state): ?array {
+            $changes = [];
+
+            foreach ($days as $d) {
+                $slotA = $state->plan[$a][$d] ?? null;
+                $slotB = $state->plan[$b][$d] ?? null;
+
+                if ($state->isFixed($a, $d) || $state->isFixed($b, $d) || ($slotA === null) !== ($slotB === null)) {
+                    return null;
+                }
+
+                if ($slotA !== $slotB) {
+                    $changes[] = [$a, $d, $slotB];
+                    $changes[] = [$b, $d, $slotA];
+                }
+            }
+
+            return $changes ?: null;
+        };
+
+        do {
+            $changed = false;
+
+            foreach ($employeeIds as $a) {
+                foreach ($scope as $position => $i) {
+                    if (microtime(true) > $deadline) {
+                        return $improved;
+                    }
+
+                    if (! $state->isHeavyAt($a, $i)) {
+                        continue;
+                    }
+
+                    // (1) Đổi ca giữa một trong hai ngày và một ngày khác của chính người này.
+                    foreach ([$i, $i + 1] as $d) {
+                        $slotA = $state->plan[$a][$d] ?? null;
+
+                        if ($slotA === null || $state->isFixed($a, $d)) {
+                            continue;
+                        }
+
+                        foreach ($scope as $k) {
+                            $slotK = $state->plan[$a][$k] ?? null;
+
+                            if ($k !== $d && $slotK !== null && $slotK !== $slotA && ! $state->isFixed($a, $k) && $attempt([[$a, $d, $slotK], [$a, $k, $slotA]])) {
+                                $changed = true;
+
+                                continue 3;
+                            }
+                        }
+                    }
+
+                    // (2) Đổi cả đoạn ngày với người khác: đoạn kết thúc ở ngày i, hoặc bắt đầu từ ngày i + 1.
+                    $segments = [];
+
+                    for ($p = $position; $p >= 0; $p--) {
+                        $segments[] = array_slice($scope, $p, $position - $p + 1);
+                    }
+
+                    for ($p = $position + 1; $p < count($scope); $p++) {
+                        $segments[] = array_slice($scope, $position + 1, $p - $position);
+                    }
+
+                    foreach ($employeeIds as $b) {
+                        if ($b === $a) {
+                            continue;
+                        }
+
+                        foreach ($segments as $days) {
+                            if (($changes = $exchange($a, $b, $days)) && $attempt($changes)) {
+                                $changed = true;
+
+                                continue 3;
+                            }
+                        }
+                    }
+                }
+            }
+        } while ($changed && microtime(true) < $deadline);
+
+        return $improved;
+    }
+
     private function repairDays(ScheduleState $state, float $deadline): int
     {
         $improved = 0;

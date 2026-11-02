@@ -1473,7 +1473,9 @@ final class ResultBuilder
         }
 
         if (! empty($metadata['time_limit_reached'])) {
-            $lines[] = sprintf('Đã dừng tối ưu khi hết giới hạn %ss (%d bước thử, %d bước cải thiện).', $metadata['time_limit_seconds'], $metadata['iterations'] ?? 0, $metadata['improved'] ?? 0);
+            $lines[] = ($metadata['attempts'] ?? 1) > 1
+                ? sprintf('Đã chạy %d lượt độc lập và chọn lịch tốt nhất (%s bước thử).', $metadata['attempts'], number_format($metadata['iterations'] ?? 0, 0, ',', '.'))
+                : sprintf('Đã dừng tối ưu khi hết giới hạn %ss (%d bước thử, %d bước cải thiện).', $metadata['time_limit_seconds'], $metadata['iterations'] ?? 0, $metadata['improved'] ?? 0);
         }
 
         return $lines;

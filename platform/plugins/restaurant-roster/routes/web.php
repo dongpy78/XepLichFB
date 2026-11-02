@@ -73,6 +73,7 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 Route::post('run', 'AutoScheduleController@run')->name('run');
                 Route::get('{id}', 'AutoScheduleController@show')->name('show')->wherePrimaryKey('id');
                 Route::post('{id}/apply', 'AutoScheduleController@apply')->name('apply')->wherePrimaryKey('id');
+                Route::post('{id}/improve', 'AutoScheduleController@improve')->name('improve')->wherePrimaryKey('id');
                 Route::post('{id}/discard', 'AutoScheduleController@discard')->name('discard')->wherePrimaryKey('id');
             });
 

@@ -137,6 +137,10 @@ final class Rules
         // Đầu kỳ chấp nhận tạm bước xấu hơn cỡ một ngày OFF lẻ để thoát chỗ kẹt; cuối kỳ gần như chỉ nhận bước tốt hơn.
         public readonly float $annealStartTemperature = 2000,
         public readonly float $annealEndTemperature = 5,
+        // Nhiều lượt độc lập (quản lý 02/11/2026): mỗi lượt chạy searchMinSeconds, giữ lịch tốt nhất, tổng tối đa timeLimitSeconds; lượt mới cho điểm
+        // sát lịch tốt nhất (trong searchConvergeGain) thì dừng sớm. null = một lượt duy nhất hết timeLimitSeconds.
+        public readonly ?float $searchMinSeconds = null,
+        public readonly float $searchConvergeGain = 1000,
     ) {
     }
 
@@ -187,6 +191,8 @@ final class Rules
             weightOverrides: (array) ($config['weights'] ?? []),
             annealStartTemperature: (float) ($config['anneal_start_temperature'] ?? 2000),
             annealEndTemperature: (float) ($config['anneal_end_temperature'] ?? 5),
+            searchMinSeconds: isset($config['search_min_seconds']) ? (float) $config['search_min_seconds'] : null,
+            searchConvergeGain: (float) ($config['search_converge_gain'] ?? 1000),
         );
     }
 

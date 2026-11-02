@@ -139,6 +139,8 @@ trait SyntheticRoster
                 autoShiftCodes: $options['auto_shift_codes'] ?? null,
                 busyWeekdays: $options['busy_weekdays'] ?? [6],
                 lobbyHistoryFairness: $options['lobby_history_fairness'] ?? false,
+                searchMinSeconds: $options['search_min'] ?? null,
+                searchConvergeGain: $options['converge_gain'] ?? 1000,
             ),
             hardUnavailable: $options['hard'] ?? [],
             softUnavailable: $options['soft'] ?? [],
@@ -160,6 +162,7 @@ trait SyntheticRoster
             historyWeeks: $options['history_weeks'] ?? 4,
             nightPlan: $options['night_plan'] ?? [],
             lobbyPreferred: $options['lobby_preferred'] ?? [],
+            seedPlan: $options['seed_plan'] ?? [],
         );
     }
 

@@ -1640,6 +1640,15 @@ final class ScheduleState
      * @param array{0: ?int, 1: int, 2: float, 3: bool} $a
      * @param array{0: ?int, 1: int, 2: float, 3: bool} $b
      */
+    /** Người này có ca nặng giữa ngày $i và ngày $i + 1 không. */
+    public function isHeavyAt(int $employeeId, int $i): bool
+    {
+        $a = $this->shiftAt($employeeId, $i);
+        $b = isset($this->dates[$i + 1]) ? $this->shiftAt($employeeId, $i + 1) : null;
+
+        return $a && $b && $this->heavyBetween($a, $b);
+    }
+
     private function heavyBetween(array $a, array $b): bool
     {
         $rule = $this->problem->rules->transitions["{$a[1]}:{$b[1]}"] ?? null;

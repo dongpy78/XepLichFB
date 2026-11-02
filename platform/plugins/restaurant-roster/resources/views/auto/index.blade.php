@@ -132,7 +132,7 @@
             if (submitter) {
                 var tick = function () {
                     var seconds = Math.floor((Date.now() - started) / 1000);
-                    submitter.textContent = 'Đang xếp lịch… ' + seconds + ' giây (thường ~30–45 giây)';
+                    submitter.textContent = 'Đang xếp lịch… ' + seconds + ' giây (thường 40–60 giây)';
                 };
                 tick();
                 setInterval(tick, 1000);

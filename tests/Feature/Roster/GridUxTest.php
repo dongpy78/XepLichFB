@@ -137,23 +137,86 @@ class GridUxTest extends TestCase
         $this->actingAs($this->user)->postJson(route('roster.assign-undo'), ['week' => self::WEEK])->assertJson(['error' => true]);
     }
 
-    /** Hai lượt xếp lịch tự động cùng lúc (hai quản lý / hai tab): lượt sau bị từ chối rõ ràng, không chạy song song. */
+    /** Hai lượt xếp lịch tự động cùng lúc (hai quản lý / hai tab): lượt sau bị từ chối rõ ràng (khóa roster-scheduler-run của RosterScheduler). */
     public function test_concurrent_auto_run_is_refused(): void
     {
         $this->employee('G1', 'GUSTO', 'male');
-        config(['plugins.restaurant-roster.general.scheduling.require_off_confirmation' => false]);
-        $lock = \Illuminate\Support\Facades\Cache::lock('roster-auto-run', 180);
+        config(['plugins.restaurant-roster.general.scheduling.require_off_confirmation' => false, 'plugins.restaurant-roster.general.scheduling.time_limit_seconds' => 1,
+            'plugins.restaurant-roster.general.scheduling.search_min_seconds' => null]);
+        $payload = ['from' => self::WEEK, 'to' => '2030-03-10', 'type' => 'generate'];
+        $lock = \Illuminate\Support\Facades\Cache::lock('roster-scheduler-run', 120);
         $this->assertTrue($lock->get(), 'Giả lập một lượt đang chạy');
 
-        $response = $this->actingAs($this->user)->postJson(route('roster.auto.run'), ['from' => self::WEEK, 'to' => '2030-03-10', 'type' => 'validate'])
-            ->assertJson(['error' => true]);
-        $this->assertStringContainsString('Đang có một lượt xếp lịch tự động khác chạy', (string) $response->json('message'));
+        $response = $this->actingAs($this->user)->postJson(route('roster.auto.run'), $payload)->assertJson(['error' => true]);
+        $this->assertStringContainsString('Đang có một lần xếp lịch khác chạy', (string) $response->json('message'));
 
         $lock->release();
-        $response = $this->actingAs($this->user)->postJson(route('roster.auto.run'), ['from' => self::WEEK, 'to' => '2030-03-10', 'type' => 'validate'])
-            ->assertJson(['error' => false]);
+        $response = $this->actingAs($this->user)->postJson(route('roster.auto.run'), $payload)->assertJson(['error' => false]);
         $this->assertMatchesRegularExpression('/Đã chạy xong trong [\d,]+ giây/', (string) $response->json('message'));
-        $this->assertTrue(\Illuminate\Support\Facades\Cache::lock('roster-auto-run', 1)->get(), 'Khóa được nhả sau khi chạy xong');
+        $probe = \Illuminate\Support\Facades\Cache::lock('roster-scheduler-run', 1);
+        $this->assertTrue($probe->get(), 'Khóa được nhả sau khi chạy xong');
+        $probe->release();
+    }
+
+    /** @return \Botble\RestaurantRoster\Models\Run Phương án thô: ít vòng tìm kiếm để "Cải thiện thêm" còn chỗ tốt hơn. */
+    private function roughRun(): \Botble\RestaurantRoster\Models\Run
+    {
+        foreach (range(1, 6) as $k) {
+            $this->employee("G{$k}", 'GUSTO', $k % 2 ? 'female' : 'male');
+        }
+
+        config(['plugins.restaurant-roster.general.scheduling.require_off_confirmation' => false, 'plugins.restaurant-roster.general.scheduling.time_limit_seconds' => 1,
+            'plugins.restaurant-roster.general.scheduling.search_min_seconds' => null, 'plugins.restaurant-roster.general.scheduling.max_iterations' => 30]);
+        $this->actingAs($this->user)->postJson(route('roster.auto.run'), ['from' => self::WEEK, 'to' => '2030-03-10', 'type' => 'generate'])->assertJson(['error' => false]);
+
+        return \Botble\RestaurantRoster\Models\Run::query()->latest('id')->first();
+    }
+
+    public function test_improve_keeps_better_plan_or_the_old_one_never_worse(): void
+    {
+        $source = $this->roughRun();
+        $cost = $source->metrics['solver']['final_cost'];
+        $this->actingAs($this->user)->get(route('roster.auto.show', $source->getKey()))->assertOk()->assertSee('Cải thiện thêm');
+
+        // Được tìm kiếm thật sự: phương án mới không kém đi.
+        config(['plugins.restaurant-roster.general.scheduling.max_iterations' => 20000]);
+        $response = $this->actingAs($this->user)->postJson(route('roster.auto.improve', $source->getKey()))->assertJson(['error' => false]);
+        $latest = \Botble\RestaurantRoster\Models\Run::query()->whereNotIn('status', ['discarded'])->latest('id')->first();
+        $this->assertLessThanOrEqual($cost, $latest->metrics['solver']['final_cost'], 'Không bao giờ kém đi');
+
+        if ($latest->getKey() !== $source->getKey()) {
+            $this->assertStringContainsString('Đã cải thiện', (string) $response->json('message'));
+            $this->assertSame($source->getKey(), $latest->settings['improved_from']);
+            $this->assertSame('discarded', $source->fresh()->status, 'Phương án cũ được thay thế');
+        }
+
+        // Không có vòng tìm kiếm nào: không tốt hơn → giữ nguyên phương án đang có, lượt thử bị loại.
+        config(['plugins.restaurant-roster.general.scheduling.max_iterations' => 1]);
+        $response = $this->actingAs($this->user)->postJson(route('roster.auto.improve', $latest->getKey()))->assertJson(['error' => false]);
+        $this->assertStringContainsString('Không tìm thấy lịch tốt hơn', (string) $response->json('message'));
+        $this->assertNotSame('discarded', $latest->fresh()->status);
+        $this->assertSame('discarded', \Botble\RestaurantRoster\Models\Run::query()->latest('id')->first()->status);
+    }
+
+    public function test_improve_refused_when_schedule_changed_and_keeps_locked_cells(): void
+    {
+        $source = $this->roughRun();
+        $employee = Employee::query()->where('code', 'G1')->first();
+        $this->cell($employee, self::WEEK, 'M6', 'GUSTO');
+
+        $response = $this->actingAs($this->user)->postJson(route('roster.auto.improve', $source->getKey()))->assertJson(['error' => true]);
+        $this->assertStringContainsString('Lịch đã thay đổi', (string) $response->json('message'));
+
+        // Ô khóa: chạy lại rồi cải thiện vẫn giữ nguyên.
+        Shift::query()->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_CONFIRMED]);
+        $this->actingAs($this->user)->postJson(route('roster.auto.run'), ['from' => self::WEEK, 'to' => '2030-03-10', 'type' => 'generate'])->assertJson(['error' => false]);
+        $run = \Botble\RestaurantRoster\Models\Run::query()->latest('id')->first();
+        config(['plugins.restaurant-roster.general.scheduling.max_iterations' => 5000]);
+        $this->actingAs($this->user)->postJson(route('roster.auto.improve', $run->getKey()))->assertJson(['error' => false]);
+        $latest = \Botble\RestaurantRoster\Models\Run::query()->whereNotIn('status', ['discarded'])->latest('id')->first();
+        $cell = collect($latest->proposal['assignments'])->first(fn ($r) => $r['employee_id'] === $employee->getKey() && $r['date'] === self::WEEK);
+        $this->assertTrue($cell['locked']);
+        $this->assertSame($this->templates['M6']->getKey(), $cell['shift_id']);
     }
 
     public function test_undo_after_clearing_an_empty_cell_and_refuses_when_changed_later(): void

@@ -83,6 +83,11 @@ final class Problem
          *      hoặc outlet ngừng hoạt động). Chỉ những ngày này nhân viên của nhà hàng đó mới được tự xếp sang nhà hàng kia.
          */
         public readonly array $closedOutletDays = [],
+        /**
+         * @var array<int, array<string, string>> "Cải thiện thêm": [employeeId][ngày] => ô của phương án trước – bộ giải chạy tiếp từ đây
+         *      (không dựng lại từ đầu). Khác baseline (lịch trên bảng, dùng để tính số ô thay đổi): điểm hai phương án so sánh được với nhau.
+         */
+        public readonly array $seedPlan = [],
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -181,7 +186,7 @@ final class Problem
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
             $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan, $this->lobbyPreferred,
-            $this->restaurantOutletIds, $this->closedOutletDays,
+            $this->restaurantOutletIds, $this->closedOutletDays, $this->seedPlan,
         ]));
     }
 }

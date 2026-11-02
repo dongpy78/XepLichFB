@@ -25,9 +25,14 @@ return [
         'max_daily_hours' => 12,
         'max_consecutive_days' => 6,
         // Giới hạn thời gian mỗi lần chạy (giây) – giữ dưới timeout của web server.
-        // 28/10/2026: 30 giây (hosting chậm hơn máy thử) – thêm khoảng 10 giây cho các bước dời OFF / kiểm tra từng ngày.
-        'time_limit_seconds' => 30,
-        'max_iterations' => 600000,
+        // Tìm lịch tốt nhất (quản lý 02/11/2026): chạy nhiều lượt độc lập, mỗi lượt search_min_seconds, giữ lịch tốt nhất, tổng tối đa time_limit_seconds.
+        // Hai lượt cho điểm chênh nhau dưới search_converge_gain (ca nặng ~2.000 điểm) = đã gần tốt nhất → dừng sớm.
+        // Đo trên dữ liệu 54 người, 4 hạt giống: 1 lượt 30 giây TB 495.448 / tệ nhất 500.797; 3 lượt 20 giây TB 491.218 / tệ nhất 494.157.
+        // Nếu hosting báo lỗi hết thời gian (timeout) khi chạy: giảm time_limit_seconds xuống 40.
+        'time_limit_seconds' => 60,
+        'search_min_seconds' => 20,
+        'search_converge_gain' => 1000,
+        'max_iterations' => 2000000,
         'seed' => 20261012,
         // Ca có outlet cố định: ca này luôn được tính cho outlet đó, bất kể outlet chính của nhân viên.
         'shift_outlet' => [

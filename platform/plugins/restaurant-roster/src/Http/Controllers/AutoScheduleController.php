@@ -86,14 +86,6 @@ class AutoScheduleController extends BaseController
             ));
         }
 
-        // Một lượt xếp lịch tại một thời điểm (hai quản lý / hai tab bấm cùng lúc): thuật toán dùng nhiều CPU ~30 giây và hai phương án
-        // song song cho cùng tuần dễ gây nhầm khi áp dụng. Khóa tự hết hạn sau 3 phút nếu tiến trình bị dừng giữa chừng.
-        $lock = \Illuminate\Support\Facades\Cache::lock('roster-auto-run', 180);
-
-        if (! $lock->get()) {
-            return $this->httpResponse()->setError()->setMessage('Đang có một lượt xếp lịch tự động khác chạy (có thể của quản lý khác). Đợi khoảng 30 giây rồi thử lại.');
-        }
-
         $startedAt = microtime(true);
 
         try {
@@ -102,8 +94,6 @@ class AutoScheduleController extends BaseController
                 : $this->scheduler->run($from, $to, $data['outlet_ids'] ?? null, $data['type'], $request->user()?->getKey(), $overrides);
         } catch (RuntimeException $exception) {
             return $this->httpResponse()->setError()->setMessage($exception->getMessage());
-        } finally {
-            $lock->release();
         }
 
         return $this
@@ -131,8 +121,29 @@ class AutoScheduleController extends BaseController
             'templates' => $templates,
             'outlets' => $outlets,
             'diff' => $this->diff($run, $proposal, $templates, $outlets),
-            'canApply' => in_array($run->status, ['feasible', 'partial', 'infeasible'], true) && $run->type !== 'validate',
+            'canApply' => $canApply = in_array($run->status, ['feasible', 'partial', 'infeasible'], true) && $run->type !== 'validate',
+            'canImprove' => $canApply && isset($run->metrics['solver']['final_cost']),
         ]);
+    }
+
+    /** "Cải thiện thêm": chạy tiếp từ phương án đang xem; chỉ nhận khi tốt hơn, không thì giữ nguyên phương án cũ. */
+    public function improve(int|string $id, Request $request)
+    {
+        try {
+            $result = $this->scheduler->improve(Run::query()->findOrFail($id), $request->user()?->getKey());
+        } catch (RuntimeException $exception) {
+            return $this->httpResponse()->setError()->setMessage($exception->getMessage());
+        }
+
+        $url = route('roster.auto.show', $result['run']->getKey());
+
+        return $this
+            ->httpResponse()
+            ->setNextUrl($url)
+            ->setPreviousUrl($url)
+            ->setMessage($result['improved']
+                ? sprintf('Đã cải thiện: điểm phạt giảm %s. Có thể bấm tiếp hoặc áp dụng.', number_format($result['gain'], 0, ',', '.'))
+                : 'Không tìm thấy lịch tốt hơn – phương án này đã rất tốt, giữ nguyên.');
     }
 
     public function apply(int|string $id, Request $request)

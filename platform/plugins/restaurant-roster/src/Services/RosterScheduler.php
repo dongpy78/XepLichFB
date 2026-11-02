@@ -83,6 +83,47 @@ class RosterScheduler
     }
 
     /**
+     * "Cải thiện thêm": chạy tiếp từ phương án đã có, chỉ nhận khi điểm tổng tốt hơn thật sự – lịch không bao giờ kém đi. Không tốt hơn thì
+     * phương án cũ giữ nguyên. Điểm hai phương án so sánh được vì cùng dữ liệu (kiểm tra schedule_stamp) và cùng cách chấm.
+     *
+     * @return array{run: Run, improved: bool, gain: float}
+     */
+    public function improve(Run $source, ?int $userId): array
+    {
+        $previousCost = $source->metrics['solver']['final_cost'] ?? null;
+
+        if (! in_array($source->status, ['feasible', 'partial', 'infeasible'], true) || $source->type === 'validate' || $previousCost === null) {
+            throw new RuntimeException('Phương án này không cải thiện tiếp được. Hãy bấm "Tạo lịch tự động" để có phương án mới.');
+        }
+
+        if (($source->settings['schedule_stamp'] ?? null) !== $this->scheduleStamp($source->scope_from, $source->scope_to)) {
+            throw new RuntimeException('Lịch đã thay đổi sau lần chạy này (sửa ca, OFF…). Hãy bấm "Tạo lịch tự động" để có phương án mới theo lịch hiện tại.');
+        }
+
+        $seed = [];
+
+        foreach ($source->proposal['assignments'] ?? [] as $row) {
+            if ($row['kind'] === 'shift' && empty($row['locked'])) {
+                $seed[$row['employee_id']][$row['date']] = ScheduleState::slotKey((int) $row['outlet_id'], (int) $row['shift_id'], (bool) ($row['support'] ?? false));
+            }
+        }
+
+        $run = $this->run($source->scope_from, $source->scope_to, $source->outlet_ids, $source->type, $userId, ['seed_plan' => $seed]);
+        $cost = $run->metrics['solver']['final_cost'] ?? null;
+
+        if ($cost === null || $cost >= $previousCost) {
+            $run->update(['status' => 'discarded']);
+
+            return ['run' => $source, 'improved' => false, 'gain' => 0.0];
+        }
+
+        $run->update(['settings' => [...($run->settings ?? []), 'improved_from' => $source->getKey()]]);
+        $source->update(['status' => 'discarded']);
+
+        return ['run' => $run, 'improved' => true, 'gain' => $previousCost - $cost];
+    }
+
+    /**
      * Kiểm tra lịch hiện tại (không thay đổi gì): vi phạm cứng, thiếu người, công bằng.
      */
     public function validate(CarbonInterface $from, CarbonInterface $to, ?array $outletIds, ?int $userId): Run

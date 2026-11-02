@@ -230,6 +230,46 @@ class PerformanceBenchmarkTest extends TestCase
         $this->assertTrue(true);
     }
 
+    /**
+     * So sánh chất lượng lịch giữa các cấu hình tìm kiếm, nhiều hạt giống. ROSTER_BENCH_COMPARE="tổng:mỗi lượt,…", vd "30,45:15".
+     * Chỉ in tiêu chí có giá trị khác nhau.
+     */
+    public function test_quality_by_search_config(): void
+    {
+        if (! $configs = getenv('ROSTER_BENCH_COMPARE')) {
+            $this->markTestSkipped('ROSTER_BENCH_COMPARE=30,45:15');
+        }
+
+        set_time_limit(0);
+
+        $from = Carbon::parse(self::WEEK);
+        $rows = [];
+
+        foreach ([20261012, 7, 11, 23] as $seed) {
+            foreach (explode(',', $configs) as $config) {
+                [$limit, $min] = array_pad(explode(':', $config), 2, null);
+                $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, array_filter(['time_limit_seconds' => (int) $limit, 'seed' => $seed,
+                    'max_iterations' => 2000000, 'search_min_seconds' => $min], fn ($v) => $v !== null));
+                $start = hrtime(true);
+                $result = (new HeuristicSolver())->solve($problem);
+                $meta = $result->solverMetadata;
+                $rows["{$seed} {$config}"] = ['ms' => (hrtime(true) - $start) / 1e6, 'cost' => $meta['final_cost'] ?? null, 'rounds' => $meta['attempts'] ?? 1, 'repaired' => $meta['heavy_repaired'] ?? 0,
+                    'warnings' => count($result->warnings), 'objective' => $result->softConstraintScores['objective'] ?? []];
+            }
+        }
+
+        $labels = array_keys(reset($rows)['objective']);
+        $changing = array_values(array_filter($labels, fn ($l) => count(array_unique(array_map(fn ($r) => $r['objective'][$l] ?? null, $rows))) > 1));
+        fwrite(STDERR, "\n  " . str_pad('hạt / cấu hình', 22) . str_pad('giây', 7) . str_pad('lượt', 5) . str_pad('sửa', 5) . str_pad('điểm', 12) . implode('', array_map(fn ($l) => substr(str_pad($l, 12), 0, 12) . ' ', $changing)) . "\n");
+
+        foreach ($rows as $key => $r) {
+            fwrite(STDERR, '  ' . str_pad($key, 22) . str_pad((string) round($r['ms'] / 1000, 1), 7) . str_pad((string) $r['rounds'], 5) . str_pad((string) $r['repaired'], 5) . str_pad((string) round($r['cost'] - 100000000), 12)
+                . implode('', array_map(fn ($l) => str_pad((string) ($r['objective'][$l] ?? ''), 13), $changing)) . "\n");
+        }
+
+        $this->assertTrue(true);
+    }
+
     public function test_benchmark(): void
     {
         $employees = Employee::query()->count();

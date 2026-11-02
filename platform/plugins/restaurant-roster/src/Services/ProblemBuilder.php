@@ -359,6 +359,7 @@ class ProblemBuilder
             lobbyPreferred: $this->lobbyPreferred($specs, $shifts, $templates, $stationOutletId, $stationCode),
             restaurantOutletIds: $transferOutletIds,
             closedOutletDays: $this->closedRestaurantDays($transferOutletIds, $days),
+            seedPlan: $overrides['seed_plan'] ?? [],
         );
     }
 

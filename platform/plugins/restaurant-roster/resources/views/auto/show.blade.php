@@ -45,6 +45,13 @@
                             @csrf
                             <button class="btn">Bỏ qua</button>
                         </form>
+                        @if ($canImprove)
+                            <form method="POST" action="{{ route('roster.auto.improve', $run->id) }}"
+                                onsubmit="var b = this.querySelector('button'); setTimeout(function () { b.disabled = true; }, 0); b.textContent = 'Đang cải thiện…';">
+                                @csrf
+                                <button class="btn" title="Thuật toán chạy tiếp từ phương án này. Chỉ nhận khi lịch tốt hơn – không bao giờ kém đi."><x-core::icon name="ti ti-sparkles" /> Cải thiện thêm</button>
+                            </form>
+                        @endif
                         <form method="POST" action="{{ route('roster.auto.apply', $run->id) }}" onsubmit="return confirm('Áp dụng {{ count($diff) }} thay đổi vào lịch (trạng thái nháp)? Ô đã khóa và nghỉ phép không bị đổi.')">
                             @csrf
                             <button class="btn btn-primary"><x-core::icon name="ti ti-check" /> Áp dụng vào lịch (nháp)</button>
@@ -462,6 +469,7 @@
         <div class="card-body small text-muted">
             Thuật toán: {{ $run->solver }} · {{ $run->duration_ms ? round($run->duration_ms / 1000, 1) . ' giây' : '' }}
             @if (! empty($run->metrics['solver']['iterations'])) · {{ number_format($run->metrics['solver']['iterations']) }} bước thử, {{ number_format($run->metrics['solver']['improved'] ?? 0) }} bước cải thiện @endif
+            @if (($run->metrics['solver']['attempts'] ?? 1) > 1) · chọn lịch tốt nhất trong {{ $run->metrics['solver']['attempts'] }} lượt chạy @endif
             · seed {{ $run->metrics['solver']['seed'] ?? '—' }}
             · vector mục tiêu {{ json_encode(array_values($objective)) }}
             <br>Thứ tự ưu tiên: vi phạm cứng → điều chuyển làm thiếu nơi nguồn → thiếu tối thiểu (kể cả phủ Lobby) → làm quá định mức tuần → thiếu mục tiêu → ca nặng → công bằng → OFF liền 2–3 ngày → sở thích & ổn định. Ô tiệc (BQ) và ô quản lý khóa luôn được giữ nguyên. Sinh nhật nhân viên được OFF theo quy định.
