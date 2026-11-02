@@ -387,13 +387,46 @@ final class ScheduleState
     /**
      * Outlet "cho người" của một ô phủ Lobby: ô (L) lấy từ outlet của ca; ca làm trọn ở Lobby (M9) tính vào outlet chính của nhân viên.
      */
-    public function supportSource(int $employeeId, ?int $outletId): ?int
+    public function supportSource(int $employeeId, ?int $outletId, int $i): ?int
     {
-        if ($outletId !== null && $outletId === $this->problem->stationOutletId) {
-            return $this->problem->employees[$employeeId]?->homeOutletId;
+        $source = $outletId !== null && $outletId === $this->problem->stationOutletId
+            ? $this->problem->employees[$employeeId]?->homeOutletId
+            : $outletId;
+
+        // Chỉ một nhà hàng hoạt động (quản lý 02/11/2026): nhân viên hai nhà hàng là một nhóm, không chia Lobby theo outlet gốc.
+        $open = $this->openRestaurant($i);
+
+        return $open !== null && in_array($source, $this->problem->restaurantOutletIds, true) ? $open : $source;
+    }
+
+    /** Số người tối đa một nguồn góp cho một khung Lobby: nhóm gộp giữ tổng trần của các nhà hàng (Villa + Gusto = 2). */
+    private function supportCap(int $i, ?int $source): int
+    {
+        $cap = $this->problem->rules->maxSupportPerOutlet;
+
+        return $source !== null && $source === $this->openRestaurant($i) ? $cap * count($this->problem->restaurantOutletIds) : $cap;
+    }
+
+    /** Ngày i có nhà hàng đóng cửa và đúng một nhà hàng còn mở → nhà hàng đó; còn lại null. */
+    public function openRestaurant(int $i): ?int
+    {
+        if (! array_key_exists($i, $this->openRestaurantDay)) {
+            $open = array_values(array_filter($this->problem->restaurantOutletIds, fn ($o) => ! isset($this->problem->closedOutletDays[$o][$this->dates[$i]])));
+            $this->openRestaurantDay[$i] = count($open) === 1 && count($this->problem->restaurantOutletIds) > 1 ? $open[0] : null;
         }
 
-        return $outletId;
+        return $this->openRestaurantDay[$i];
+    }
+
+    /** @var array<int, int|null> */
+    private array $openRestaurantDay = [];
+
+    /** Outlet làm việc của người này ngày i: outlet gốc, hoặc nhà hàng còn mở khi nhà hàng gốc đóng cửa. */
+    public function workingOutlet(EmployeeSpec $employee, int $i): ?int
+    {
+        $open = $this->openRestaurant($i);
+
+        return $open !== null && in_array($employee->homeOutletId, $this->problem->restaurantOutletIds, true) ? $open : $employee->homeOutletId;
     }
 
     /**
@@ -745,7 +778,8 @@ final class ScheduleState
             }
 
             // Hỗ trợ Lobby (L) chỉ đi từ outlet chính (không mượn ca của outlet khác rồi đưa đi Lobby, vd "OH(G)(L)").
-            if ($checkEligibility && $employee->homeOutletId !== null && $outletId !== $employee->homeOutletId) {
+            // Nhà hàng gốc đóng cửa: nhà hàng còn mở là chỗ làm chính của ngày đó.
+            if ($checkEligibility && $employee->homeOutletId !== null && $outletId !== $this->workingOutlet($employee, $i)) {
                 return ['support', 'Hỗ trợ Lobby (L) chỉ từ outlet chính của nhân viên'];
             }
 
@@ -761,8 +795,8 @@ final class ScheduleState
 
         // Mỗi outlet chỉ góp tối đa N người cho một khung Lobby (người đi Lobby là người rút khỏi nhà hàng).
         if ($support || ($outletId === $this->problem->stationOutletId && $outletId !== null)) {
-            $source = $this->supportSource($employeeId, $outletId);
-            $cap = $this->problem->rules->maxSupportPerOutlet;
+            $source = $this->supportSource($employeeId, $outletId, $i);
+            $cap = $this->supportCap($i, $source);
 
             foreach ($this->supportWindows($i, $outletId, $shiftId, $support) as $k) {
                 if ($source !== null && $this->supportFrom($i, $k, $source) + 1 > $cap) {
@@ -896,7 +930,7 @@ final class ScheduleState
                 // Ô cố định (quản lý xếp tay / khóa) ngoài năng lực hoặc khác ca cứng là quyết định của quản lý:
                 // không kiểm tra năng lực, nhưng giờ nghỉ, ngày làm liên tục, ngày OFF vẫn được kiểm tra.
                 // Ô (L) đang được đếm trong số người đi hỗ trợ của outlet: trừ tạm để không tự tính chính nó vào trần.
-                $source = $this->supportSource($employeeId, $o);
+                $source = $this->supportSource($employeeId, $o, $i);
                 $windows = $source === null ? [] : array_filter($this->supportWindows($i, $o, $s, $f), fn ($k) => $this->countsForCoverage($employeeId, $i, $k));
 
                 foreach ($windows as $k) {
@@ -2294,7 +2328,7 @@ final class ScheduleState
         }
 
         if (! empty($this->coverage[$i])) {
-            $source = $this->supportSource($employeeId, $outletId);
+            $source = $this->supportSource($employeeId, $outletId, $i);
 
             $femaleStaff = $this->problem->employees[$employeeId]?->isFemaleStaff ?? false;
 

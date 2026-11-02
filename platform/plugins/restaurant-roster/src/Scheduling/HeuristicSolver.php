@@ -996,7 +996,7 @@ final class HeuristicSolver implements SolverInterface
                     continue;
                 }
 
-                $source = $state->supportSource($employeeId, $requirement->outletId);
+                $source = $state->supportSource($employeeId, $requirement->outletId, $i);
                 $expected = max(0.5, $this->expectedDays($state, $employee));
                 $score = $state->supportFrom($i, $k, $source) * 100
                     + $state->lobbyLoad($employeeId) * 20
@@ -2206,7 +2206,7 @@ final class HeuristicSolver implements SolverInterface
                 $shiftId = $problem->lobbyPreferred[$c];
                 $employee = $problem->employees[$c];
                 $atStation = isset($state->requirements[$i]["{$problem->stationOutletId}|{$shiftId}"]) && $employee->skillLevel((int) $problem->stationOutletId, $shiftId) !== null;
-                $outletId = $atStation ? (int) $problem->stationOutletId : $employee->homeOutletId;
+                $outletId = $atStation ? (int) $problem->stationOutletId : $state->workingOutlet($employee, $i);
 
                 if ($outletId === null || ! isset($state->requirements[$i]["{$outletId}|{$shiftId}"])) {
                     continue;
