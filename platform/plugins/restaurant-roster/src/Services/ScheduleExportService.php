@@ -185,11 +185,15 @@ class ScheduleExportService
         $tableH = $headH + $sectionH * count($sections) + $rowH * count($rows);
         $height = $tableTop + $tableH + 110;
 
-        $img = imagecreatetruecolor($width, $height);
+        // Vẽ ở độ phân giải cao (quản lý 02/11/2026: ảnh gửi nhân viên bị mờ khi phóng to trên điện thoại): tọa độ logic vẫn rộng 1800,
+        // ảnh thật gấp đôi. Thiếu bộ nhớ thì tự hạ tỉ lệ thay vì lỗi.
+        $this->scale = $this->affordableScale($width, $height);
+        $img = imagecreatetruecolor((int) ceil($width * $this->scale), (int) ceil($height * $this->scale));
+        imagesetthickness($img, (int) max(1, round($this->scale)));
         $c = fn (string $hex) => imagecolorallocate($img, hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2)));
         $white = $c('FFFFFF');
         $text = $c('0F172A');
-        $muted = $c('64748B');
+        $muted = $c('475569');
         $faint = $c('94A3B8');
         $line = $c('E5E9F0');
         $headBg = $c('F8FAFC');
@@ -197,17 +201,17 @@ class ScheduleExportService
         $weekend = $c('FBFCFD');
         $navy = $c('0A2540');
         $gold = $c('E0A96D');
-        imagefilledrectangle($img, 0, 0, $width, $height, $white);
+        $this->drawRect($img, 0, 0, $width, $height, $white);
 
         // Tiêu đề: "LỊCH LÀM VIỆC TUẦN" + ngày áp dụng (vạch vàng bên trái như thương hiệu).
-        imagefilledrectangle($img, $pad, 40, $pad + 6, 124, $gold);
-        imagettftext($img, 36, 0, $pad + 24, 82, $navy, $f['bold'], 'LỊCH LÀM VIỆC TUẦN');
-        imagettftext($img, 20, 0, $pad + 26, 122, $muted, $f['medium'], 'Ngày ' . $this->snapshots->period($snapshot));
+        $this->drawRect($img, $pad, 40, $pad + 6, 124, $gold);
+        $this->drawText($img, 36, 0, $pad + 24, 82, $navy, $f['bold'], 'LỊCH LÀM VIỆC TUẦN');
+        $this->drawText($img, 20, 0, $pad + 26, 122, $muted, $f['medium'], 'Ngày ' . $this->snapshots->period($snapshot));
 
         if ($draft) {
             $tagW = $this->textWidth($f['bold'], 17, 'BẢN NHÁP') + 40;
             $this->roundRect($img, $width - $pad - $tagW, 52, $width - $pad, 94, 8, $c('FEE2E2'));
-            imagettftext($img, 17, 0, $width - $pad - $tagW + 20, 80, $c('DC2626'), $f['bold'], 'BẢN NHÁP');
+            $this->drawText($img, 17, 0, $width - $pad - $tagW + 20, 80, $c('DC2626'), $f['bold'], 'BẢN NHÁP');
         }
 
         $x0 = $pad;
@@ -222,14 +226,14 @@ class ScheduleExportService
         // Nền cột cuối tuần (nhạt như bảng xếp ca).
         foreach ($days as $k => $day) {
             if ($isWeekend($day)) {
-                imagefilledrectangle($img, $dayX($k), $tableTop + $headH, $dayX($k) + $colDay - ($k === count($days) - 1 ? 1 : 0), $tableTop + $tableH - 12, $weekend);
+                $this->drawRect($img, $dayX($k), $tableTop + $headH, $dayX($k) + $colDay - ($k === count($days) - 1 ? 1 : 0), $tableTop + $tableH - 12, $weekend);
             }
         }
 
         // Hàng tiêu đề.
         $y = $tableTop;
         $this->roundRect($img, $x0, $y, $x1, $y + $headH, 12, $headBg);
-        imagefilledrectangle($img, $x0, $y + 12, $x1, $y + $headH, $headBg);
+        $this->drawRect($img, $x0, $y + 12, $x1, $y + $headH, $headBg);
         $this->cellText($img, $f['semibold'], 14, $faint, $x0, $colNo, $y, $headH, '#', true);
         $this->cellText($img, $f['semibold'], 14, $muted, $x0 + $colNo, $colName, $y, $headH, 'NHÂN VIÊN');
 
@@ -239,16 +243,16 @@ class ScheduleExportService
             $this->cellText($img, $f['regular'], 14, $muted, $dayX($k), $colDay, $y + 14, $headH, $date, true);
         }
 
-        imageline($img, $x0, $y + $headH, $x1, $y + $headH, $line);
+        $this->drawLine($img, $x0, $y + $headH, $x1, $y + $headH, $line);
         $y += $headH;
         $n = 0;
 
         foreach ($sections as $section) {
-            imagefilledrectangle($img, $x0, $y, $x1, $y + $sectionH, $sectionBg);
+            $this->drawRect($img, $x0, $y, $x1, $y + $sectionH, $sectionBg);
             $label = mb_strtoupper($section['label']);
-            imagettftext($img, 15, 0, $x0 + 18, (int) ($y + $sectionH / 2 + 6), $c('334155'), $f['bold'], $label);
-            imagettftext($img, 14, 0, $x0 + 30 + $this->textWidth($f['bold'], 15, $label), (int) ($y + $sectionH / 2 + 6), $faint, $f['medium'], count($section['rows']) . ' người');
-            imageline($img, $x0, $y + $sectionH, $x1, $y + $sectionH, $line);
+            $this->drawText($img, 15, 0, $x0 + 18, (int) ($y + $sectionH / 2 + 6), $c('334155'), $f['bold'], $label);
+            $this->drawText($img, 14, 0, $x0 + 30 + $this->textWidth($f['bold'], 15, $label), (int) ($y + $sectionH / 2 + 6), $faint, $f['medium'], count($section['rows']) . ' người');
+            $this->drawLine($img, $x0, $y + $sectionH, $x1, $y + $sectionH, $line);
             $y += $sectionH;
 
             foreach ($section['rows'] as $row) {
@@ -257,7 +261,7 @@ class ScheduleExportService
                 // Tên + ngày sinh "(13/12)" như Bảng xếp ca: chữ xám nhạt; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
                 $nx = $x0 + $colNo + 8;
                 $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 100 : 0));
-                imagettftext($img, 19, 0, $nx, $y + 31, $text, $f['semibold'], $name);
+                $this->drawText($img, 19, 0, $nx, $y + 31, $text, $f['semibold'], $name);
 
                 if (! empty($row['birthday'])) {
                     $label = '(' . $row['birthday'] . ')';
@@ -266,13 +270,13 @@ class ScheduleExportService
                     if ($birthdayThisMonth($row)) {
                         $bw = $this->textWidth($f['bold'], 16, $label) + 18;
                         $this->roundRect($img, $bx, $y + 11, $bx + $bw, $y + 37, 13, $c('FEE2E2'));
-                        imagettftext($img, 16, 0, $bx + 9, $y + 30, $c('DC2626'), $f['bold'], $label);
+                        $this->drawText($img, 16, 0, $bx + 9, $y + 30, $c('DC2626'), $f['bold'], $label);
                     } else {
-                        imagettftext($img, 16, 0, $bx, $y + 30, $faint, $f['regular'], $label);
+                        $this->drawText($img, 16, 0, $bx, $y + 30, $faint, $f['regular'], $label);
                     }
                 }
 
-                imagettftext($img, 14, 0, $nx, $y + 54, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));
+                $this->drawText($img, 14, 0, $nx, $y + 54, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));
 
                 foreach ($row['cells'] as $k => $cell) {
                     if ($cell === '') {
@@ -285,19 +289,19 @@ class ScheduleExportService
                 }
 
                 $y += $rowH;
-                imageline($img, $x0, $y, $x1, $y, $line);
+                $this->drawLine($img, $x0, $y, $x1, $y, $line);
             }
         }
 
         // Kẻ dọc giữa các cột.
         foreach (range(0, count($days) - 1) as $k) {
-            imageline($img, $dayX($k), $tableTop + $headH, $dayX($k), $tableTop + $tableH - 1, $line);
+            $this->drawLine($img, $dayX($k), $tableTop + $headH, $dayX($k), $tableTop + $tableH - 1, $line);
         }
 
         // Chú thích màu ca.
         $lx = $pad;
         $ly = $tableTop + $tableH + 34;
-        imagettftext($img, 15, 0, $lx, $ly + 21, $muted, $f['semibold'], 'Chú thích');
+        $this->drawText($img, 15, 0, $lx, $ly + 21, $muted, $f['semibold'], 'Chú thích');
         $lx += $this->textWidth($f['semibold'], 15, 'Chú thích') + 22;
 
         foreach ([...$snapshot['legend'], 'OFF' => 'nghỉ'] as $code => $time) {
@@ -310,12 +314,12 @@ class ScheduleExportService
             }
 
             $this->roundRect($img, $lx, $ly, $lx + $chipW, $ly + 30, 7, $c($fill));
-            imagettftext($img, 15, 0, $lx + 13, $ly + 21, $c($fg), $f['semibold'], (string) $code);
-            imagettftext($img, 14, 0, $lx + $chipW + 9, $ly + 21, $muted, $f['regular'], (string) $time);
+            $this->drawText($img, 15, 0, $lx + 13, $ly + 21, $c($fg), $f['semibold'], (string) $code);
+            $this->drawText($img, 14, 0, $lx + $chipW + 9, $ly + 21, $muted, $f['regular'], (string) $time);
             $lx += $chipW + $tw + 30;
         }
 
-        imagettftext($img, 13, 0, $pad, $ly + 64, $faint, $f['regular'], 'Selectum Noa · F&B · Xếp lịch nhà hàng');
+        $this->drawText($img, 13, 0, $pad, $ly + 64, $faint, $f['regular'], 'Selectum Noa · F&B · Xếp lịch nhà hàng');
 
         ob_start();
         imagepng($img, null, 6);
@@ -362,6 +366,7 @@ class ScheduleExportService
 
     private function roundRect($img, int $x1, int $y1, int $x2, int $y2, int $r, int $color): void
     {
+        [$x1, $y1, $x2, $y2, $r] = array_map(fn ($v) => (int) round($v * $this->scale), [$x1, $y1, $x2, $y2, $r]);
         $r = max(0, min($r, (int) (($x2 - $x1) / 2), (int) (($y2 - $y1) / 2)));
         imagefilledrectangle($img, $x1 + $r, $y1, $x2 - $r, $y2, $color);
         imagefilledrectangle($img, $x1, $y1 + $r, $x2, $y2 - $r, $color);
@@ -402,19 +407,65 @@ class ScheduleExportService
         throw new RuntimeException('Không tìm thấy font để tạo ảnh PNG.');
     }
 
+    /** Tỉ lệ vẽ ảnh PNG: số điểm ảnh thật cho mỗi đơn vị tọa độ logic. */
+    private float $scale = 1.0;
+
+    /** Tỉ lệ cao nhất mà bộ nhớ PHP còn đủ (đo thực tế: 3600 x 10016 điểm ảnh dùng ~306 MB, tức ~8,5 byte / điểm ảnh kể cả khi nén PNG). */
+    private function affordableScale(int $width, int $height): float
+    {
+        @ini_set('memory_limit', '512M');
+        $limit = $this->memoryLimitBytes();
+
+        foreach ([2.0, 1.5] as $scale) {
+            if ($limit < 0 || memory_get_usage(true) + $width * $height * $scale * $scale * 8.5 < $limit) {
+                return $scale;
+            }
+        }
+
+        return 1.0;
+    }
+
+    private function memoryLimitBytes(): int
+    {
+        $value = trim((string) ini_get('memory_limit'));
+        $number = (int) $value;
+
+        return match (strtoupper(substr($value, -1))) {
+            'G' => $number * 1024 ** 3,
+            'M' => $number * 1024 ** 2,
+            'K' => $number * 1024,
+            default => $number,
+        };
+    }
+
+    private function drawText($img, float $size, int $angle, int|float $x, int|float $y, int $color, string $font, string $text): void
+    {
+        imagettftext($img, $size * $this->scale, $angle, (int) round($x * $this->scale), (int) round($y * $this->scale), $color, $font, $text);
+    }
+
+    private function drawRect($img, int|float $x1, int|float $y1, int|float $x2, int|float $y2, int $color): void
+    {
+        imagefilledrectangle($img, (int) round($x1 * $this->scale), (int) round($y1 * $this->scale), (int) round($x2 * $this->scale), (int) round($y2 * $this->scale), $color);
+    }
+
+    private function drawLine($img, int|float $x1, int|float $y1, int|float $x2, int|float $y2, int $color): void
+    {
+        imageline($img, (int) round($x1 * $this->scale), (int) round($y1 * $this->scale), (int) round($x2 * $this->scale), (int) round($y2 * $this->scale), $color);
+    }
+
     private function cellText($img, string $font, int $size, int $color, int $x, int $w, int $y, int $h, string $text, bool $center = false): void
     {
         $text = $this->fit($font, $size, $text, $w - 16);
         $tw = $this->textWidth($font, $size, $text);
         $tx = $center ? (int) ($x + ($w - $tw) / 2) : $x + 10;
-        imagettftext($img, $size, 0, $tx, (int) ($y + $h / 2 + $size * 0.38), $color, $font, $text);
+        $this->drawText($img, $size, 0, $tx, $y + $h / 2 + $size * 0.38, $color, $font, $text);
     }
 
     private function textWidth(string $font, int $size, string $text): int
     {
-        $box = imagettfbbox($size, 0, $font, $text);
+        $box = imagettfbbox($size * $this->scale, 0, $font, $text);
 
-        return (int) abs($box[2] - $box[0]);
+        return (int) ceil(abs($box[2] - $box[0]) / $this->scale);
     }
 
     /** Cắt bớt (…) nếu chữ dài hơn ô – không để chữ tràn / chồng lên ô bên cạnh. */

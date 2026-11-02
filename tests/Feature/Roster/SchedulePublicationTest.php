@@ -217,7 +217,12 @@ class SchedulePublicationTest extends TestCase
         $png = $this->export('png')->assertOk()->assertHeader('Content-Type', 'image/png');
         $this->assertStringContainsString('Lich-lam-viec-2030-01-07_2030-01-13-v1.png', (string) $png->headers->get('Content-Disposition'));
         $info = getimagesizefromstring($png->getContent());
-        $this->assertSame(1800, $info[0], 'Ảnh rộng 1800px, bảng phủ kín chiều rộng');
+        $this->assertSame(3600, $info[0], 'Ảnh độ phân giải cao: rộng 3600px (bố cục logic 1800), bảng phủ kín chiều rộng');
+
+        // Thiếu bộ nhớ: tự hạ độ phân giải thay vì lỗi.
+        $service = app(\Botble\RestaurantRoster\Services\ScheduleExportService::class);
+        $this->assertSame(2.0, (fn () => $this->affordableScale(1800, 2000))->call($service));
+        $this->assertSame(1.0, (fn () => $this->affordableScale(1800, 5000000))->call($service));
 
         $xlsx = $this->export('xlsx')->assertOk();
         $this->assertStringContainsString('-v1.xlsx', (string) $xlsx->headers->get('Content-Disposition'));
