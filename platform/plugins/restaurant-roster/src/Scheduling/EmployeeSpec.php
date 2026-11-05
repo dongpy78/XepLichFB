@@ -39,6 +39,8 @@ final class EmployeeSpec
         // của ScheduleState chặn mọi ngày nhà hàng gốc còn hoạt động).
         /** @var int[] */
         public readonly array $closedHomeOutletIds = [],
+        // Thực tập sinh: được xếp M6 / A2 tại nhà hàng, không tính vào định biên / cân bằng của nhân viên chính thức.
+        public readonly bool $isTrainee = false,
     ) {
     }
 

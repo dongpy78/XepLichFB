@@ -34,7 +34,7 @@
             }
         }
 
-        if (! $alertRow['cells'] && $alertEmployee->auto_schedule && ! $alertEmployee->is_trainee) {
+        if (! $alertRow['cells'] && $alertEmployee->auto_schedule) {
             $alerts[] = ['level' => 'info', 'employee' => $alertEmployee->id, 'date' => null, 'who' => $alertEmployee->name, 'text' => 'Chưa có ô lịch nào trong tuần'];
         }
     }

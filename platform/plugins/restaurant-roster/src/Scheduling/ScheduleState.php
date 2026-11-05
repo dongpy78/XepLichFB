@@ -2392,7 +2392,7 @@ final class ScheduleState
         $this->maleCount[$key] = $beforeMale + ($isMale ? $delta : 0);
         $this->femaleCount[$key] = $beforeFemale + ($isFemaleStaff ? $delta : 0);
 
-        if ($this->problem->employees[$employeeId]?->isMale()) {
+        if (($allMale = $this->problem->employees[$employeeId] ?? null) && $allMale->isMale() && ! $allMale->isTrainee) {
             $this->allMaleCount[$key] = ($this->allMaleCount[$key] ?? 0) + $delta;
             $this->balanceDirty[$i] = true;
         }

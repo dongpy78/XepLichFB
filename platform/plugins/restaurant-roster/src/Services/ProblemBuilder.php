@@ -66,10 +66,9 @@ class ProblemBuilder
         $templates = ShiftTemplate::query()->wherePublished()->get();
         $shifts = $templates->map(fn (ShiftTemplate $t) => $this->shiftSpec($t))->all();
 
-        // Thực tập sinh không được tính vào định biên và không được tự xếp: quản lý xếp tay, bộ giải bỏ qua.
+        // Thực tập sinh được tự xếp (quản lý 05/11/2026) nhưng không tính định biên: xem $isTrainee bên dưới.
         $employees = Employee::query()
             ->where('status', BaseStatusEnum::PUBLISHED)
-            ->where('is_trainee', false)
             ->with(['fixedShift:id,start_time'])
             ->get();
 
@@ -258,6 +257,17 @@ class ProblemBuilder
                 $isFlex = false;
             }
 
+            // Thực tập sinh: chỉ làm tại nhà hàng (Villa / Gusto), không tự xếp Lobby, Kid-Deline, Night, Room Service – quản lý xếp tay nếu cần.
+            $isTrainee = (bool) $employee->is_trainee;
+
+            if ($isTrainee) {
+                $inRestaurant = fn ($key) => in_array((int) explode(':', (string) $key)[0], $transferOutletIds, true);
+                $skills = array_filter($skills, $inRestaurant, ARRAY_FILTER_USE_KEY);
+                $fixed = array_values(array_filter($fixed, $inRestaurant));
+                $isFlex = false;
+                $isNightCore = false;
+            }
+
             if (! $skills && $employee->auto_schedule) {
                 $this->notes['no_skills'][] = $employee->name;
             }
@@ -276,18 +286,20 @@ class ProblemBuilder
                 skills: $skills,
                 fixed: $fixed,
                 residence: $employee->residence,
-                positionId: $employee->position_id ? (int) $employee->position_id : null,
-                isManager: isset($managerPositions[(int) $employee->position_id]),
+                // Thực tập sinh không có vị trí trong bài toán: không tính định biên theo vị trí, OFF rải đều trong nhóm riêng.
+                positionId: $employee->position_id && ! $isTrainee ? (int) $employee->position_id : null,
+                isManager: ! $isTrainee && isset($managerPositions[(int) $employee->position_id]),
                 managerShiftIds: $managerShiftIds,
-                isFemaleStaff: $employee->gender === 'female' && ! isset($managerPositions[(int) $employee->position_id])
+                isFemaleStaff: ! $isTrainee && $employee->gender === 'female' && ! isset($managerPositions[(int) $employee->position_id])
                     && (! $femaleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $femaleStaffPositions, true)),
                 // Định biên nam = nam waiter: không tính cấp quản lý, chỉ vị trí trong male_staff_positions.
-                isMaleStaff: $employee->gender === 'male' && ! isset($managerPositions[(int) $employee->position_id])
+                isMaleStaff: ! $isTrainee && $employee->gender === 'male' && ! isset($managerPositions[(int) $employee->position_id])
                     && (! $maleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $maleStaffPositions, true)),
                 // Night cố định (hồ sơ): ≥ 1 người / đêm. Không còn vai trò luân phiên tự động.
                 nightRole: $isNightCore ? EmployeeSpec::NIGHT_CORE : null,
                 isFlex: $isFlex,
                 closedHomeOutletIds: $closedHomeOutletIds,
+                isTrainee: $isTrainee,
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {

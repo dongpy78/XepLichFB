@@ -252,7 +252,7 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertStringContainsString('Thực tập', $html);
 
         $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6));
-        $this->assertArrayNotHasKey($trainee->getKey(), $problem->employees, 'Thực tập sinh không vào bài toán xếp lịch');
+        $this->assertTrue($problem->employees[$trainee->getKey()]->isTrainee, 'Thực tập sinh được xếp tự động nhưng không tính định biên (xem TraineeAreaTest)');
 
         $stats = (new RosterStatistics())->onDuty(Carbon::parse(self::WEEK), Outlet::query()->get());
         $this->assertSame(1, $stats['cells'][self::WEEK][$this->outlets['VILLA']->getKey()]['M6']['total'], 'Chỉ tính nhân viên chính thức');
@@ -546,8 +546,9 @@ class NightAndScheduleGroupTest extends TestCase
         $t = $this->roomServiceTeam();
         $user = $this->user();
         $html = html_entity_decode($this->actingAs($user)->get(route('roster.employees.edit', $t['fixedM6']->getKey()))->assertOk()->getContent());
-        $this->assertStringContainsString('Nhân viên Room Service cố định', $html);
-        $this->assertStringContainsString('Có thể hỗ trợ Room Service', $html);
+        $this->assertStringContainsString('Cố định – luôn làm Room Service', $html);
+        $this->assertStringContainsString('Hỗ trợ – thay khi Room Service thiếu người', $html);
+        $this->assertMatchesRegularExpression('/<option[^>]*value="fixed"[^>]*selected/', $html, 'Form sửa chọn sẵn giá trị của nhân viên');
 
         $grid = $this->actingAs($user)->getJson(route('roster.grid', ['week' => self::WEEK]))->json('data.html');
         $this->assertStringContainsString('RS cố định', $grid);
@@ -615,9 +616,9 @@ class NightAndScheduleGroupTest extends TestCase
         // Botble mã hóa chữ có dấu trong nhãn form: so khớp sau khi giải mã.
         $html = html_entity_decode($this->actingAs($user)->get(route('roster.employees.edit', $people['G1']->getKey()))->assertOk()->getContent());
         $this->assertStringContainsString('Night cố định', $html);
-        $this->assertStringContainsString('Có thể hỗ trợ Room Service', $html);
+        $this->assertStringContainsString('Hỗ trợ – thay khi Room Service thiếu người', $html);
         $this->assertStringNotContainsString('Tham gia luân phiên Night', $html);
-        $this->assertStringContainsString('Nhóm hiển thị trên Bảng xếp ca', $html);
+        $this->assertStringContainsString('Khu vực hiển thị trên Bảng xếp ca', $html);
     }
 
     /** Bật Night cố định / Room Service trong hồ sơ: lưu được, có nhật ký; bảng xếp ca hiện nhãn. */
@@ -626,8 +627,8 @@ class NightAndScheduleGroupTest extends TestCase
         $employee = $this->employee('N2', 'NIGHT');
 
         $this->actingAs($this->user())->post(route('roster.employees.edit.update', $employee->getKey()), [
-            'code' => 'N2', 'name' => 'Synthetic N2', 'outlet_id' => $this->outlets['NIGHT']->getKey(), 'employment_type' => 'FT',
-            'weekly_hours' => 48, 'days_off_per_week' => 2, 'night_role' => Employee::NIGHT_CORE, 'can_room_service' => 1, 'status' => 'published',
+            'code' => 'N2', 'name' => 'Synthetic N2', 'gender' => 'male', 'position_id' => $this->waiter->getKey(), 'schedule_group_id' => $this->groups['NIGHT']->getKey(), 'residence' => 'cam_ranh',
+            'days_off_per_week' => 2, 'night_role' => Employee::NIGHT_CORE, 'room_service' => 'support', 'status' => 'published',
         ])->assertSessionHasNoErrors();
 
         $fresh = $employee->fresh();
@@ -1049,9 +1050,8 @@ class NightAndScheduleGroupTest extends TestCase
         $this->employee('FB-0013X', 'GUSTO');
         $this->employee('TS1', 'VILLA');
         $user = $this->user();
-        $payload = fn (array $extra = []) => ['name' => 'Synthetic New', 'outlet_id' => $this->outlets['GUSTO']->getKey(), 'position_id' => $this->waiter->getKey(),
-            'gender' => 'female', 'employment_type' => array_key_first(config('plugins.restaurant-roster.general.employment_types')), 'weekly_hours' => 48,
-            'days_off_per_week' => 2, 'status' => 'published', 'code' => '', ...$extra];
+        $payload = fn (array $extra = []) => ['name' => 'Synthetic New', 'schedule_group_id' => $this->groups['GUSTO']->getKey(), 'position_id' => $this->waiter->getKey(),
+            'gender' => 'female', 'residence' => 'cam_ranh', 'days_off_per_week' => 2, 'status' => 'published', 'code' => '', ...$extra];
 
         $create = $this->actingAs($user)->get(route('roster.employees.create'))->assertOk()->assertSee('Tự tạo: FB-0013', false);
         // Kiểm tra phía trình duyệt (Botble dựng từ quy tắc) không được bắt buộc mã khi thêm mới.

@@ -60,15 +60,6 @@ class EmployeeTable extends TableAbstract
                         'female' => 'Nữ',
                         default => '<span class="text-warning">Chưa khai báo</span>',
                     }),
-                FormattedColumn::make('employment_type')
-                    ->title('Hợp đồng')
-                    ->width(140)
-                    ->getValueUsing(fn (FormattedColumn $column) => $column->getItem()->employment_type_label),
-                FormattedColumn::make('weekly_hours')
-                    ->title('Giờ / tuần')
-                    ->width(110)
-                    ->alignCenter()
-                    ->getValueUsing(fn (FormattedColumn $column) => rtrim(rtrim(number_format($column->getItem()->weekly_hours, 1), '0'), '.') . 'h'),
                 StatusColumn::make(),
             ])
             ->addBulkActions([

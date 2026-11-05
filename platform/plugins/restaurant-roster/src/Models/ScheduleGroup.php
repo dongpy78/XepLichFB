@@ -14,6 +14,9 @@ class ScheduleGroup extends BaseModel
 {
     use Concerns\FastAttributes;
 
+    /** Mã khu vực thực tập sinh: nhân viên trong khu vực này là thực tập sinh (không tính định biên). */
+    public const TRAINEE_CODE = 'TRAINEE';
+
     protected $table = 'roster_schedule_groups';
 
     protected $fillable = [
@@ -29,6 +32,11 @@ class ScheduleGroup extends BaseModel
         'order' => 'int',
         'is_active' => 'bool',
     ];
+
+    public function isTraineeArea(): bool
+    {
+        return strtoupper((string) $this->code) === self::TRAINEE_CODE;
+    }
 
     public function employees(): HasMany
     {

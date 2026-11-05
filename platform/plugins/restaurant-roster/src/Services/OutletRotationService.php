@@ -27,8 +27,8 @@ class OutletRotationService
         [$a, $b, $positionId] = $this->resolve($codeA, $codeB);
 
         return [
-            'a' => Employee::query()->where('position_id', $positionId)->where('outlet_id', $a->getKey())->count(),
-            'b' => Employee::query()->where('position_id', $positionId)->where('outlet_id', $b->getKey())->count(),
+            'a' => Employee::query()->where('position_id', $positionId)->where('is_trainee', false)->where('outlet_id', $a->getKey())->count(),
+            'b' => Employee::query()->where('position_id', $positionId)->where('is_trainee', false)->where('outlet_id', $b->getKey())->count(),
             'a_code' => $a->code,
             'b_code' => $b->code,
         ];
@@ -46,6 +46,7 @@ class OutletRotationService
         DB::transaction(function () use ($positionId, $swap, $a, $b, $userId, &$counts): void {
             $employees = Employee::query()
                 ->where('position_id', $positionId)
+                ->where('is_trainee', false)
                 ->whereIn('outlet_id', array_keys($swap))
                 ->lockForUpdate()
                 ->get();
