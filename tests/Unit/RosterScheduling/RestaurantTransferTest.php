@@ -4,6 +4,8 @@ namespace Tests\Unit\RosterScheduling;
 
 use Botble\RestaurantRoster\Scheduling\EmployeeSpec;
 use Botble\RestaurantRoster\Scheduling\Requirement;
+use Botble\RestaurantRoster\Scheduling\Rules;
+use Botble\RestaurantRoster\Scheduling\ScheduleState;
 use Botble\RestaurantRoster\Scheduling\SolveResult;
 use PHPUnit\Framework\TestCase;
 
@@ -199,6 +201,62 @@ class RestaurantTransferTest extends TestCase
         $shifts = array_filter($result->assignments, fn ($r) => $r['employee_id'] === 90 && $r['kind'] === 'shift');
         $this->assertNotEmpty($shifts);
         $this->assertSame([self::VILLA], array_values(array_unique(array_column($shifts, 'outlet_id'))), 'Quản lý chỉ làm tại Villa');
+    }
+
+    /**
+     * Lỗi quản lý 05/11/2026: cả hai nhà hàng mở, Villa ngày thứ 6 có 3 nam M6 / 1 nam A2 – waiter nam vẫn 1/1 nhưng hai quản lý nam cùng M6, hai quản lý nữ
+     * cùng A2 (cân bằng quản lý chỉ đếm số người). Số nam trên bảng tính cả quản lý: phải chia đều (chẵn bằng nhau, lẻ lệch 1) từng nhà hàng, từng ngày.
+     */
+    public function test_total_men_including_managers_split_evenly_each_day(): void
+    {
+        $manager = fn (int $id, string $gender) => new EmployeeSpec($id, "Captain #{$id}", $gender, self::VILLA, 48, 2, [self::VILLA . ':0' => 'primary'], [], 'cam_ranh', 200,
+            isManager: true, managerShiftIds: [self::M6, self::A2], isMaleStaff: false);
+        $people = [$manager(90, 'male'), $manager(91, 'male'), $manager(92, 'female'), $manager(93, 'female'), $this->waiter(1, self::VILLA, 'male'), $this->waiter(2, self::VILLA, 'male'),
+            $this->waiter(3, self::VILLA, 'female'), $this->waiter(4, self::VILLA, 'female')];
+        $days = $this->days();
+        $options = ['restaurants' => [self::VILLA, self::GUSTO], 'busy_weekdays' => [], 'time_limit' => 60];
+        $m6 = ScheduleState::slotKey(self::VILLA, self::M6, false);
+        $a2 = ScheduleState::slotKey(self::VILLA, self::A2, false);
+        // Đúng tình huống báo lỗi, từng ngày: hai quản lý nam M6, hai quản lý nữ A2, waiter nam 1 / 1, waiter nữ 1 / 1 → nam 3 / 1.
+        $plan = [90 => $m6, 91 => $m6, 92 => $a2, 93 => $a2, 1 => $m6, 2 => $a2, 3 => $m6, 4 => $a2];
+        $state = new ScheduleState($this->problem($people, $this->open($days), $options));
+
+        foreach ($plan as $id => $slot) {
+            [$o, $shift] = ScheduleState::parseSlot($slot);
+            $state->place($id, $state->index[$days[4]], $o, $shift);
+        }
+
+        $values = $state->objectiveValues();
+        $this->assertSame(1, $values['male_total_balance'], 'Nhận ra 3 nam / 1 nam là lệch');
+        $this->assertSame([0, 0, 0], [$values['manager_balance'], $values['male_balance'], $values['waiter_balance']], 'Các tiêu chí cũ không thấy lệch – đây là nguyên nhân lỗi');
+        $this->assertGreaterThan(Rules::DEFAULT_WEIGHTS['heavy_transitions'], Rules::DEFAULT_WEIGHTS['male_total_balance'], 'Không đổi lấy việc tránh một ca nặng');
+
+        // Chạy tiếp từ lịch lệch cả tuần: thuật toán đưa về chia đều, không làm lệch quản lý / waiter nam.
+        $seed = [];
+
+        foreach ($plan as $id => $slot) {
+            foreach ($days as $k => $day) {
+                if ($k < 5) {
+                    $seed[$id][$day] = $slot;
+                }
+            }
+        }
+
+        $problem = $this->problem($people, $this->open($days), [...$options, 'max_iterations' => 40000, 'seed_plan' => $seed]);
+        $result = $this->solve($problem);
+        $objective = $result->softConstraintScores['objective'];
+        $this->assertSame(0, $objective['male_total_balance'], 'Nam chia đều mọi ngày');
+        $this->assertSame([0, 0], [$objective['manager_balance'], $objective['male_balance']], 'Quản lý, waiter nam vẫn cân bằng');
+        $men = [90, 91, 1, 2];
+
+        foreach ($days as $day) {
+            $count = fn (int $shift) => count(array_filter($result->assignments, fn ($r) => $r['date'] === $day && $r['kind'] === 'shift' && $r['outlet_id'] === self::VILLA
+                && $r['shift_id'] === $shift && ! $r['support'] && in_array($r['employee_id'], $men, true)));
+            [$am, $pm] = [$count(self::M6), $count(self::A2)];
+            $this->assertLessThanOrEqual(($am + $pm) % 2, abs($am - $pm), "{$day}: nam {$am}/{$pm}");
+        }
+
+        $this->assertHardConstraintsHold($problem, $result);
     }
 
     /** Ô quản lý đã xếp tay / khóa sang nhà hàng kia (vd A2(G)) được giữ nguyên dù cả hai mở. */

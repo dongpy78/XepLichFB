@@ -52,6 +52,9 @@ final class Rules
         'female_balance' => 2500,
         // Nam waiter chia đều ca sáng / chiều mỗi outlet × ngày (2 → 1/1, 4 → 2/2, tránh 3/1) – sau khi đã xếp Night.
         'male_balance' => 2500,
+        // Tổng số nam (waiter + quản lý – đúng số "nam" hiện trên Bảng xếp ca) chia đều M6 / A2 mỗi outlet × ngày (quản lý 05/11/2026: 4 nam → 2/2, không 3/1).
+        // Cân bằng quản lý chỉ đếm số người, không xét giới: hai quản lý nam cùng M6 + hai quản lý nữ cùng A2 vẫn "cân bằng" nhưng lệch nam.
+        'male_total_balance' => 2500,
         // Tổng Waiter (nam + nữ) M6 / A2 từng outlet × ngày, tính riêng Villa, Gusto: chẵn chia đều, lẻ lệch 1 (quản lý 28/10/2026).
         // Trên cân bằng riêng nam / nữ: mỗi giới lệch 1 cùng chiều sẽ thành tổng lệch 2 – không chấp nhận khi đổi được.
         'waiter_balance' => 3500,
