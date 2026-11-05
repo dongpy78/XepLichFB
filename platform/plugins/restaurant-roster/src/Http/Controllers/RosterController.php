@@ -1181,8 +1181,8 @@ class RosterController extends BaseController
             'auto' => $auto,
             'section' => [
                 'key' => $group ? 'g' . $group->id : 'o' . $active->getKey(),
-                'label' => sprintf('%s – hiển thị chung nhân viên %s + %s%s', $group?->name ?: ($active->code ?: $active->name), $active->code ?: $active->name, $other->code ?: $other->name,
-                    $auto ? ' (' . ($other->code ?: $other->name) . ' đóng cửa cả tuần)' : ''),
+                // Tiêu đề khu chỉ ghi tên nhà hàng; việc hiển thị chung đã có thông báo trên bảng và nhãn outlet từng người.
+                'label' => (string) ($group?->name ?: ($active->code ?: $active->name)),
                 'order' => $group ? (int) $group->order : (int) ($active->order ?? 99999),
                 'stat_outlet_id' => (int) $active->getKey(),
             ],

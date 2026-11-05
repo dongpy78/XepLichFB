@@ -720,7 +720,8 @@ class NightAndScheduleGroupTest extends TestCase
         $this->setMerge('VILLA');
         $html = $this->gridHtml();
 
-        $this->assertStringContainsString('VILLA – HIỂN THỊ CHUNG NHÂN VIÊN VILLA + GUSTO', $html);
+        $this->assertStringContainsString('<span class="roster-section__name">VILLA</span>', $html, 'Tiêu đề khu chỉ ghi tên nhà hàng');
+        $this->assertStringNotContainsString('<span class="roster-section__name">GUSTO</span>', $html);
         $this->assertStringContainsString('hiển thị chung trong khu', $html, 'Thông báo cho mọi người');
         $this->assertStringNotContainsString('<span class="roster-section__name">GUSTO</span>', $html, 'Không còn khu Gusto riêng');
         $order = $this->rowOrder($html, $people);
@@ -748,7 +749,7 @@ class NightAndScheduleGroupTest extends TestCase
         $this->setMerge('GUSTO');
         $html = $this->gridHtml();
 
-        $this->assertStringContainsString('GUSTO – HIỂN THỊ CHUNG NHÂN VIÊN GUSTO + VILLA', $html);
+        $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $html, 'Tiêu đề khu chỉ ghi tên nhà hàng');
         $this->assertStringNotContainsString('<span class="roster-section__name">VILLA</span>', $html);
         $this->assertEqualsCanonicalizing(['VC', 'GC'], array_slice($this->rowOrder($html, $people), 0, 2));
 
@@ -756,7 +757,7 @@ class NightAndScheduleGroupTest extends TestCase
         $html = $this->gridHtml();
         $this->assertStringContainsString('<span class="roster-section__name">VILLA</span>', $html);
         $this->assertStringContainsString('<span class="roster-section__name">GUSTO</span>', $html);
-        $this->assertStringNotContainsString('HIỂN THỊ CHUNG NHÂN VIÊN', $html);
+        $this->assertStringNotContainsString('hiển thị chung trong khu', $html);
         $this->rowOrder($html, $people);
     }
 
@@ -778,7 +779,7 @@ class NightAndScheduleGroupTest extends TestCase
         // Đóng cửa vài ngày: vẫn hiển thị riêng (chỉ đóng cả tuần mới tự hiển thị chung).
         $this->setMerge(null);
         $this->closeAllWeek('GUSTO', 3);
-        $this->assertStringNotContainsString('HIỂN THỊ CHUNG NHÂN VIÊN', $this->gridHtml(), 'Đóng vài ngày không tự gộp bảng');
+        $this->assertStringNotContainsString('hiển thị chung trong khu', $this->gridHtml(), 'Đóng vài ngày không tự gộp bảng');
     }
 
     /** Đổi Waiter Gusto ⇄ Villa (chức năng có sẵn): outlet chính và nhóm hiển thị cùng đổi, bảng hiện đúng khu; có nhật ký. */
@@ -850,7 +851,9 @@ class NightAndScheduleGroupTest extends TestCase
         $this->setStatus('GUSTO', $week, true)->assertJson(['error' => false]);
 
         $html = $this->gridHtml();
-        $this->assertStringContainsString('VILLA – HIỂN THỊ CHUNG NHÂN VIÊN VILLA + GUSTO (GUSTO ĐÓNG CỬA CẢ TUẦN)', $html);
+        $this->assertStringContainsString('<span class="roster-section__name">VILLA</span>', $html, 'Tiêu đề khu chỉ ghi nhà hàng đang mở');
+        $this->assertStringNotContainsString('<span class="roster-section__name">GUSTO</span>', $html);
+        $this->assertStringContainsString('hiển thị chung trong khu', $html, 'Thông báo trên bảng vẫn giải thích việc gộp');
         $this->assertStringNotContainsString('data-merge-outlet=""', $html, 'Gộp tự động – không có nút Hiển thị riêng');
 
         $this->setStatus('GUSTO', $week, false);

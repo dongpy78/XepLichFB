@@ -35,10 +35,11 @@ class RestaurantRosterServiceProvider extends ServiceProvider
             'core.base.general.favicon' => '/vendor/core/plugins/restaurant-roster/images/favicon.svg',
         ]);
 
-        // Dòng copyright trang quản trị / đăng nhập kèm tên người phát triển (config author).
+        // Dòng copyright trang quản trị / đăng nhập bằng tiếng Anh, kèm tên người phát triển (config author, copyright_name).
         $this->app->booted(function (): void {
             $author = trim((string) config('plugins.restaurant-roster.general.author'));
             $translator = $this->app['translator'];
+            $name = e(trim((string) config('plugins.restaurant-roster.general.copyright_name')) ?: 'Selectum Noa');
 
             if ($author === '') {
                 return;
@@ -46,7 +47,7 @@ class RestaurantRosterServiceProvider extends ServiceProvider
 
             foreach (array_unique([$translator->getLocale(), $translator->getFallback(), 'en', 'vi']) as $locale) {
                 $translator->load('core/base', 'layouts', $locale); // nạp đủ file gốc trước, chỉ ghi đè một dòng
-                $translator->addLines(['layouts.copyright' => 'Copyright :year © :company · Phát triển bởi ' . e($author) . '. Version :version'], $locale, 'core/base');
+                $translator->addLines(['layouts.copyright' => 'Copyright :year © ' . $name . ' · Developed by ' . e($author) . '. Version :version'], $locale, 'core/base');
             }
         });
 
