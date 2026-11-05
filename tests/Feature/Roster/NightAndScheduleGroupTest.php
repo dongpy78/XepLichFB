@@ -1175,6 +1175,76 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame($this->outlets['NIGHT']->getKey(), (int) $supports[0]->fresh()->outlet_id, 'Outlet gốc không đổi');
     }
 
+    /**
+     * Lỗi quản lý 06/11/2026: Room Service cài trong hồ sơ nhân viên, nhưng thuật toán lấy số người từ dòng định biên cũ (mục tiêu 2) nên RS hỗ trợ bị xếp M6(RS) / A2(RS)
+     * cả ngày người cố định đi làm. Đúng: số người cần theo hồ sơ – dòng định biên có hay không, bao nhiêu cũng vậy; người cố định OFF thì đúng 1 người hỗ trợ thay.
+     */
+    public function test_room_service_demand_follows_profile_with_old_target_row(): void
+    {
+        foreach (['M6', 'A2'] as $code) {
+            StaffingRequirement::query()->create(['outlet_id' => $this->outlets['ROOM']->getKey(), 'shift_template_id' => $this->templates[$code]->getKey(), 'status' => 'active',
+                'min_staff' => 1, 'target_staff' => 2, 'max_staff' => null, 'is_confirmed' => true]);
+        }
+
+        $this->assertRoomServiceFollowsProfile();
+    }
+
+    public function test_room_service_demand_follows_profile_without_requirement_row(): void
+    {
+        $this->assertRoomServiceFollowsProfile();
+    }
+
+    /** Người cố định không đặt ca cứng: làm được M6 hoặc A2, không ai bắt buộc phải thay. */
+    public function test_room_service_fixed_without_shift_is_scheduled_at_room(): void
+    {
+        ShiftTemplate::query()->update(['break_minutes' => 0]);
+        $fixed = $this->employee('RF', 'NIGHT', 'male', ['room_service_fixed' => true]);
+        $from = Carbon::parse(self::WEEK);
+        $result = (new \Botble\RestaurantRoster\Scheduling\HeuristicSolver())->solve(app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['time_limit_seconds' => 1, 'search_min_seconds' => null]));
+        $cells = array_filter($result->assignments, fn ($r) => $r['employee_id'] === $fixed->getKey() && $r['kind'] === 'shift');
+        $this->assertCount(5, $cells);
+        $this->assertSame([$this->outlets['ROOM']->getKey()], array_values(array_unique(array_column($cells, 'outlet_id'))));
+    }
+
+    private function assertRoomServiceFollowsProfile(): void
+    {
+        ShiftTemplate::query()->update(['break_minutes' => 0]);
+        $this->templates = ShiftTemplate::query()->get()->keyBy('code')->all();
+        $room = $this->outlets['ROOM']->getKey();
+
+        $fixed = ['M6' => $this->employee('RF1', 'NIGHT', 'male', ['room_service_fixed' => true, 'fixed_shift_template_id' => $this->templates['M6']->getKey()]),
+            'A2' => $this->employee('RF2', 'NIGHT', 'male', ['room_service_fixed' => true, 'fixed_shift_template_id' => $this->templates['A2']->getKey()])];
+        $supports = [$this->employee('NS1', 'NIGHT', 'male', ['can_room_service' => true]), $this->employee('NS2', 'NIGHT', 'male', ['can_room_service' => true])];
+
+        foreach (['GUSTO', 'VILLA'] as $outlet) {
+            foreach (['M1' => 'male', 'M2' => 'male', 'F1' => 'female', 'F2' => 'female', 'F3' => 'female'] as $k => $gender) {
+                $this->employee($outlet[0] . $k, $outlet, $gender);
+            }
+        }
+
+        $from = Carbon::parse(self::WEEK);
+        $scheduler = app(\Botble\RestaurantRoster\Services\RosterScheduler::class);
+        $scheduler->apply($scheduler->run($from, $from->copy()->addDays(6), null, 'generate', 1, ['time_limit_seconds' => 5, 'search_min_seconds' => null]), 1);
+        $supportIds = array_map(fn (Employee $e) => $e->getKey(), $supports);
+
+        foreach (['M6', 'A2'] as $code) {
+            foreach (range(0, 6) as $d) {
+                $date = $from->copy()->addDays($d)->toDateString();
+                $fixedWorks = Shift::query()->where('employee_id', $fixed[$code]->getKey())->whereDate('date', $date)->where('kind', Shift::KIND_SHIFT)->exists();
+                $inRoom = Shift::query()->whereDate('date', $date)->where('outlet_id', $room)->where('shift_template_id', $this->templates[$code]->getKey())->whereIn('employee_id', $supportIds)->count();
+                $this->assertSame($fixedWorks ? 0 : 1, $inRoom, "{$date} {$code}: người cố định " . ($fixedWorks ? 'đi làm → không thêm hỗ trợ' : 'OFF → 1 người thay'));
+            }
+        }
+
+        // Ngày không thay Room Service thì làm ở nhà hàng, đủ ngày công.
+        $cells = Shift::query()->with('template')->whereIn('employee_id', $supportIds)->where('kind', Shift::KIND_SHIFT)->get();
+        $this->assertCount(10, $cells);
+        $this->assertSame(4, $cells->where('outlet_id', $room)->count(), 'Đúng 4 ca thay (2 người cố định, mỗi người OFF 2 ngày)');
+        $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6));
+        $this->assertSame([1, 1], [$problem->requirements[self::WEEK . "|{$room}|{$this->templates['M6']->getKey()}"]->min, $problem->requirements[self::WEEK . "|{$room}|{$this->templates['M6']->getKey()}"]->target], 'Mỗi ca cần đúng 1 người theo hồ sơ');
+        $this->assertEmpty(array_diff($cells->map(fn (Shift $c) => $c->notation)->unique()->all(), ['M6(V)', 'M6(G)', 'A2(V)', 'A2(G)', 'M6(RS)', 'A2(RS)']));
+    }
+
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
     public function test_restaurant_status_requires_manage_permission(): void
     {

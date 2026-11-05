@@ -27,6 +27,9 @@ final class Rules
         'child_borrow' => 60000,
         'night_rotation' => 30000,
         'target_shortage' => 10000,
+        // Room Service (quản lý 06/11/2026): ca có người cố định đi làm thì không thêm người hỗ trợ, ca người cố định OFF thì 1 người hỗ trợ thay – kể cả khi định biên mục tiêu
+        // cao hơn. Trên "thiếu mục tiêu" để không lấy người hỗ trợ lấp mục tiêu; dưới "thiếu tối thiểu".
+        'rs_support_excess' => 50000,
         // Cấp quản lý: số quản lý ca sáng (M6) và chiều (A2) cân bằng theo outlet × ngày – không đổi lấy thiếu người.
         'manager_balance' => 8000,
         // Thứ Bảy đông khách: hạn chế OFF thứ Bảy, nhưng không đổi lấy thiếu người ngày khác.

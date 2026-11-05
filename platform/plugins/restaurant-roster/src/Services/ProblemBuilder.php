@@ -300,6 +300,7 @@ class ProblemBuilder
                 isFlex: $isFlex,
                 closedHomeOutletIds: $closedHomeOutletIds,
                 isTrainee: $isTrainee,
+                isRoomFixed: (bool) $employee->room_service_fixed && $roomOutletId && ! $isTrainee && ! $isNightCore,
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {
@@ -320,6 +321,7 @@ class ProblemBuilder
 
         $requirements = $this->requirements($days, array_values(array_diff($targetOutletIds, [$stationOutletId])), $templates->pluck('id')->all());
         $requirements = $this->applyNightCoreOnly($requirements, $specs, $nightStaff);
+        $requirements = $this->applyRoomServiceProfile($requirements, $specs, $days, $roomOutletId, $targetOutletIds, $templates);
         $requirements = $this->applyGenderPresence($requirements, $specs);
 
         // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
@@ -372,6 +374,7 @@ class ProblemBuilder
             restaurantOutletIds: $transferOutletIds,
             closedOutletDays: $this->closedRestaurantDays($transferOutletIds, $days),
             seedPlan: $overrides['seed_plan'] ?? [],
+            roomOutletId: $roomOutletId ? (int) $roomOutletId : null,
             flexOverflowOutletId: $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.flex_overflow_outlet', 'GUSTO'))?->getKey(),
         );
     }
@@ -1017,6 +1020,50 @@ class ProblemBuilder
 
             $requirements[$k] = new \Botble\RestaurantRoster\Scheduling\Requirement($r->date, $r->outletId, $r->shiftId, min(1, $core), $core, null,
                 0, 0, $r->allowReduce, [], 0, 0, [], $r->countWindow, $r->sourceId);
+        }
+
+        return $requirements;
+    }
+
+    /**
+     * Room Service theo hồ sơ nhân viên (quản lý 06/11/2026), không theo dòng định biên: mỗi ca có người Room Service cố định cần đúng 1 người mỗi ngày, người đó OFF thì người hỗ trợ thay.
+     * Người cố định không đặt ca cứng: có chỗ M6 / A2 (open_shift_codes) nhưng không bắt buộc ca nào. Chưa có ai cố định: giữ dòng định biên như cũ. Ngày Room Service đóng (Ngày đặc biệt) không có chỗ.
+     *
+     * @param \Botble\RestaurantRoster\Scheduling\Requirement[] $requirements
+     * @param EmployeeSpec[] $specs
+     * @return \Botble\RestaurantRoster\Scheduling\Requirement[]
+     */
+    private function applyRoomServiceProfile(array $requirements, array $specs, array $days, ?int $roomOutletId, array $targetOutletIds, $templates): array
+    {
+        $staff = array_filter($specs, fn (EmployeeSpec $e) => $e->isRoomFixed);
+
+        if (! $roomOutletId || ! $staff || ! in_array($roomOutletId, $targetOutletIds, true)) {
+            return $requirements;
+        }
+
+        $byShift = [];
+        $anyShift = 0;
+
+        foreach ($staff as $employee) {
+            $shiftId = (int) explode(':', (string) ($employee->fixed[0] ?? "{$roomOutletId}:0"))[1];
+            $shiftId ? $byShift[$shiftId] = ($byShift[$shiftId] ?? 0) + 1 : $anyShift++;
+        }
+
+        $openCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.open_shift_codes', ['M6', 'A2']));
+        $openShifts = $anyShift ? $templates->filter(fn (ShiftTemplate $t) => in_array(strtoupper((string) $t->code), $openCodes, true))->modelKeys() : [];
+        $closed = OutletDay::query()->where('outlet_id', $roomOutletId)->where('is_closed', true)
+            ->whereDate('date', '>=', reset($days))->whereDate('date', '<=', end($days))->get()->mapWithKeys(fn ($d) => [$d->date->toDateString() => true]);
+        $requirements = array_values(array_filter($requirements, fn ($r) => $r->outletId !== $roomOutletId));
+
+        foreach ($days as $date) {
+            if (isset($closed[$date])) {
+                continue;
+            }
+
+            foreach (array_unique([...array_keys($byShift), ...$openShifts]) as $shiftId) {
+                $need = isset($byShift[$shiftId]) ? 1 : 0;
+                $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, $roomOutletId, (int) $shiftId, $need, $need, ($byShift[$shiftId] ?? 0) + $anyShift);
+            }
         }
 
         return $requirements;

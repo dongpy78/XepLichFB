@@ -1191,7 +1191,7 @@ final class ScheduleState
 
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
-            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $genderBalances[0], 'male_balance' => $genderBalances[1], 'waiter_balance' => $genderBalances[2], 'male_total_balance' => $genderBalances[3], 'flex_placement' => $genderBalances[4], 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
+            'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $genderBalances[0], 'male_balance' => $genderBalances[1], 'waiter_balance' => $genderBalances[2], 'male_total_balance' => $genderBalances[3], 'flex_placement' => $genderBalances[4], 'rs_support_excess' => $this->rsSupportExcess, 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
             'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
@@ -2026,6 +2026,18 @@ final class ScheduleState
         return min($need, $excess) * 4 + $misplaced;
     }
 
+    /** Người làm Room Service vượt phần được phép, cộng mọi ca (xem rsAllowed): cập nhật tăng dần trong adjustCount. */
+    private int $rsSupportExcess = 0;
+
+    /** @var array<string, array{0: int, 1: int}> "i|o|s" của outlet Room Service => [người cố định, người khác] */
+    private array $rsCount = [];
+
+    /** Số người vượt phần được phép của một ca Room Service: có người cố định → không ai khác; không có → 1 người thay. */
+    private static function rsExcess(array $count): int
+    {
+        return max(0, $count[1] - ($count[0] > 0 ? 0 : 1));
+    }
+
     /** @var array<string, int> "i|o|s" => số nam đa năng thuộc Night làm trực tiếp tại ô */
     private array $flexCount = [];
 
@@ -2425,6 +2437,14 @@ final class ScheduleState
         $this->count[$key] = $before + $delta;
         $this->maleCount[$key] = $beforeMale + ($isMale ? $delta : 0);
         $this->femaleCount[$key] = $beforeFemale + ($isFemaleStaff ? $delta : 0);
+
+        if ($outletId === $this->problem->roomOutletId) {
+            $rsBefore = $this->rsCount[$key] ?? [0, 0];
+            $rsAfter = $rsBefore;
+            $rsAfter[($this->problem->employees[$employeeId] ?? null)?->isRoomFixed ? 0 : 1] += $delta;
+            $this->rsCount[$key] = $rsAfter;
+            $this->rsSupportExcess += self::rsExcess($rsAfter) - self::rsExcess($rsBefore);
+        }
 
         if (($allMale = $this->problem->employees[$employeeId] ?? null) && $allMale->isMale() && ! $allMale->isTrainee) {
             $this->allMaleCount[$key] = ($this->allMaleCount[$key] ?? 0) + $delta;

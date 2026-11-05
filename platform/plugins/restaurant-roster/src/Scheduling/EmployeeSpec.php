@@ -41,6 +41,8 @@ final class EmployeeSpec
         public readonly array $closedHomeOutletIds = [],
         // Thực tập sinh: được xếp M6 / A2 tại nhà hàng, không tính vào định biên / cân bằng của nhân viên chính thức.
         public readonly bool $isTrainee = false,
+        // Nhân viên Room Service cố định (hồ sơ).
+        public readonly bool $isRoomFixed = false,
     ) {
     }
 

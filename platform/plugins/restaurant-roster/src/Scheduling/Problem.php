@@ -90,6 +90,7 @@ final class Problem
         public readonly array $seedPlan = [],
         /** Nhà hàng nhận nam đa năng (Night) khi mọi ca M6 / A2 đều đã đủ 2 nam (flex_overflow_outlet). */
         public readonly ?int $flexOverflowOutletId = null,
+        public readonly ?int $roomOutletId = null,
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -188,7 +189,7 @@ final class Problem
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
             $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan, $this->lobbyPreferred,
-            $this->restaurantOutletIds, $this->closedOutletDays, $this->seedPlan, $this->flexOverflowOutletId,
+            $this->restaurantOutletIds, $this->closedOutletDays, $this->seedPlan, $this->flexOverflowOutletId, $this->roomOutletId,
         ]));
     }
 }
