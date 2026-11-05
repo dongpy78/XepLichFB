@@ -62,7 +62,7 @@
                             </button>
                         @endif
                         @if (Auth::user()->hasPermission('roster.approve'))
-                            <button type="button" class="btn btn-outline-secondary" data-off-select title="Bấm vào các ô cần ghi (nhiều người, nhiều ngày; giữ Shift để chọn liền nhiều ngày của một người), chọn OFF hoặc ca nhân viên xin (M6 / A2), rồi bấm Ghi & khóa">
+                            <button type="button" class="btn btn-outline-secondary" data-off-select title="Bấm vào các ô cần ghi (nhiều người, nhiều ngày; giữ Shift để chọn liền nhiều ngày của một người), chọn OFF hoặc ca nhân viên xin (M6 / A2 / N), rồi bấm Ghi & khóa">
                                 <x-core::icon name="ti ti-calendar-off" /> Ghi OFF / ca xin
                             </button>
                         @endif
@@ -270,7 +270,7 @@
                         </div>
 
                         @if (Auth::user()->hasPermission('roster.approve'))
-                            <label class="form-check form-switch mt-3 mb-0" title="Nhân viên xin M6 / A2 / OFF (nhắn trong nhóm): ghi và khóa ô – thuật toán không đổi">
+                            <label class="form-check form-switch mt-3 mb-0" title="Nhân viên xin M6 / A2 / N / OFF (nhắn trong nhóm): ghi và khóa ô – thuật toán không đổi">
                                 <input class="form-check-input" type="checkbox" id="roster-cell-request">
                                 <span class="form-check-label"><x-core::icon name="ti ti-lock" /> Nhân viên xin (khóa ô) – bật rồi bấm {{ implode(' / ', [...$requestCodes, 'OFF']) }}</span>
                             </label>

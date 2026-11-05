@@ -334,7 +334,7 @@ class CellLockHttpTest extends TestCase
         $response = $assign($managers[2], 'OH')->assertJson(['error' => false]);
         $this->assertTrue($cell($managers[2])->is_locked, 'Quản lý xếp tay OH: ô tự khóa');
         $this->assertSame(Shift::LOCK_MANUAL, $cell($managers[2])->lock_reason);
-        $this->assertStringContainsString('quản lý ca sáng 3 / ca chiều 0', $response->json('message'), 'Cảnh báo lệch sáng / chiều');
+        $this->assertSame("Đã lưu OH cho {$managers[2]->name}.", $response->json('message'), 'Xếp tay chỉ báo đã lưu, không kèm cảnh báo');
         $this->assertStringContainsString('quản lý lệch: sáng 3 / chiều 0', $response->json('data.html'), 'Bảng xếp ca báo lệch');
     }
 

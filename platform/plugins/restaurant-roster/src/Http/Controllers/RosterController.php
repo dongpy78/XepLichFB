@@ -9,7 +9,6 @@ use Botble\Base\Supports\Breadcrumb;
 use Botble\RestaurantRoster\Models\ChangeLog;
 use Botble\RestaurantRoster\Models\Employee;
 use Botble\RestaurantRoster\Models\Outlet;
-use Botble\RestaurantRoster\Models\Position;
 use Botble\RestaurantRoster\Models\Run;
 use Botble\RestaurantRoster\Models\Shift;
 use Botble\RestaurantRoster\Models\ShiftTemplate;
@@ -135,17 +134,13 @@ class RosterController extends BaseController
 
         $before = $existing ? $this->snapshot($existing) : null;
         $shift = $this->assigner->assign($employee, $date, [...$spec, 'note' => $data['note'] ?? null, 'source' => 'manual'], $request->user()?->getKey());
+        // Quản lý là người quyết định lịch: xếp tay thế nào cũng lưu và chỉ báo đã lưu, không kèm cảnh báo quy định.
+        // Các trường hợp bên dưới vẫn tự khóa ô để xếp tự động giữ nguyên, ô hiện biểu tượng khóa trên bảng.
         $message = "Đã lưu {$shift->notation} cho {$employee->name}.";
-
-        // Xếp tay trái quy định (giới tính / khu vực / vị trí): vẫn lưu theo quyết định quản lý nhưng cảnh báo rõ.
-        if ($warnings = $this->ruleWarnings($employee, $shift)) {
-            $message .= ' ⚠ ' . implode(' ', $warnings);
-        }
 
         // Ca chạy tiệc (BQ) do quản lý chọn người có kinh nghiệm: tự khóa để thuật toán xếp những người còn lại xung quanh.
         if (in_array('BQ', $shift->tags ?: [], true) && ! $shift->is_locked) {
             $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_BQ, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
-            $message .= ' Ô tiệc (BQ) đã tự khóa – xếp tự động sẽ giữ nguyên.';
         }
 
         // Night luân phiên (quản lý 29/10/2026): chỉ quản lý xếp tay – người không phải Night cố định làm ca đêm thì ô tự khóa,
@@ -154,7 +149,6 @@ class RosterController extends BaseController
 
         if ($shift->kind === Shift::KIND_SHIFT && $startHour !== null && ($startHour >= 20 || $startHour < 4) && ! $employee->isNightCore() && ! $shift->is_locked) {
             $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
-            $message .= ' Night luân phiên xếp tay – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
         }
 
         // Quản lý xếp tay người không phải Room Service cố định vào Room Service (vd đổi người cố định sang người hỗ trợ):
@@ -163,14 +157,12 @@ class RosterController extends BaseController
 
         if ($shift->kind === Shift::KIND_SHIFT && $roomOutletId && (int) $shift->outlet_id === $roomOutletId && ! $employee->room_service_fixed && ! $shift->is_locked) {
             $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
-            $message .= ' Room Service xếp tay – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
         }
 
         // Xếp tay khác ca cứng: giữ quyết định của quản lý bằng cách khóa ô, để "Tối ưu lại" không đổi về ca cứng.
         if ($employee->fixed_shift_template_id && $shift->kind === Shift::KIND_SHIFT
             && (int) $shift->shift_template_id !== (int) $employee->fixed_shift_template_id && ! $shift->is_locked) {
             $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
-            $message .= ' Ô đã tự khóa vì khác ca cứng ' . ($employee->fixedShift?->code ?? '') . ' – xếp tự động sẽ giữ nguyên.';
         }
 
         // Cấp quản lý: thuật toán chỉ tự xếp M6 / A2 tại outlet chính. Quản lý xếp tay OH / M9 hoặc outlet khác là quyết định
@@ -183,11 +175,6 @@ class RosterController extends BaseController
 
             if ($outsideRules && ! $shift->is_locked) {
                 $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
-                $message .= ' Quản lý xếp ngoài M6 / A2 hoặc ngoài outlet chính – ô đã tự khóa, xếp tự động sẽ giữ nguyên.';
-            }
-
-            if ($balance = $this->managerBalanceNote($employee, $date)) {
-                $message .= " ⚠ {$balance}";
             }
         }
 
@@ -326,13 +313,7 @@ class RosterController extends BaseController
             ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()])
             ->where('status', Shift::STATUS_DRAFT);
 
-        // Kiểm tra cả tuần trước khi công bố: không ai bị xếp trùng giờ / thiếu giờ nghỉ / làm vào ngày OFF đã duyệt,
-        // và không outlet nào thiếu tối thiểu vì đã cho mượn người (outlet nguồn). Lỗi nghiêm trọng → không công bố, không tự sửa lịch.
-        if ($problems = $this->publishProblems($weekStart, $weekEnd)) {
-            return $this->gridResponse($request, 'Chưa công bố – cần sửa trước: ' . implode(' · ', array_slice($problems, 0, 6))
-                . (count($problems) > 6 ? ' … (+' . (count($problems) - 6) . ')' : ''))->setError();
-        }
-
+        // Quản lý đã duyệt và quyết định lịch: công bố đúng như bảng xếp ca, không chặn vì nghỉ ít / trùng giờ / thiếu người.
         $count = 0;
         $version = null;
         $unchanged = false;
@@ -369,7 +350,7 @@ class RosterController extends BaseController
     }
 
     /**
-     * Xem trước khi công bố (hộp xác nhận): tuần, phạm vi, số nhân viên có lịch, lỗi nghiêm trọng (chặn công bố) và trạng thái hiện tại.
+     * Xem trước khi công bố (hộp xác nhận): tuần, phạm vi, số nhân viên có lịch và trạng thái hiện tại.
      */
     public function publishPreview(Request $request)
     {
@@ -383,36 +364,9 @@ class RosterController extends BaseController
             'scope' => $grid['snapshot']['scope_label'],
             'employees' => $withShifts,
             'empty' => $empty,
-            'problems' => $this->publishProblems($weekStart, $weekEnd),
             'status' => \Botble\RestaurantRoster\Services\ScheduleSnapshotService::STATUS_LABELS[$grid['publication']['status']],
             'next_version' => ($grid['publication']['latest']?->version ?? 0) + 1,
         ]);
-    }
-
-    /**
-     * Lỗi chặn công bố: trùng giờ / giờ nghỉ / làm ngày OFF đã duyệt, outlet nguồn dưới tối thiểu do mượn người.
-     *
-     * @return string[]
-     */
-    protected function publishProblems(Carbon $weekStart, Carbon $weekEnd): array
-    {
-        $problem = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->build($weekStart, $weekEnd, null, freezeCurrent: true);
-        $state = new \Botble\RestaurantRoster\Scheduling\ScheduleState($problem);
-        $name = fn (int $id) => $problem->employees[$id]->name ?? "#{$id}";
-        $messages = [];
-
-        foreach ($state->validate() as $v) {
-            if (in_array($v['code'], ['rest', 'unavailable', 'overlap'], true)) {
-                $messages[] = sprintf('%s %s: %s', $name($v['employee_id']), date('d/m', strtotime($v['date'])), $v['message']);
-            }
-        }
-
-        foreach ($state->sourceShortages() as $s) {
-            $messages[] = sprintf('%s %s: đang được mượn sang %s nhưng %s %s dưới tối thiểu', $name($s['employee_id']), date('d/m', strtotime($s['date'])),
-                $problem->outletName($s['outlet_id']), $problem->outletName($s['home_outlet_id']), $problem->shifts[$s['home_shift_id']]->code ?? '');
-        }
-
-        return array_values(array_unique($messages));
     }
 
     /**
@@ -592,42 +546,6 @@ class RosterController extends BaseController
      * Khóa / mở khóa ô: ô khóa được thuật toán giữ nguyên khi tạo lịch và tối ưu lại.
      * Khóa một ô trống tạo ô OFF đã khóa (giữ ngày nghỉ).
      */
-    /**
-     * Quy định của resort mà ô xếp tay đang vi phạm: (L)/(K) chỉ cho nữ; ca giới hạn giới tính / khu vực / vị trí (M9, OH).
-     *
-     * @return string[]
-     */
-    protected function ruleWarnings(Employee $employee, Shift $shift): array
-    {
-        if ($shift->kind !== Shift::KIND_SHIFT) {
-            return [];
-        }
-
-        $warnings = [];
-        $femaleOnly = array_intersect($shift->tags ?: [], config('plugins.restaurant-roster.general.scheduling.female_only_tags', []));
-
-        if ($femaleOnly && $employee->gender !== 'female') {
-            $warnings[] = 'Ký hiệu (' . implode(')(', $femaleOnly) . ') theo quy định chỉ dành cho nhân viên nữ.';
-        }
-
-        $template = $shift->template ?? ShiftTemplate::query()->find($shift->shift_template_id);
-        $residences = config('plugins.restaurant-roster.general.residences', []);
-
-        if ($template?->allowed_gender && $employee->gender !== $template->allowed_gender) {
-            $warnings[] = "Ca {$template->code} chỉ dành cho nhân viên " . ($template->allowed_gender === 'female' ? 'nữ' : 'nam') . '.';
-        }
-
-        if ($template?->allowed_residence && $employee->residence !== $template->allowed_residence) {
-            $warnings[] = "Ca {$template->code} chỉ dành cho nhân viên ở " . ($residences[$template->allowed_residence] ?? $template->allowed_residence) . '.';
-        }
-
-        if ($template?->allowed_position_id && (int) $employee->position_id !== (int) $template->allowed_position_id) {
-            $warnings[] = "Ca {$template->code} chỉ dành cho vị trí " . (Position::query()->whereKey($template->allowed_position_id)->value('name') ?? '') . '.';
-        }
-
-        return $warnings;
-    }
-
     /**
      * Duyệt / từ chối tăng ca (+N) của một ô. Ghi người duyệt và thời điểm.
      */
@@ -833,7 +751,7 @@ class RosterController extends BaseController
 
                 $before = $existing ? $this->snapshot($existing) : null;
                 $shift = $this->assigner->assign($employee, $date, ['kind' => Shift::KIND_SHIFT, 'template' => $template, 'tags' => [],
-                    'outlet_id' => $employee->outlet_id ?: null, 'note' => $note, 'source' => 'manual'], $request->user()?->getKey());
+                    'outlet_id' => $this->assigner->resolveOutletId($employee, [], $template) ?: null, 'note' => $note, 'source' => 'manual'], $request->user()?->getKey());
                 $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_SHIFT_REQUEST, 'locked_by' => $request->user()?->getKey(),
                     'locked_at' => now(), 'needs_review' => false, 'review_note' => null]);
                 $this->logChange($request, $employee->getKey(), $date, $before, $shift->load('template'), 'shift_request');
@@ -848,37 +766,6 @@ class RosterController extends BaseController
         }
 
         return $this->gridResponse($request, $message);
-    }
-
-    /**
-     * Số quản lý ca sáng / chiều tại outlet của ô vừa sửa trong ngày: trả về cảnh báo nếu lệch quá mức không tránh được.
-     */
-    protected function managerBalanceNote(Employee $employee, Carbon $date): ?string
-    {
-        $split = ['morning' => 0, 'afternoon' => 0];
-        $shifts = Shift::query()
-            ->with('template:id,start_time')
-            ->whereDate('date', $date->toDateString())
-            ->where('kind', Shift::KIND_SHIFT)
-            ->where('outlet_id', $employee->outlet_id)
-            ->whereIn('employee_id', Employee::query()->whereIn('position_id', Position::query()->where('is_manager', true)->select('id'))->select('id'))
-            ->get();
-
-        foreach ($shifts as $shift) {
-            $hour = (int) substr((string) $shift->template?->start_time, 0, 2);
-
-            if ($hour >= 4 && $hour < 12) {
-                $split['morning']++;
-            } elseif ($hour >= 12 && $hour < 20) {
-                $split['afternoon']++;
-            }
-        }
-
-        if (\Botble\RestaurantRoster\Scheduling\ScheduleState::managerPenalty($split['morning'], $split['afternoon']) === 0) {
-            return null;
-        }
-
-        return sprintf('Ngày %s: quản lý ca sáng %d / ca chiều %d – chênh lệch nhiều, cân nhắc đổi ca.', $date->format('d/m'), $split['morning'], $split['afternoon']);
     }
 
     /**

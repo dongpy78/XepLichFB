@@ -123,7 +123,7 @@ class Shift extends BaseModel
     }
 
     /**
-     * Ô ca làm (M6 / A2) ghi theo nhân viên xin: gỡ bằng "Gỡ ca", cần quyền roster.approve.
+     * Ô ca làm (M6 / A2 / N) ghi theo nhân viên xin: gỡ bằng "Gỡ ca", cần quyền roster.approve.
      */
     public function isShiftRequest(): bool
     {
@@ -131,7 +131,7 @@ class Shift extends BaseModel
     }
 
     /**
-     * Ô nhân viên xin (M6 / A2 / OFF): chỉ gỡ từng ô, mọi thao tác xóa hàng loạt đều giữ nguyên.
+     * Ô nhân viên xin (M6 / A2 / N / OFF): chỉ gỡ từng ô, mọi thao tác xóa hàng loạt đều giữ nguyên.
      */
     public function isEmployeeRequest(): bool
     {

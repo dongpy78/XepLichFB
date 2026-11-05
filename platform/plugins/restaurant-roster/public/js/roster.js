@@ -277,19 +277,13 @@ $(() => {
         }
     })
 
-    // Công bố lịch tuần: xem trước (tuần, phạm vi, số nhân viên, lỗi chặn công bố) → xác nhận → công bố (lưu phiên bản chính thức).
+    // Công bố lịch tuần: xem trước (tuần, phạm vi, số nhân viên) → xác nhận → công bố (lưu phiên bản chính thức).
     const publishWithPreview = ($button) => {
         Botble.showButtonLoading($button)
         $.ajax({ url: urls.publishPreviewUrl, method: 'GET', data: { ...state }, headers: { Accept: 'application/json' } })
             .done((response) => {
                 Botble.hideButtonLoading($button)
                 const d = response.data || {}
-
-                if (d.problems && d.problems.length) {
-                    Botble.showError(`Chưa công bố được – cần sửa ${d.problems.length} lỗi: ${d.problems.slice(0, 6).join(' · ')}${d.problems.length > 6 ? ' …' : ''}`)
-
-                    return
-                }
 
                 const text = [
                     `Công bố lịch tuần ${d.week}?`,
@@ -380,7 +374,7 @@ $(() => {
 
                 const published = (info.published ? `\nTrong đó có ${info.published} ca ĐÃ CÔNG BỐ.` : '')
                     + (info.versions ? `\nXóa luôn ${info.versions} bản lịch đã công bố (ảnh / Excel / PDF) – tuần trở về Bản nháp.` : '')
-                    + (info.requested ? `\nGiữ nguyên ${info.requested} ô nhân viên xin (M6 / A2 / OFF).` : '')
+                    + (info.requested ? `\nGiữ nguyên ${info.requested} ô nhân viên xin (M6 / A2 / N / OFF).` : '')
 
                 if (!window.confirm(`Xóa ${total} ô lịch của ${info.label}?${published}\n\nCó thể hoàn tác trong 30 phút.`)) {
                     return
@@ -466,7 +460,7 @@ $(() => {
         }
     }
 
-    // Giá trị "shift:<id>" = ca nhân viên xin (M6 / A2) → ghi ca & khóa; còn lại = loại OFF.
+    // Giá trị "shift:<id>" = ca nhân viên xin (M6 / A2 / N) → ghi ca & khóa; còn lại = loại OFF.
     const recordOff = (cells, type, reason, options = {}) => String(type).startsWith('shift:')
         ? request('POST', urls.shiftRequestUrl, { cells, shift_template_id: String(type).slice(6), reason }, options)
         : request('POST', urls.offRecordUrl, { cells, off_type: type, off_reason: reason }, options)
@@ -626,7 +620,7 @@ $(() => {
         const $button = $(event.currentTarget)
         const action = $button.data('assign')
 
-        // Nhân viên xin: ghi và khóa ô (M6 / A2 xin ca, OFF xin nghỉ).
+        // Nhân viên xin: ghi và khóa ô (M6 / A2 / N xin ca, OFF xin nghỉ).
         if ($('#roster-cell-request').prop('checked') && $button.data('requestable') && currentCell) {
             const cell = currentCell
             const type = action === 'off' ? 'off_request' : `shift:${$button.data('template')}`

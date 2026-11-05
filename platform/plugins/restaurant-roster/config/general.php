@@ -119,7 +119,7 @@ return [
         // true = như trước: chỉ chạy khi kỳ lịch bao trọn phạm vi đã xác nhận "đã nhập xong OFF".
         'require_off_confirmation' => false,
         // Ca nhân viên xin (nhắn trong nhóm): quản lý ghi trên Bảng xếp ca và khóa giống OFF xin.
-        'request_shift_codes' => ['M6', 'A2'],
+        'request_shift_codes' => ['M6', 'A2', 'N'],
         // Giới hạn tăng ca / tháng (Bộ luật Lao động 2019, Điều 107: không quá 40 giờ/tháng).
         'max_monthly_overtime_hours' => 40,
     ],

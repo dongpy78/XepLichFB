@@ -190,19 +190,26 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame([], array_filter($plain->requirements, fn ($r) => $r->outletId === $gusto && $r->targetMale > 0), 'Tắt được bằng cấu hình');
     }
 
-    /** Trước khi công bố: chặn khi có người trùng giờ / thiếu giờ nghỉ (vd N rồi M6 sáng hôm sau), nêu rõ người và ngày. */
-    public function test_publish_is_blocked_when_someone_lacks_rest(): void
+    /** Xin ca N: người nhà hàng cũng xin được, ca tính cho outlet Night; khóa, xóa lịch vẫn giữ, gỡ được như OFF. */
+    public function test_employee_can_request_night_shift(): void
     {
         $employee = $this->employee('V1', 'VILLA');
-        $this->nightShift($employee, '2030-03-04');
-        Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => '2030-03-05', 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['M6']->getKey(),
-            'outlet_id' => $this->outlets['VILLA']->getKey(), 'status' => 'draft', 'start_at' => '2030-03-05 06:00:00', 'end_at' => '2030-03-05 14:00:00', 'hours' => 8]);
+        $at = ['employee_id' => $employee->getKey(), 'date' => '2030-03-05'];
+        $admin = $this->user();
 
-        $response = $this->actingAs($this->user())->postJson(route('roster.publish'), ['week' => self::WEEK]);
+        $this->actingAs($admin)->get(route('roster.index', ['week' => self::WEEK]))->assertOk()->assertSee('Xin ca N ');
+        $this->actingAs($admin)->postJson(route('roster.shift-request'), ['cells' => [$at], 'shift_template_id' => $this->templates['N']->getKey(), 'week' => self::WEEK])
+            ->assertJson(['error' => false]);
 
-        $response->assertJson(['error' => true]);
-        $this->assertStringContainsString('Synthetic V1 05/03', $response->json('message'));
-        $this->assertSame('draft', Shift::query()->whereDate('date', '2030-03-05')->value('status'), 'Chưa công bố');
+        $cell = fn () => Shift::query()->where('employee_id', $employee->getKey())->whereDate('date', '2030-03-05')->first();
+        $this->assertSame([$this->outlets['NIGHT']->getKey(), true, Shift::LOCK_SHIFT_REQUEST, 'N'],
+            [(int) $cell()->outlet_id, (bool) $cell()->is_locked, $cell()->lock_reason, $cell()->notation]);
+
+        $this->actingAs($admin)->postJson(route('roster.clear-cells'), ['week' => self::WEEK, 'mode' => 'week', 'include_locked' => 1])->assertJson(['error' => false]);
+        $this->assertNotNull($cell(), 'Xóa lịch tuần vẫn giữ ca N nhân viên xin');
+
+        $this->actingAs($admin)->postJson(route('roster.off-remove'), [...$at, 'week' => self::WEEK])->assertJson(['error' => false]);
+        $this->assertNull($cell(), 'Gỡ ca N như gỡ OFF');
     }
 
     /** Backend từ chối áp dụng phương án tự động có ca "OH" (OH ở nhà hàng), kể cả khi dữ liệu phương án bị sửa. */

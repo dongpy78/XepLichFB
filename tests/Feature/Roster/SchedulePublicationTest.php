@@ -175,7 +175,7 @@ class SchedulePublicationTest extends TestCase
         $this->assertStringContainsString('Bản nháp', $this->grid(), 'Chưa công bố lần nào');
 
         $preview = $this->actingAs($this->user())->getJson(route('roster.publish-preview', ['week' => self::WEEK]))->assertJson(['error' => false])->json('data');
-        $this->assertSame([4, [], 1], [$preview['employees'], $preview['problems'], $preview['next_version']]);
+        $this->assertSame([4, 1], [$preview['employees'], $preview['next_version']]);
         $this->assertStringContainsString('07/01/2030', $preview['week']);
 
         $published = $this->publish()->assertJson(['error' => false]);
@@ -191,19 +191,18 @@ class SchedulePublicationTest extends TestCase
         $this->assertSame(1, ScheduleVersion::query()->count(), 'Không có thay đổi → không tạo phiên bản trùng');
     }
 
-    /** Lỗi nghiêm trọng (N rồi M6 sáng hôm sau – thiếu giờ nghỉ): không công bố, không tạo phiên bản, không tự sửa lịch. */
-    public function test_publish_blocked_by_serious_errors(): void
+    /** Quản lý đã quyết định (N rồi M6 sáng hôm sau – nghỉ ít): vẫn công bố đúng như bảng xếp ca, tạo phiên bản, không tự sửa lịch. */
+    public function test_publish_keeps_manager_decision_despite_short_rest(): void
     {
         [$first] = $this->staff(2);
         $this->cell($first, 0, 'N');
 
-        $preview = $this->actingAs($this->user())->getJson(route('roster.publish-preview', ['week' => self::WEEK]))->json('data');
-        $this->assertNotEmpty($preview['problems']);
-        $this->publish()->assertJson(['error' => true]);
+        $this->actingAs($this->user())->getJson(route('roster.publish-preview', ['week' => self::WEEK]))->assertJson(['error' => false]);
+        $this->publish()->assertJson(['error' => false]);
 
-        $this->assertSame(0, ScheduleVersion::query()->count());
+        $this->assertSame(1, ScheduleVersion::query()->count());
         $this->assertSame('N', Shift::query()->where('employee_id', $first->getKey())->whereDate('date', $this->day(0))->first()->template->code, 'Không tự sửa lịch');
-        $this->assertSame(0, Shift::query()->where('status', 'published')->count());
+        $this->assertSame(0, Shift::query()->where('status', 'draft')->count(), 'Công bố hết');
     }
 
     /** PNG, Excel, PDF tải được từ cùng một phiên bản; tiếng Việt, tên file có tuần + phiên bản. */
