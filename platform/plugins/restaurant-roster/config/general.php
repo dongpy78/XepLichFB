@@ -95,6 +95,9 @@ return [
         // "OH(L)" là OH hỗ trợ Lobby. "N" = ca Night (chỉ người bật Night cố định). Ô quản lý xếp tay hoặc khóa không bị lọc.
         'auto_shift_codes' => ['M6', 'A2', 'N', 'OH(L)', 'M9(L)', 'M6(L)', 'A2(L)', 'M6(K)', 'A2(K)'],
         'transfer_outlets' => ['GUSTO', 'VILLA'],
+        // Nam đa năng thuộc Night (RS hỗ trợ, quản lý 06/11/2026): cả hai nhà hàng mở thì vào ca M6 / A2 đang thiếu waiter nam (dưới 2 người, không tính quản lý) ở Villa hoặc Gusto;
+        // mọi ca đều đủ 2 waiter nam thì vào nhà hàng này.
+        'flex_overflow_outlet' => 'GUSTO',
         'transfer_positions' => ['Waiter', 'Hostess'],
         // Night (quản lý 29/10/2026): thuật toán chỉ tự xếp ca đêm cho người bật "Night cố định" trong hồ sơ, ≥ 1 người / đêm.
         // Night luân phiên không còn tự động – quản lý xếp tay ca N trên Bảng xếp ca.

@@ -55,6 +55,9 @@ final class Rules
         // Tổng số nam (waiter + quản lý – đúng số "nam" hiện trên Bảng xếp ca) chia đều M6 / A2 mỗi outlet × ngày (quản lý 05/11/2026: 4 nam → 2/2, không 3/1).
         // Cân bằng quản lý chỉ đếm số người, không xét giới: hai quản lý nam cùng M6 + hai quản lý nữ cùng A2 vẫn "cân bằng" nhưng lệch nam.
         'male_total_balance' => 2500,
+        // Nam đa năng thuộc Night (RS hỗ trợ) khi cả hai nhà hàng mở (quản lý 06/11/2026): vào ca đang thiếu waiter nam trước – không tính quản lý (mỗi người đặt sai = 4 đơn vị), mọi ca đủ 2 waiter nam thì vào
+        // Gusto (đặt sai = 1 đơn vị). Trên cân bằng nam và ca nặng; dưới thiếu người, Room Service, cân bằng quản lý.
+        'flex_placement' => 1500,
         // Tổng Waiter (nam + nữ) M6 / A2 từng outlet × ngày, tính riêng Villa, Gusto: chẵn chia đều, lẻ lệch 1 (quản lý 28/10/2026).
         // Trên cân bằng riêng nam / nữ: mỗi giới lệch 1 cùng chiều sẽ thành tổng lệch 2 – không chấp nhận khi đổi được.
         'waiter_balance' => 3500,

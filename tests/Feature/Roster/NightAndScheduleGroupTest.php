@@ -1134,6 +1134,47 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertStringNotContainsString('Ngoại lệ năng lực', $this->actingAs($this->user())->get(route('roster.index'))->getContent());
     }
 
+    /**
+     * RS hỗ trợ thuộc Night (quản lý 06/11/2026): cả hai nhà hàng mở, ngày không phải thay Room Service thì làm ở nhà hàng với mã M6(V) / M6(G) / A2(V) / A2(G);
+     * ngày người Room Service cố định OFF thì vẫn thay Room Service trước. Outlet gốc không đổi.
+     */
+    public function test_night_room_service_support_uses_restaurant_codes(): void
+    {
+        ShiftTemplate::query()->update(['break_minutes' => 0]);
+        $this->templates = ShiftTemplate::query()->get()->keyBy('code')->all();
+        StaffingRequirement::query()->create(['outlet_id' => $this->outlets['ROOM']->getKey(), 'shift_template_id' => $this->templates['M6']->getKey(), 'status' => 'active',
+            'min_staff' => 1, 'target_staff' => 1, 'max_staff' => 1, 'is_confirmed' => true]);
+        $supports = [$this->employee('NS1', 'NIGHT', 'male', ['can_room_service' => true]), $this->employee('NS2', 'NIGHT', 'male', ['can_room_service' => true])];
+        $fixed = $this->employee('RF', 'ROOM', 'female', ['room_service_fixed' => true, 'fixed_shift_template_id' => $this->templates['M6']->getKey()]);
+
+        foreach (['GUSTO', 'VILLA'] as $outlet) {
+            foreach (['M1' => 'male', 'M2' => 'male', 'F1' => 'female', 'F2' => 'female', 'F3' => 'female'] as $k => $gender) {
+                $this->employee($outlet[0] . $k, $outlet, $gender);
+            }
+        }
+
+        $from = Carbon::parse(self::WEEK);
+        $scheduler = app(\Botble\RestaurantRoster\Services\RosterScheduler::class);
+        $scheduler->apply($scheduler->run($from, $from->copy()->addDays(6), null, 'generate', 1, ['time_limit_seconds' => 5, 'search_min_seconds' => null]), 1);
+
+        $cells = Shift::query()->with('template')->whereIn('employee_id', array_map(fn (Employee $e) => $e->getKey(), $supports))->where('kind', Shift::KIND_SHIFT)->get();
+        $this->assertCount(10, $cells, 'Hai người, mỗi người đủ 5 ngày công');
+        $codes = $cells->map(fn (Shift $c) => $c->notation)->unique()->values()->all();
+        $this->assertEmpty(array_diff($codes, ['M6(V)', 'M6(G)', 'A2(V)', 'A2(G)', 'M6(RS)']), 'Chỉ các mã này: ' . implode(', ', $codes));
+        $this->assertNotEmpty(array_intersect($codes, ['M6(V)', 'M6(G)', 'A2(V)', 'A2(G)']), 'Có ngày làm ở nhà hàng');
+
+        $roomDays = Shift::query()->whereIn('employee_id', array_map(fn (Employee $e) => $e->getKey(), $supports))->where('outlet_id', $this->outlets['ROOM']->getKey())->count();
+        $this->assertSame(2, $roomDays, 'Thay Room Service đúng 2 ngày người cố định OFF');
+        $this->assertSame(5, Shift::query()->where('employee_id', $fixed->getKey())->where('kind', Shift::KIND_SHIFT)->count());
+
+        foreach ($cells as $cell) {
+            $expected = ['V' => 'VILLA', 'G' => 'GUSTO', 'RS' => 'ROOM'][trim(substr($cell->notation, 2), '()')];
+            $this->assertSame($this->outlets[$expected]->getKey(), (int) $cell->outlet_id, "{$cell->notation} tính cho đúng outlet");
+        }
+
+        $this->assertSame($this->outlets['NIGHT']->getKey(), (int) $supports[0]->fresh()->outlet_id, 'Outlet gốc không đổi');
+    }
+
     /** Người chỉ xem lịch không đổi được trạng thái nhà hàng. */
     public function test_restaurant_status_requires_manage_permission(): void
     {

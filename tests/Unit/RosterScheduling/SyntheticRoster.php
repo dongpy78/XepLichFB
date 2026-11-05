@@ -163,6 +163,7 @@ trait SyntheticRoster
             nightPlan: $options['night_plan'] ?? [],
             lobbyPreferred: $options['lobby_preferred'] ?? [],
             seedPlan: $options['seed_plan'] ?? [],
+            flexOverflowOutletId: $options['flex_overflow'] ?? null,
         );
     }
 

@@ -259,6 +259,137 @@ class RestaurantTransferTest extends TestCase
         $this->assertHardConstraintsHold($problem, $result);
     }
 
+    /** Nam đa năng thuộc Night (RS hỗ trợ): làm được Villa, Gusto; không phải quản lý. */
+    private function nightFlex(int $id): EmployeeSpec
+    {
+        return new EmployeeSpec($id, "Flex #{$id}", 'male', self::NIGHT, 48, 2, [self::VILLA . ':0' => 'eligible', self::GUSTO . ':0' => 'eligible'], [], 'cam_ranh', self::WAITER,
+            isMaleStaff: true, isFlex: true);
+    }
+
+    /**
+     * @param int[] $villaMen, $gustoMen số waiter nam mỗi nhà hàng
+     * @return array{0: \Botble\RestaurantRoster\Scheduling\Problem, 1: SolveResult, 2: EmployeeSpec[]}
+     */
+    private function flexWeek(int $villaMen, int $gustoMen, array $options = []): array
+    {
+        $people = [$this->nightFlex(80), $this->nightFlex(81)];
+        $id = 1;
+
+        foreach ([self::VILLA => $villaMen, self::GUSTO => $gustoMen] as $home => $men) {
+            foreach (range(1, $men) as $k) {
+                $people[] = $this->waiter($id++, $home, 'male');
+            }
+
+            foreach (range(1, 4) as $k) {
+                $people[] = $this->waiter($id++, $home, 'female');
+            }
+        }
+
+        $problem = $this->problem($people, $this->open($this->days()), ['restaurants' => [self::VILLA, self::GUSTO], 'busy_weekdays' => [], 'time_limit' => 60, 'max_iterations' => 60000, 'flex_overflow' => self::GUSTO, ...$options]);
+
+        return [$problem, $this->solve($problem), $people];
+    }
+
+    /** Lần lượt: [ngày, outlet, ca, số nam kể cả người đa năng, số người đa năng] cho các ca M6 / A2 của hai nhà hàng. */
+    private function menByCell(SolveResult $result, array $people): array
+    {
+        $men = array_map(fn (EmployeeSpec $e) => $e->id, array_filter($people, fn (EmployeeSpec $e) => $e->gender === 'male'));
+        $cells = [];
+
+        foreach ($this->days() as $day) {
+            foreach ([self::VILLA, self::GUSTO] as $outlet) {
+                foreach ([self::M6, self::A2] as $shift) {
+                    $rows = array_filter($result->assignments, fn ($r) => $r['date'] === $day && $r['kind'] === 'shift' && $r['outlet_id'] === $outlet && $r['shift_id'] === $shift && in_array($r['employee_id'], $men, true));
+                    $flex = array_filter($rows, fn ($r) => in_array($r['employee_id'], [80, 81], true));
+                    $cells[] = [$day, $outlet, $shift, count($rows), count($flex)];
+                }
+            }
+        }
+
+        return $cells;
+    }
+
+    /** Quản lý 06/11/2026: ca nào của Villa / Gusto còn dưới 2 nam thì RS hỗ trợ vào đó; không đứng thành người thứ 3 khi còn ca thiếu. */
+    public function test_night_flex_men_go_where_a_shift_lacks_men(): void
+    {
+        // Villa ít nam, Gusto nhiều nam: người đa năng phải sang Villa.
+        [, $result, $people] = $this->flexWeek(2, 8);
+        $this->assertSame(0, $result->softConstraintScores['objective']['flex_placement']);
+        $worked = 0;
+
+        foreach ($this->menByCell($result, $people) as [$day, $outlet, $shift, $men, $flex]) {
+            $worked += $flex;
+            $this->assertLessThanOrEqual(max(0, $men - 2) === 0 ? 2 : 0, $outlet === self::VILLA && $men > 2 ? $flex : 0, "{$day} Villa ca {$shift}: {$men} nam, {$flex} đa năng");
+        }
+
+        $this->assertSame(10, $worked, 'Đủ ngày công');
+        $villa = array_sum(array_map(fn ($c) => $c[1] === self::VILLA ? $c[4] : 0, $this->menByCell($result, $people)));
+        $this->assertGreaterThan(5, $villa, 'Phần lớn ngày làm ở Villa – nơi thiếu nam');
+    }
+
+    /** Mọi ca của cả hai nhà hàng đã đủ 2 nam: người đa năng vào Gusto, không vào Villa. */
+    public function test_night_flex_men_go_to_gusto_when_all_shifts_have_two_men(): void
+    {
+        [, $result, $people] = $this->flexWeek(8, 8);
+        $cells = $this->menByCell($result, $people);
+        $this->assertSame(0, $result->softConstraintScores['objective']['flex_placement']);
+        $this->assertSame(0, array_sum(array_map(fn ($c) => $c[1] === self::VILLA && $c[3] > 2 ? $c[4] : 0, $cells)), 'Villa đã đủ thì không thêm');
+        $this->assertSame(10, array_sum(array_column($cells, 4)), 'Đủ ngày công');
+    }
+
+    /** Thiếu nam tính theo waiter nam, không tính quản lý: ca có 2 quản lý nam nhưng chưa có waiter nam vẫn là ca thiếu. */
+    public function test_night_flex_need_counts_male_waiters_not_managers(): void
+    {
+        $days = $this->days();
+        $manager = fn (int $id, int $home) => new EmployeeSpec($id, "Captain #{$id}", 'male', $home, 48, 2, [$home . ':0' => 'primary'], [], 'cam_ranh', 200,
+            isManager: true, managerShiftIds: [self::M6, self::A2], isMaleStaff: false);
+        $people = [$this->nightFlex(80), $this->waiter(1, self::GUSTO, 'male'), $this->waiter(2, self::GUSTO, 'male')];
+        $id = 90;
+        $managers = [];
+
+        foreach ([self::VILLA, self::GUSTO] as $outlet) {
+            foreach ([self::M6, self::A2] as $shift) {
+                foreach ([1, 2] as $k) {
+                    $people[] = $manager($id, $outlet);
+                    $managers[] = [$id++, $outlet, $shift];
+                }
+            }
+        }
+
+        $state = new ScheduleState($this->problem($people, $this->open($days), ['restaurants' => [self::VILLA, self::GUSTO], 'flex_overflow' => self::GUSTO]));
+        $i = $state->index[$days[0]];
+
+        foreach ($managers as [$managerId, $outlet, $shift]) {
+            $state->place($managerId, $i, $outlet, $shift);
+        }
+
+        // Gusto M6: 2 waiter nam + người đa năng là người thứ 3, trong khi các ca khác có quản lý nam nhưng chưa có waiter nam.
+        $state->place(1, $i, self::GUSTO, self::M6);
+        $state->place(2, $i, self::GUSTO, self::M6);
+        $state->place(80, $i, self::GUSTO, self::M6);
+        $this->assertSame(4, $state->objectiveValues()['flex_placement'], 'Còn ca thiếu waiter nam dù ca đó đã có 2 quản lý nam');
+
+        // Sang ca chưa có waiter nam: không còn đặt sai.
+        $state->remove(80, $i);
+        $state->place(80, $i, self::VILLA, self::M6);
+        $this->assertSame(0, $state->objectiveValues()['flex_placement']);
+    }
+
+    /** Một nhà hàng đóng cửa: quy tắc này không áp dụng (chỉ khi cả hai mở). */
+    public function test_night_flex_rule_not_applied_when_a_restaurant_closed(): void
+    {
+        $days = $this->days();
+        $closed = [self::GUSTO => array_fill_keys($days, true)];
+        $people = [$this->nightFlex(80), $this->waiter(1, self::VILLA, 'male'), $this->waiter(2, self::VILLA, 'male'), $this->waiter(3, self::VILLA, 'male')];
+        $state = new ScheduleState($this->problem($people, $this->open($days, $closed), ['restaurants' => [self::VILLA, self::GUSTO], 'closed_days' => $closed, 'flex_overflow' => self::GUSTO]));
+
+        foreach ([1, 2, 80] as $id) {
+            $state->place($id, $state->index[$days[0]], self::VILLA, self::M6);
+        }
+
+        $this->assertSame(0, $state->objectiveValues()['flex_placement']);
+    }
+
     /** Ô quản lý đã xếp tay / khóa sang nhà hàng kia (vd A2(G)) được giữ nguyên dù cả hai mở. */
     public function test_locked_manual_transfer_is_kept(): void
     {

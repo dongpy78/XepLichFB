@@ -63,6 +63,7 @@ class CostEquivalenceTest extends TestCase
             $this->genderBalance(fn ($i, $o, $s) => $this->maleCount($i, $o, $s)),
             $this->genderBalance(fn ($i, $o, $s) => $this->waiterCount($i, $o, $s)),
             $this->genderBalance(fn ($i, $o, $s) => $this->allMaleCount["{$i}|{$o}|{$s}"] ?? 0),
+            array_sum(array_map(fn ($i) => $this->flexDayPenalty($i), array_keys($this->balanceKeys ?? []))),
         ];
         mt_srand(7);
         $checked = 0;
@@ -81,7 +82,7 @@ class CostEquivalenceTest extends TestCase
         }
 
         $this->assertSame(3000, $checked);
-        $this->assertNotSame([0, 0, 0, 0], $legacy->call($state), 'Dữ liệu có độ lệch để so sánh thật sự');
+        $this->assertNotSame([0, 0, 0, 0, 0], $legacy->call($state), 'Dữ liệu có độ lệch để so sánh thật sự');
         $this->assertGreaterThan(0, $state->offSpread(), 'OFF rải đều có giá trị để so sánh');
     }
 }

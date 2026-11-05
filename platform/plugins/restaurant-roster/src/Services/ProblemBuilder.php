@@ -372,6 +372,7 @@ class ProblemBuilder
             restaurantOutletIds: $transferOutletIds,
             closedOutletDays: $this->closedRestaurantDays($transferOutletIds, $days),
             seedPlan: $overrides['seed_plan'] ?? [],
+            flexOverflowOutletId: $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.flex_overflow_outlet', 'GUSTO'))?->getKey(),
         );
     }
 
