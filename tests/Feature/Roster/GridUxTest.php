@@ -121,6 +121,27 @@ class GridUxTest extends TestCase
         $this->assertMatchesRegularExpression('/roster\.js\?v=\w+/', $page->getContent(), 'JS có số phiên bản – không cần Ctrl+F5 sau khi cập nhật');
     }
 
+    /** Hộp xếp ca tối giản: vẫn đủ mọi chức năng, các nút bấm một lần là lưu. */
+    public function test_cell_popup_is_compact_but_keeps_every_action(): void
+    {
+        $this->employee('G1', 'GUSTO', 'male');
+
+        $page = $this->actingAs($this->user)->get(route('roster.index', ['week' => self::WEEK]))->assertOk();
+        $html = $page->getContent();
+
+        $this->assertStringContainsString('<div class="modal" id="roster-cell-modal"', $html, 'Không có hiệu ứng mờ dần khi mở / đóng');
+
+        foreach (['id="roster-cell-notation"', 'data-assign="notation"', 'data-assign="shift"', 'data-assign="off"', 'data-assign="leave"', 'data-assign="clear"',
+            'id="roster-cell-request"', 'data-requestable="1"', 'class="roster-tag-input"', 'id="roster-cell-overtime"', 'id="roster-cell-note"', 'id="roster-cell-lock"',
+            'data-off-remove', 'data-review="keep"', 'data-review="off"', 'data-ot-status="approved"', 'data-ot-status="rejected"', 'id="roster-cell-warnings"'] as $control) {
+            $this->assertStringContainsString($control, str_replace('class="form-check-input roster-tag-input"', 'class="roster-tag-input"', $html), "Thiếu {$control}");
+        }
+
+        $modal = substr($html, strpos($html, 'id="roster-cell-modal"'));
+        $this->assertStringNotContainsString('data-off-quick', $modal);
+        $this->assertStringNotContainsString('data-shift-request', $modal);
+    }
+
     public function test_undo_last_edit_restores_previous_cell(): void
     {
         $employee = $this->employee('G1', 'GUSTO', 'male');

@@ -189,7 +189,7 @@
     </div>
 
     @if ($canManage)
-        <div class="modal fade" id="roster-cell-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal" id="roster-cell-modal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -231,80 +231,64 @@
                             </div>
                         </div>
 
-                        <label class="form-label fw-semibold" for="roster-cell-notation">Nhập nhanh ký hiệu</label>
-                        <div class="input-group mb-1">
-                            <input type="text" class="form-control font-monospace text-uppercase" id="roster-cell-notation" maxlength="40" placeholder="VD: M6, A2(L)(BQ), M6(K)+3, OFF, AL" autocomplete="off">
+                        {{-- Gõ mã rồi Enter (con trỏ sẵn ở đây), hoặc bấm một nút bên dưới: lưu ngay. --}}
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control font-monospace text-uppercase" id="roster-cell-notation" maxlength="40" placeholder="Gõ mã rồi Enter: M6, A2(L), M6+3, OFF, AL" aria-label="Gõ mã ca" autocomplete="off">
                             <button type="button" class="btn btn-primary" data-assign="notation">Lưu</button>
                         </div>
-                        <div class="form-hint mb-3">Gõ giống bảng Excel rồi nhấn Enter. Hoặc chọn bên dưới.</div>
 
-                        <div class="mb-2 fw-semibold">Ký hiệu phụ & tăng ca <span class="text-muted fw-normal small">(chọn trước khi bấm ca)</span></div>
-                        <div class="roster-tag-picker mb-2">
-                            @foreach ($shiftTags as $code => $tag)
-                                <label class="roster-tag-toggle" title="{{ $tag['description'] }}">
-                                    <input type="checkbox" class="roster-tag-input" value="{{ $code }}">
-                                    <span><strong class="font-monospace">{{ $code }}</strong> {{ $tag['label'] !== $code ? $tag['label'] : '' }}</span>
-                                </label>
-                            @endforeach
-                        </div>
-                        <div class="input-group input-group-sm mb-3 roster-ot-input">
-                            <span class="input-group-text">Tăng ca sau ca</span>
-                            <input type="number" class="form-control" id="roster-cell-overtime" min="0" max="12" step="0.5" placeholder="0">
-                            <span class="input-group-text">giờ</span>
-                        </div>
-
-                        <div class="mb-2 fw-semibold">Chọn ca làm việc</div>
-                        <div class="roster-picker">
+                        @php($requestCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.request_shift_codes', ['M6', 'A2'])))
+                        <div class="roster-quick">
                             @forelse ($templates as $template)
-                                <button type="button" class="roster-picker__item" data-assign="shift" data-template="{{ $template->id }}">
-                                    <span class="roster-chip roster-chip--{{ $template->color }}">{{ $template->code }}</span>
-                                    <span class="roster-picker__name">{{ $template->name }}</span>
-                                    <span class="roster-picker__time font-monospace">{{ $template->time_range }} · {{ number_format($template->hours, 1) }}h</span>
+                                <button type="button" class="roster-quick__item roster-chip--{{ $template->color }}" data-assign="shift" data-template="{{ $template->id }}" data-code="{{ $template->code }}"
+                                    @if (in_array(strtoupper((string) $template->code), $requestCodes, true)) data-requestable="1" @endif title="{{ $template->name }} · {{ number_format($template->hours, 1) }}h">
+                                    <strong>{{ $template->code }}</strong>
+                                    <small class="font-monospace">{{ $template->time_range }}</small>
                                 </button>
                             @empty
                                 <div class="text-muted">Chưa có mẫu ca. <a href="{{ route('roster.shift-templates.create') }}">Tạo mẫu ca</a></div>
                             @endforelse
-                        </div>
-
-                        @if (Auth::user()->hasPermission('roster.approve'))
-                            @php($requestCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.request_shift_codes', ['M6', 'A2'])))
-                            <div class="mt-3 mb-2 fw-semibold">Nhân viên xin ca (khóa)</div>
-                            <div class="roster-picker roster-picker--inline">
-                                @foreach ($templates->filter(fn ($t) => in_array(strtoupper((string) $t->code), $requestCodes, true)) as $template)
-                                    <button type="button" class="roster-picker__item" data-shift-request="{{ $template->id }}" title="Nhân viên xin ca {{ $template->code }} (nhắn trong nhóm): ghi ca và khóa – thuật toán không đổi">
-                                        <span class="roster-chip"><x-core::icon name="ti ti-lock" /> {{ $template->code }}</span>
-                                        <span class="roster-picker__name">Xin ca {{ $template->code }} (khóa)</span>
-                                    </button>
-                                @endforeach
-                            </div>
-                        @endif
-
-                        <div class="mt-3 mb-2 fw-semibold">Nghỉ</div>
-                        <div class="roster-picker roster-picker--inline">
-                            @if (Auth::user()->hasPermission('roster.approve'))
-                                <button type="button" class="roster-picker__item" data-off-quick title="Nhân viên xin OFF (nhắn Zalo): ghi OFF và khóa – thuật toán không đổi">
-                                    <span class="roster-chip roster-chip--off"><x-core::icon name="ti ti-lock" /> OFF</span>
-                                    <span class="roster-picker__name">Nhân viên xin OFF (khóa)</span>
-                                </button>
-                            @endif
-                            <button type="button" class="roster-picker__item" data-assign="off">
-                                <span class="roster-chip roster-chip--off">OFF</span>
-                                <span class="roster-picker__name">Nghỉ tuần (thuật toán có thể đổi)</span>
+                            <button type="button" class="roster-quick__item roster-chip--off" data-assign="off" data-code="OFF" data-requestable="1" title="Nghỉ tuần – thuật toán có thể đổi (bật “Nhân viên xin” để khóa)">
+                                <strong>OFF</strong>
+                                <small>Nghỉ tuần</small>
                             </button>
                             @foreach ($leaveTypes as $code => $label)
-                                <button type="button" class="roster-picker__item" data-assign="leave" data-leave="{{ $code }}">
-                                    <span class="roster-chip roster-chip--leave">{{ $code }}</span>
-                                    <span class="roster-picker__name">{{ $label }}</span>
+                                <button type="button" class="roster-quick__item roster-chip--leave" data-assign="leave" data-leave="{{ $code }}" data-code="{{ $code }}" title="{{ $label }}">
+                                    <strong>{{ $code }}</strong>
+                                    <small>{{ $label }}</small>
                                 </button>
                             @endforeach
                         </div>
 
-                        <div class="mt-3">
-                            <label class="form-label" for="roster-cell-note">Ghi chú (tùy chọn)</label>
-                            <input type="text" class="form-control" id="roster-cell-note" maxlength="255" placeholder="VD: Hỗ trợ tiệc Gala, trực quầy...">
-                        </div>
+                        @if (Auth::user()->hasPermission('roster.approve'))
+                            <label class="form-check form-switch mt-3 mb-0" title="Nhân viên xin M6 / A2 / OFF (nhắn trong nhóm): ghi và khóa ô – thuật toán không đổi">
+                                <input class="form-check-input" type="checkbox" id="roster-cell-request">
+                                <span class="form-check-label"><x-core::icon name="ti ti-lock" /> Nhân viên xin (khóa ô) – bật rồi bấm {{ implode(' / ', [...$requestCodes, 'OFF']) }}</span>
+                            </label>
+                        @endif
+
+                        <details class="roster-cell-more mt-3" id="roster-cell-more">
+                            <summary>Tùy chọn thêm: ký hiệu phụ, tăng ca, ghi chú</summary>
+                            <div class="form-hint mt-2 mb-1">Chọn trước, rồi bấm ca ở trên.</div>
+                            <div class="roster-tag-picker mb-2">
+                                @foreach ($shiftTags as $code => $tag)
+                                    <label class="roster-tag-toggle" title="{{ $tag['description'] }}">
+                                        <input type="checkbox" class="roster-tag-input" value="{{ $code }}">
+                                        <span><strong class="font-monospace">{{ $code }}</strong> {{ $tag['label'] !== $code ? $tag['label'] : '' }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <div class="input-group input-group-sm roster-ot-input">
+                                    <span class="input-group-text">Tăng ca</span>
+                                    <input type="number" class="form-control" id="roster-cell-overtime" min="0" max="12" step="0.5" placeholder="0" aria-label="Tăng ca sau ca (giờ)">
+                                    <span class="input-group-text">giờ</span>
+                                </div>
+                                <input type="text" class="form-control form-control-sm flex-fill w-auto" id="roster-cell-note" maxlength="255" placeholder="Ghi chú (tùy chọn)" aria-label="Ghi chú">
+                            </div>
+                        </details>
                     </div>
-                    <div class="modal-footer justify-content-between">
+                    <div class="modal-footer">
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-outline-danger" data-assign="clear">
                                 <x-core::icon name="ti ti-trash" /> Xóa ca
@@ -313,7 +297,6 @@
                                 <x-core::icon name="ti ti-lock" /> <span>Khóa ô</span>
                             </button>
                         </div>
-                        <button type="button" class="btn" data-bs-dismiss="modal">Đóng</button>
                     </div>
                 </div>
             </div>

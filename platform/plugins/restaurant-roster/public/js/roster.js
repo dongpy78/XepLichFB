@@ -91,7 +91,11 @@ $(() => {
     }
 
     // options.cell: thao tác trên một ô → chỉ ô đó hiện "đang lưu" (bảng vẫn dùng được), vẽ lại xong ô được nháy sáng.
+    let requestSeq = 0
+    let renderedSeq = 0
+
     const request = (method, url, payload = {}, options = {}) => {
+        const seq = ++requestSeq
         const $cell = options.cell ? findCell(options.cell.employee_id, options.cell.date) : null
 
         if ($cell && $cell.length) {
@@ -113,7 +117,13 @@ $(() => {
                     return
                 }
 
-                render(response.data, options.cell)
+                // Sửa nhiều ô liên tiếp: phản hồi cũ về sau phản hồi mới thì không vẽ đè – tải lại để chắc chắn đúng.
+                if (seq < renderedSeq) {
+                    request('GET', urls.gridUrl)
+                } else {
+                    renderedSeq = seq
+                    render(response.data, options.cell)
+                }
 
                 if (response.data.edit_undo) {
                     showUndo('edit', `Đã sửa ô ${response.data.edit_undo}. Bấm Hoàn tác (hoặc Ctrl+Z) nếu sửa nhầm.`)
@@ -456,9 +466,9 @@ $(() => {
     }
 
     // Giá trị "shift:<id>" = ca nhân viên xin (M6 / A2) → ghi ca & khóa; còn lại = loại OFF.
-    const recordOff = (cells, type, reason) => String(type).startsWith('shift:')
-        ? request('POST', urls.shiftRequestUrl, { cells, shift_template_id: String(type).slice(6), reason })
-        : request('POST', urls.offRecordUrl, { cells, off_type: type, off_reason: reason })
+    const recordOff = (cells, type, reason, options = {}) => String(type).startsWith('shift:')
+        ? request('POST', urls.shiftRequestUrl, { cells, shift_template_id: String(type).slice(6), reason }, options)
+        : request('POST', urls.offRecordUrl, { cells, off_type: type, off_reason: reason }, options)
 
     $app.on('click', '[data-off-select]', () => setOffSelecting(!offSelecting))
     $offBar.on('click', '[data-off-cancel]', () => setOffSelecting(false))
@@ -507,32 +517,6 @@ $(() => {
         return
     }
 
-    // Trong hộp xếp ca: nhân viên xin OFF ngày này → ghi OFF & khóa.
-    $modal.on('click', '[data-off-quick]', () => {
-        if (!currentCell) {
-            return
-        }
-
-        recordOff([{ employee_id: currentCell.employee_id, date: currentCell.date }], 'off_request', $('#roster-cell-note').val()).done((response) => {
-            if (!response.error) {
-                $modal.modal('hide')
-            }
-        })
-    })
-
-    // Trong hộp xếp ca: nhân viên xin ca M6 / A2 ngày này → ghi ca & khóa.
-    $modal.on('click', '[data-shift-request]', (event) => {
-        if (!currentCell) {
-            return
-        }
-
-        recordOff([{ employee_id: currentCell.employee_id, date: currentCell.date }], `shift:${$(event.currentTarget).data('shift-request')}`, $('#roster-cell-note').val()).done((response) => {
-            if (!response.error) {
-                $modal.modal('hide')
-            }
-        })
-    })
-
     $grid.on('click', '.roster-table--editable .roster-cell', (event) => {
         const $cell = $(event.currentTarget)
         const warnings = $cell.data('warnings') || []
@@ -567,6 +551,7 @@ $(() => {
         $('#roster-cell-lock').toggleClass('d-none', recordedOff)
         $('#roster-cell-lock span').text(currentCell.locked ? 'Mở khóa ô' : (isShift ? 'Xác nhận & khóa ca' : 'Khóa ô'))
         $modal.find('[data-assign]').prop('disabled', currentCell.locked)
+        $('#roster-cell-request').prop('checked', false).prop('disabled', currentCell.locked)
 
         const tags = $cell.data('tags') || []
 
@@ -578,6 +563,9 @@ $(() => {
             $(item).toggleClass('is-current', String($(item).data('template')) === String($cell.data('template')))
         })
 
+        // Tùy chọn thêm: thu gọn, chỉ mở sẵn khi ô đang có ký hiệu phụ / tăng ca / ghi chú.
+        $('#roster-cell-more').prop('open', Boolean(tags.length || overtime > 0 || $cell.data('note')))
+
         const $warnings = $('#roster-cell-warnings')
 
         $warnings.toggleClass('d-none', !warnings.length).html(warnings.map((text) => $('<div>').text(text).prop('outerHTML')).join(''))
@@ -587,33 +575,70 @@ $(() => {
 
     $modal.on('shown.bs.modal', () => $('#roster-cell-notation').trigger('focus').trigger('select'))
 
-    const assign = (action, extra = {}) => {
+    // Bấm là đóng hộp ngay và hiện mã mới trên ô (ô nhấp nháy "đang lưu"); máy chủ trả về thì vẽ lại đúng. Lỗi: tải lại bảng để ô trở về dữ liệu thật.
+    const paintCell = (cell, text) => {
+        const $mini = findCell(cell.employee_id, cell.date).find('.roster-mini')
+
+        $mini.empty()
+        text && $mini.append($('<span class="roster-mini__code">').text(text))
+    }
+
+    const saved = (xhr) => xhr
+        .done((response) => response.error && load())
+        .fail(() => load())
+
+    const assign = (action, extra = {}, label = null) => {
         if (!currentCell) {
             return
         }
 
-        request('POST', urls.assignUrl, {
-            ...currentCell,
+        const cell = currentCell
+        const tags = $modal.find('.roster-tag-input:checked').map((_, input) => input.value).get()
+        const notation = $('#roster-cell-notation').val()
+        const text = action === 'notation' ? notation.toUpperCase() : (label ?? '') + (action === 'shift' ? tags.map((tag) => `(${tag})`).join('') : '')
+
+        $modal.modal('hide')
+        paintCell(cell, text)
+        saved(request('POST', urls.assignUrl, {
+            ...cell,
             action,
-            tags: $modal.find('.roster-tag-input:checked').map((_, input) => input.value).get(),
+            tags,
             overtime_hours: $('#roster-cell-overtime').val(),
-            notation: $('#roster-cell-notation').val(),
+            notation,
             note: $('#roster-cell-note').val(),
             ...extra,
-        }, { cell: currentCell }).done((response) => {
-            if (!response.error) {
-                $modal.modal('hide')
-            }
-        })
+        }, { cell }))
     }
+
+    // Công tắc "Nhân viên xin": chỉ các nút ca xin được / OFF còn bấm được.
+    $('#roster-cell-request').on('change', (event) => {
+        const requesting = event.target.checked
+
+        $modal.find('.roster-quick__item').each((_, item) => {
+            item.disabled = currentCell?.locked || (requesting && !item.dataset.requestable)
+        })
+    })
 
     $modal.on('click', '[data-assign]', (event) => {
         const $button = $(event.currentTarget)
+        const action = $button.data('assign')
 
-        assign($button.data('assign'), {
+        // Nhân viên xin: ghi và khóa ô (M6 / A2 xin ca, OFF xin nghỉ).
+        if ($('#roster-cell-request').prop('checked') && $button.data('requestable') && currentCell) {
+            const cell = currentCell
+            const type = action === 'off' ? 'off_request' : `shift:${$button.data('template')}`
+
+            $modal.modal('hide')
+            paintCell(cell, $button.data('code'))
+            saved(recordOff([{ employee_id: cell.employee_id, date: cell.date }], type, $('#roster-cell-note').val(), { cell }))
+
+            return
+        }
+
+        assign(action, {
             shift_template_id: $button.data('template') || '',
             leave_type: $button.data('leave') || '',
-        })
+        }, $button.data('code'))
     })
 
     $modal.on('click', '[data-ot-status]', (event) => {
