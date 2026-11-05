@@ -306,7 +306,7 @@ final class ResultBuilder
     private function balanceReport(ScheduleState $state): array
     {
         $problem = $state->problem;
-        $managers = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isManager);
+        $managers = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->countsAsInCharge());
         $pairs = [];
         $days = [];
         $warnings = [];
@@ -1420,7 +1420,7 @@ final class ResultBuilder
 
         foreach ($state->managerImbalances() as $row) {
             [$i, $date, $outletId] = [$row['i'], $row['date'], $row['outlet_id']];
-            $managers = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isManager && $e->homeOutletId === $outletId);
+            $managers = array_filter($problem->employees, fn (EmployeeSpec $e) => $e->countsAsInCharge() && $e->homeOutletId === $outletId);
             $off = count(array_filter($managers, fn (EmployeeSpec $e) => ! $state->shiftAt($e->id, $i)));
             $locked = count(array_filter($managers, fn (EmployeeSpec $e) => $state->isFixed($e->id, $i) && $state->shiftAt($e->id, $i)));
             $working = $row['morning'] + $row['afternoon'];

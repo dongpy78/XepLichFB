@@ -87,6 +87,12 @@ final class ScheduleState
     /** @var array<int, array<int, array{morning: int, afternoon: int}>> [dayIndex][outletId] => số quản lý ca sáng / chiều */
     private array $managerShifts = [];
 
+    /** @var array<int, array<int, array<int, array{morning: int, afternoon: int}>>> [ngày][outlet][vị trí] => số người M6 / A2 của vị trí chia đều (Hostess) */
+    private array $positionShifts = [];
+
+    /** Tổng độ lệch M6 / A2 của các vị trí chia đều (cùng công thức managerPenalty), cập nhật tăng dần. */
+    private int $positionImbalance = 0;
+
     /** Tổng độ lệch quản lý sáng / chiều (xem managerPenalty), cập nhật tăng dần. */
     private int $managerImbalance = 0;
 
@@ -1192,7 +1198,7 @@ final class ScheduleState
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
             'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $genderBalances[0], 'male_balance' => $genderBalances[1], 'waiter_balance' => $genderBalances[2], 'male_total_balance' => $genderBalances[3], 'flex_placement' => $genderBalances[4], 'rs_support_excess' => $this->rsSupportExcess, 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
-            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
+            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'position_balance' => $this->positionImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
 
@@ -2145,27 +2151,39 @@ final class ScheduleState
     }
 
     /**
-     * Số quản lý OFF theo ngày càng đều càng tốt: Σ (số quản lý không làm ngày i)² trên các ngày trong phạm vi.
+     * Số incharge OFF theo ngày càng đều càng tốt trong từng nhà hàng: Σ (số incharge của nhà hàng không làm ngày i)² trên các ngày trong phạm vi.
      * OFF đã duyệt vẫn được giữ (là phần không đổi của tổng).
      */
     public function managerOffSpread(): int
     {
-        $managers = $this->managerTotal ??= count(array_filter($this->problem->employees, fn (EmployeeSpec $e) => $e->isManager));
+        if ($this->managerTotals === null) {
+            $this->managerTotals = [];
 
-        if ($managers < 2) {
-            return 0;
+            foreach ($this->problem->employees as $employee) {
+                if ($employee->countsAsInCharge()) {
+                    $home = (int) $employee->homeOutletId;
+                    $this->managerTotals[$home] = ($this->managerTotals[$home] ?? 0) + 1;
+                }
+            }
         }
 
         $sum = 0;
 
-        foreach ($this->scopeIndexes() as $i) {
-            $sum += max(0, $managers - ($this->managerWorking[$i] ?? 0)) ** 2;
+        foreach ($this->managerTotals as $home => $managers) {
+            if ($managers < 2) {
+                continue;
+            }
+
+            foreach ($this->scopeIndexes() as $i) {
+                $sum += max(0, $managers - ($this->managerWorking[$home][$i] ?? 0)) ** 2;
+            }
         }
 
         return $sum;
     }
 
-    private ?int $managerTotal = null;
+    /** @var array<int, int>|null [outlet chính] => số incharge */
+    private ?array $managerTotals = null;
 
     /**
      * Nhân viên OFF rải đều theo ngày (quản lý 28/10/2026): Σ theo outlet chính × ngày của (số nhân viên không phải quản lý
@@ -2360,7 +2378,10 @@ final class ScheduleState
         }
 
         if ($this->problem->employees[$employeeId]?->isManager ?? false) {
-            $this->managerWorking[$i] = ($this->managerWorking[$i] ?? 0) + $delta;
+            if ($this->problem->employees[$employeeId]->countsAsInCharge()) {
+                $home = (int) $this->problem->employees[$employeeId]->homeOutletId;
+                $this->managerWorking[$home][$i] = ($this->managerWorking[$home][$i] ?? 0) + $delta;
+            }
         } elseif (($spec = $this->problem->employees[$employeeId] ?? null) && $this->countsForOffSpread($spec)) {
             $group = self::offGroup($spec);
             $before = $this->staffWorking[$group][$i] ?? 0;
@@ -2421,8 +2442,19 @@ final class ScheduleState
         $isMale = $this->problem->employees[$employeeId]?->countsAsMale() ?? false;
         $isFemaleStaff = $this->problem->employees[$employeeId]?->isFemaleStaff ?? false;
 
-        // Quản lý ca sáng / chiều theo outlet × ngày (cân bằng M6 / A2 của cấp quản lý).
-        if (($this->problem->employees[$employeeId] ?? null)?->isManager
+        // Vị trí chia đều (Hostess): M6 / A2 theo outlet × ngày.
+        if (($balanced = $this->problem->employees[$employeeId] ?? null)?->isPositionBalanced
+            && in_array(strtoupper($this->problem->shifts[$shiftId]->code), $this->problem->rules->balanceShiftCodes, true)
+            && in_array($category = $this->problem->shifts[$shiftId]->category(), ['morning', 'afternoon'], true)) {
+            $counts = $this->positionShifts[$i][$outletId][$balanced->positionId] ?? ['morning' => 0, 'afternoon' => 0];
+            $penalty = self::managerPenalty($counts['morning'], $counts['afternoon']);
+            $counts[$category] += $delta;
+            $this->positionShifts[$i][$outletId][$balanced->positionId] = $counts;
+            $this->positionImbalance += self::managerPenalty($counts['morning'], $counts['afternoon']) - $penalty;
+        }
+
+        // Incharge ca sáng / chiều theo outlet × ngày (không tính Assistant Manager, Restaurant Manager).
+        if (($this->problem->employees[$employeeId] ?? null)?->countsAsInCharge()
             && in_array($category = $this->problem->shifts[$shiftId]->category(), ['morning', 'afternoon'], true)) {
             $counts = $this->managerShifts[$i][$outletId] ?? ['morning' => 0, 'afternoon' => 0];
             $before = self::managerPenalty($counts['morning'], $counts['afternoon']);

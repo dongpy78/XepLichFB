@@ -43,6 +43,10 @@ final class EmployeeSpec
         public readonly bool $isTrainee = false,
         // Nhân viên Room Service cố định (hồ sơ).
         public readonly bool $isRoomFixed = false,
+        // Cấp quản lý nhưng không tính incharge (Assistant Manager, Restaurant Manager): không vào cân bằng M6 / A2 và OFF của incharge.
+        public readonly bool $isTopManager = false,
+        // Thuộc vị trí chia đều M6 / A2 (Hostess).
+        public readonly bool $isPositionBalanced = false,
     ) {
     }
 
@@ -50,6 +54,12 @@ final class EmployeeSpec
     public const NIGHT_FLEX = 'flex';
     // Nam waiter đủ điều kiện luân phiên Night (Villa / Gusto / Night, không phải Night cứng, không phải Room Service cứng).
     public const NIGHT_ROTATION = 'rotation';
+
+    /** Incharge: cấp quản lý trừ Assistant Manager, Restaurant Manager. */
+    public function countsAsInCharge(): bool
+    {
+        return $this->isManager && ! $this->isTopManager;
+    }
 
     public function isNightCore(): bool
     {

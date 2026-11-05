@@ -32,6 +32,8 @@ final class Rules
         'rs_support_excess' => 50000,
         // Cấp quản lý: số quản lý ca sáng (M6) và chiều (A2) cân bằng theo outlet × ngày – không đổi lấy thiếu người.
         'manager_balance' => 8000,
+        // Vị trí trong balance_positions (Hostess) chia đều M6 / A2 từng outlet × ngày.
+        'position_balance' => 3500,
         // Thứ Bảy đông khách: hạn chế OFF thứ Bảy, nhưng không đổi lấy thiếu người ngày khác.
         'busy_day_off' => 4000,
         'off_split' => 3000,
@@ -66,7 +68,7 @@ final class Rules
         'waiter_balance' => 3500,
         // Waiter của mỗi nhà hàng (outlet chính) cân bằng M6 / A2 kể cả khi đang làm ở nhà hàng kia (ngày nhà hàng gốc đóng cửa).
         'home_balance' => 2000,
-        // Số quản lý (Junior Restaurant Captain trở lên) OFF mỗi ngày đều nhau: tổng bình phương số quản lý OFF theo ngày.
+        // Số incharge OFF mỗi ngày đều nhau trong từng nhà hàng: tổng bình phương số incharge OFF theo ngày.
         'manager_off_spread' => 3000,
         // Nhân viên (không phải quản lý) OFF rải đều các ngày trong tuần, kể cả thứ 7 / Chủ nhật (quản lý 28/10/2026):
         // tổng bình phương số người OFF theo outlet chính × ngày. Dưới Lobby / Night / định biên; ngang OFF liền nhau.

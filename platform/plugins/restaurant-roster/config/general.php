@@ -70,6 +70,10 @@ return [
         // Cấp quản lý (vị trí bật "Cấp quản lý"): thuật toán chỉ tự xếp các ca này, tại outlet chính, không đi Lobby;
         // số quản lý ca sáng / chiều được cân bằng theo từng outlet, từng ngày. OH / M9 / đổi outlet do quản lý xếp tay.
         'manager_shift_codes' => ['M6', 'A2'],
+        // Incharge = cấp quản lý trừ các vị trí này (Junior Restaurant Captain → Senior Restaurant Supervisor): cân bằng M6 / A2 và OFF từng nhà hàng, từng ngày chỉ tính incharge.
+        'incharge_exclude_positions' => ['Assistant Manager', 'Restaurant Manager'],
+        // Vị trí chia đều M6 / A2 trong nội bộ vị trí, từng nhà hàng, từng ngày (4 người → 2 / 2, 3 người → 2 / 1).
+        'balance_positions' => ['Hostess'],
         // Vị trí được tính là "nữ waiter" cho định biên nữ waiter trực tiếp tại outlet (Định biên nhân sự → Nữ waiter tối thiểu / mục tiêu).
         // Không tính cấp quản lý, người đang hỗ trợ Lobby (L) hay đứng Kid-Deline trong ca.
         'female_staff_positions' => ['Waiter'],

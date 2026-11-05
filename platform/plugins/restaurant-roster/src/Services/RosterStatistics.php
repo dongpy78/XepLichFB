@@ -27,7 +27,11 @@ class RosterStatistics
         }
 
         // Cấp quản lý theo cờ "Cấp quản lý" của vị trí (Junior Restaurant Captain trở lên).
-        $leaderIds = Position::query()->where('is_manager', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $leaders = Position::query()->where('is_manager', true)->get(['id', 'name']);
+        $leaderIds = $leaders->map(fn ($p) => (int) $p->id)->all();
+        // Incharge: cấp quản lý trừ Assistant Manager, Restaurant Manager – cảnh báo lệch sáng / chiều chỉ tính nhóm này.
+        $topManagers = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.incharge_exclude_positions', []));
+        $inChargeIds = $leaders->reject(fn ($p) => in_array(mb_strtolower(trim((string) $p->name)), $topManagers, true))->map(fn ($p) => (int) $p->id)->values()->all();
         $hostessIds = [];
         $checks = [];
 
@@ -65,7 +69,7 @@ class RosterStatistics
             ->filter(fn ($p) => ! in_array((int) $p->id, $leaderIds, true) && (! $maleNames || in_array(mb_strtolower(trim((string) $p->name)), $maleNames, true)))
             ->pluck('id')->map(fn ($id) => (int) $id)->all();
 
-        return $this->rules = ['leaderIds' => $leaderIds, 'hostessIds' => $hostessIds, 'femaleStaffIds' => $femaleStaffIds, 'maleStaffIds' => $maleStaffIds, 'checks' => $checks];
+        return $this->rules = ['leaderIds' => $leaderIds, 'inChargeIds' => $inChargeIds, 'hostessIds' => $hostessIds, 'femaleStaffIds' => $femaleStaffIds, 'maleStaffIds' => $maleStaffIds, 'checks' => $checks];
     }
 
     /**
@@ -269,7 +273,7 @@ class RosterStatistics
                 $cell[$employee->gender === 'male' ? 'male' : 'female']++;
                 $cell['leaders'] += in_array((int) $employee->position_id, $rules['leaderIds'], true) ? 1 : 0;
 
-                if (in_array((int) $employee->position_id, $rules['leaderIds'], true) && $shift->template?->start_time) {
+                if (in_array((int) $employee->position_id, $rules['inChargeIds'], true) && $shift->template?->start_time) {
                     $hour = (int) substr((string) $shift->template->start_time, 0, 2);
                     $half = $hour >= 4 && $hour < 12 ? 'morning' : ($hour >= 12 && $hour < 20 ? 'afternoon' : null);
 

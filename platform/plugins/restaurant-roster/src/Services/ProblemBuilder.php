@@ -100,6 +100,8 @@ class ProblemBuilder
         // Vị trí được tính là "nữ waiter" cho định biên nữ trực tiếp tại outlet (trống = mọi vị trí không thuộc cấp quản lý).
         $femaleStaffPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.female_staff_positions', ['Waiter']));
         $positionNames = Position::query()->pluck('name', 'id')->map(fn ($name) => mb_strtolower(trim((string) $name)))->all();
+        $topManagerPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.incharge_exclude_positions', []));
+        $balancedPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.balance_positions', []));
 
         $specs = [];
         $decisionIds = [];
@@ -289,6 +291,8 @@ class ProblemBuilder
                 // Thực tập sinh không có vị trí trong bài toán: không tính định biên theo vị trí, OFF rải đều trong nhóm riêng.
                 positionId: $employee->position_id && ! $isTrainee ? (int) $employee->position_id : null,
                 isManager: ! $isTrainee && isset($managerPositions[(int) $employee->position_id]),
+                isTopManager: in_array($positionNames[(int) $employee->position_id] ?? '', $topManagerPositions, true),
+                isPositionBalanced: ! $isTrainee && in_array($positionNames[(int) $employee->position_id] ?? '', $balancedPositions, true),
                 managerShiftIds: $managerShiftIds,
                 isFemaleStaff: ! $isTrainee && $employee->gender === 'female' && ! isset($managerPositions[(int) $employee->position_id])
                     && (! $femaleStaffPositions || in_array($positionNames[(int) $employee->position_id] ?? '', $femaleStaffPositions, true)),

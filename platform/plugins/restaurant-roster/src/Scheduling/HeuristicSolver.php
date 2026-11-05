@@ -1104,7 +1104,7 @@ final class HeuristicSolver implements SolverInterface
             // Quản lý: ưu tiên ca (sáng / chiều) đang ít quản lý hơn ở outlet này trong ngày.
             $managerBias = 0;
 
-            if ($employee->isManager && in_array($category, ['morning', 'afternoon'], true)) {
+            if ($employee->countsAsInCharge() && in_array($category, ['morning', 'afternoon'], true)) {
                 $counts = $state->managerShiftCounts($i, $requirement->outletId);
                 $managerBias = 200 * ($counts[$category] - $counts[$category === 'morning' ? 'afternoon' : 'morning']);
             }

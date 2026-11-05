@@ -190,6 +190,23 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame([], array_filter($plain->requirements, fn ($r) => $r->outletId === $gusto && $r->targetMale > 0), 'Tắt được bằng cấu hình');
     }
 
+    /** Phân loại theo tên vị trí: Assistant Manager, Restaurant Manager không tính incharge; Hostess chia đều M6 / A2. */
+    public function test_positions_map_to_incharge_and_balanced_groups(): void
+    {
+        $make = function (string $code, string $position, bool $manager) {
+            $employee = $this->employee($code, 'VILLA');
+            $employee->update(['position_id' => \Botble\RestaurantRoster\Models\Position::query()->create(['name' => $position, 'is_manager' => $manager, 'status' => 'published'])->getKey()]);
+
+            return $employee->getKey();
+        };
+        $people = ['am' => $make('A1', 'Assistant Manager', true), 'rm' => $make('R1', 'Restaurant Manager', true), 'cap' => $make('C1', 'Junior Restaurant Captain', true), 'sup' => $make('S1', 'Senior Restaurant Supervisor', true), 'host' => $make('H1', 'Hostess', false)];
+        $from = Carbon::parse(self::WEEK);
+        $specs = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6))->employees;
+        $flags = array_map(fn (int $id) => [$specs[$id]->isManager, $specs[$id]->countsAsInCharge(), $specs[$id]->isPositionBalanced], $people);
+
+        $this->assertSame(['am' => [true, false, false], 'rm' => [true, false, false], 'cap' => [true, true, false], 'sup' => [true, true, false], 'host' => [false, false, true]], $flags);
+    }
+
     /** Xin ca N: người nhà hàng cũng xin được, ca tính cho outlet Night; khóa, xóa lịch vẫn giữ, gỡ được như OFF. */
     public function test_employee_can_request_night_shift(): void
     {
