@@ -316,18 +316,20 @@ class SchedulePublicationTest extends TestCase
         $this->publish()->assertJson(['error' => false]);
         $this->assertSame(0, Shift::query()->where('status', 'draft')->count(), 'Đã công bố hết');
         $locked = Shift::query()->where('employee_id', $first->getKey())->whereDate('date', $this->day(0))->firstOrFail();
-        $locked->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_SHIFT_REQUEST]);
+        $locked->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_CONFIRMED]);
+        Shift::query()->where('employee_id', $first->getKey())->where('kind', Shift::KIND_SHIFT)->whereKeyNot($locked->getKey())->firstOrFail()
+            ->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_SHIFT_REQUEST]);
         app(\Botble\RestaurantRoster\Services\OffRequestService::class)->record([$second->getKey()], ['date_from' => $this->day(4), 'date_to' => $this->day(4), 'type' => 'off_request'], 1);
         $user = $this->user();
         $total = Shift::query()->count();
 
         $preview = $this->actingAs($user)->postJson(route('roster.clear-cells'), ['week' => self::WEEK, 'mode' => 'week', 'preview' => 1])->json('data');
-        $this->assertSame([$total - 2, 2], [$preview['total'], $preview['kept']], 'Xem trước: số ô sẽ xóa / ô khóa được giữ');
+        $this->assertSame([$total - 3, 1, 2], [$preview['total'], $preview['kept'], $preview['requested']], 'Xem trước: số ô sẽ xóa / ô khóa tùy chọn giữ / ô nhân viên xin luôn giữ');
         $this->assertGreaterThan(0, $preview['published']);
         $this->assertSame(1, $preview['versions'], 'Xem trước: số bản đã công bố sẽ xóa');
 
         $this->actingAs($user)->postJson(route('roster.clear-cells'), ['week' => self::WEEK, 'mode' => 'week'])->assertJson(['error' => false]);
-        $this->assertSame(2, Shift::query()->count(), 'Chỉ còn ô khóa và OFF đã cho');
+        $this->assertSame(3, Shift::query()->count(), 'Chỉ còn ô khóa, ca nhân viên xin và OFF đã cho');
         $this->assertSame(0, ScheduleVersion::query()->count(), 'Xóa luôn bản đã công bố');
         $this->assertStringContainsString('Bản nháp', $this->grid(), 'Tuần trở về Bản nháp như mới');
         $this->export('png')->assertRedirect();
@@ -338,7 +340,7 @@ class SchedulePublicationTest extends TestCase
         $this->assertStringContainsString('Đã công bố', $this->grid());
 
         $this->actingAs($user)->postJson(route('roster.clear-cells'), ['week' => self::WEEK, 'mode' => 'week', 'include_locked' => 1])->assertJson(['error' => false]);
-        $this->assertSame(1, Shift::query()->count(), 'Xóa cả ô khóa – chỉ giữ OFF quản lý đã cho');
-        $this->assertTrue(Shift::query()->first()->isRecordedOff());
+        $this->assertSame(2, Shift::query()->count(), 'Xóa cả ô khóa – vẫn giữ ca và OFF nhân viên xin');
+        $this->assertTrue(Shift::query()->get()->every(fn (Shift $shift) => $shift->isEmployeeRequest()));
     }
 }

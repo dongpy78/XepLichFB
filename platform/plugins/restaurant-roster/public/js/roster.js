@@ -355,7 +355,7 @@ $(() => {
 
                 const info = response.data
 
-                if (!info.total && !info.kept && !info.versions) {
+                if (!info.total && !info.kept && !info.requested && !info.versions) {
                     Botble.showError(`Không có ô nào để xóa ở ${info.label}.`)
 
                     return
@@ -373,13 +373,14 @@ $(() => {
                 const total = info.total + (includeLocked ? info.kept : 0)
 
                 if (!total && !info.versions) {
-                    Botble.showError('Chỉ có ô đã khóa / nghỉ phép – không xóa gì.')
+                    Botble.showError('Chỉ có ô nhân viên xin / đã khóa / nghỉ phép – không xóa gì.')
 
                     return
                 }
 
                 const published = (info.published ? `\nTrong đó có ${info.published} ca ĐÃ CÔNG BỐ.` : '')
                     + (info.versions ? `\nXóa luôn ${info.versions} bản lịch đã công bố (ảnh / Excel / PDF) – tuần trở về Bản nháp.` : '')
+                    + (info.requested ? `\nGiữ nguyên ${info.requested} ô nhân viên xin (M6 / A2 / OFF).` : '')
 
                 if (!window.confirm(`Xóa ${total} ô lịch của ${info.label}?${published}\n\nCó thể hoàn tác trong 30 phút.`)) {
                     return
@@ -543,12 +544,14 @@ $(() => {
         const recordedOff = Number($cell.data('recorded-off')) === 1
         const review = $cell.data('review') || ''
         const isShift = Boolean($cell.data('template'))
+        const requestedShift = Number($cell.data('shift-requested')) === 1
 
         // OFF quản lý đã cho: gỡ bằng "Gỡ OFF" (không mở khóa thường); ca làm: khóa = xác nhận ca.
         $('#roster-cell-recorded-off').toggleClass('d-none', !recordedOff)
         $('#roster-cell-review').toggleClass('d-none', !review)
         $('#roster-cell-review-text').text(review)
-        $('#roster-cell-lock').toggleClass('d-none', recordedOff)
+        $('#roster-cell-requested-shift').toggleClass('d-none', !requestedShift)
+        $('#roster-cell-lock').toggleClass('d-none', recordedOff || requestedShift)
         $('#roster-cell-lock span').text(currentCell.locked ? 'Mở khóa ô' : (isShift ? 'Xác nhận & khóa ca' : 'Khóa ô'))
         $modal.find('[data-assign]').prop('disabled', currentCell.locked)
         $('#roster-cell-request').prop('checked', false).prop('disabled', currentCell.locked)

@@ -122,6 +122,22 @@ class Shift extends BaseModel
         return $this->lock_reason === self::LOCK_OFF_REQUEST && $this->kind !== self::KIND_SHIFT;
     }
 
+    /**
+     * Ô ca làm (M6 / A2) ghi theo nhân viên xin: gỡ bằng "Gỡ ca", cần quyền roster.approve.
+     */
+    public function isShiftRequest(): bool
+    {
+        return $this->lock_reason === self::LOCK_SHIFT_REQUEST && $this->kind === self::KIND_SHIFT;
+    }
+
+    /**
+     * Ô nhân viên xin (M6 / A2 / OFF): chỉ gỡ từng ô, mọi thao tác xóa hàng loạt đều giữ nguyên.
+     */
+    public function isEmployeeRequest(): bool
+    {
+        return $this->isRecordedOff() || $this->isShiftRequest();
+    }
+
     public function isWorking(): bool
     {
         return $this->kind === self::KIND_SHIFT && $this->start_at && $this->end_at;

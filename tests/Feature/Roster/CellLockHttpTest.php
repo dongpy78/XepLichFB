@@ -272,6 +272,31 @@ class CellLockHttpTest extends TestCase
         $this->assertTrue(Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-08')->first()->isRecordedOff());
     }
 
+    /** Ca nhân viên xin gỡ được như OFF: "Gỡ ca" hoặc mở khóa, ô trở về trống, có nhật ký; không có quyền thì không gỡ được. */
+    public function test_requested_shift_can_be_removed_like_recorded_off(): void
+    {
+        $m6 = ShiftTemplate::query()->where('code', 'M6')->firstOrFail();
+        $at = fn (string $date) => ['employee_id' => $this->employee->getKey(), 'date' => $date, 'week' => '2030-01-07'];
+        $admin = $this->user([], true);
+        $this->actingAs($admin)->postJson(route('roster.shift-request'), ['cells' => [$at('2030-01-09'), $at('2030-01-10')], 'shift_template_id' => $m6->getKey(), 'week' => '2030-01-07'])
+            ->assertJson(['error' => false]);
+        $exists = fn (string $date) => Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', $date)->exists();
+
+        $this->assertStringContainsString('data-shift-requested="1"', (string) $this->actingAs($admin)->getJson(route('roster.grid', ['week' => '2030-01-07']))->json('data.html'));
+
+        $refused = $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.lock'), [...$at('2030-01-09'), 'locked' => 0]);
+        $this->assertTrue($refused->json('error') ?? $refused->status() === 403, 'Không có quyền duyệt thì không gỡ được');
+        $this->assertTrue($exists('2030-01-09'));
+
+        $this->actingAs($admin)->postJson(route('roster.off-remove'), $at('2030-01-09'))->assertJson(['error' => false]);
+        $this->assertFalse($exists('2030-01-09'), 'Gỡ ca: ô trống');
+        $this->actingAs($admin)->postJson(route('roster.lock'), [...$at('2030-01-10'), 'locked' => 0])->assertJson(['error' => false]);
+        $this->assertFalse($exists('2030-01-10'), 'Mở khóa: cũng là gỡ ca');
+        $this->assertSame(2, \Botble\RestaurantRoster\Models\ChangeLog::query()->where('action', 'shift_request_remove')->count());
+
+        $this->actingAs($admin)->postJson(route('roster.off-remove'), $at('2030-01-11'))->assertJson(['error' => true]);
+    }
+
     /** Cấp quản lý theo cờ của vị trí: thuật toán nhận đúng, xếp tay ngoài M6 / A2 thì ô tự khóa, bảng báo lệch sáng / chiều. */
     public function test_manager_flag_drives_engine_and_manual_edits(): void
     {

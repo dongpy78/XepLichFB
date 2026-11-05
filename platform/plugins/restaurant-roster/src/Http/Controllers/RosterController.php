@@ -100,7 +100,9 @@ class RosterController extends BaseController
         if ($existing?->is_locked) {
             return $this->httpResponse()->setError()->setMessage($existing->isRecordedOff()
                 ? "Ô {$existing->notation} là OFF quản lý đã cho và đang khóa. Bấm \"Gỡ OFF\" trước nếu cần cho {$employee->name} đi làm ngày này."
-                : "Ô {$existing->notation} đang khóa. Mở khóa ô trước khi sửa.");
+                : ($existing->isShiftRequest()
+                    ? "Ô {$existing->notation} là ca nhân viên xin và đang khóa. Bấm \"Gỡ ca\" trước nếu cần đổi."
+                    : "Ô {$existing->notation} đang khóa. Mở khóa ô trước khi sửa."));
         }
 
         // Trạng thái ô trước khi sửa – để "Hoàn tác" lần sửa gần nhất.
@@ -451,10 +453,12 @@ class RosterController extends BaseController
         }
 
         $shifts = $query->with('template:id,code')->get();
+        // Ô nhân viên xin (M6 / A2 / OFF) luôn được giữ: chỉ gỡ từng ô bằng "Gỡ ca" / "Gỡ OFF" (có kiểm tra quyền), không xóa hàng loạt.
+        [$requested, $erasable] = $shifts->partition(fn (Shift $shift) => $shift->isEmployeeRequest());
+        // Ô khóa khác / nghỉ phép: mặc định giữ, quản lý chọn "xóa cả các ô này" thì mới xóa.
         $isKept = fn (Shift $shift) => $shift->is_locked || $shift->kind === Shift::KIND_LEAVE;
-        $kept = $shifts->filter($isKept);
-        // OFF quản lý đã cho chỉ gỡ được bằng "Gỡ OFF" (có kiểm tra quyền, cập nhật đơn), không xóa hàng loạt.
-        $targets = $request->boolean('include_locked') ? $shifts->reject(fn (Shift $shift) => $shift->isRecordedOff()) : $shifts->reject($isKept);
+        $kept = $erasable->filter($isKept);
+        $targets = $request->boolean('include_locked') ? $erasable : $erasable->reject($isKept);
 
         // Xóa lịch tuần: xóa luôn các bản đã công bố của tuần (ảnh / Excel / PDF) – tuần trở về "Bản nháp" như mới (quản lý 30/10/2026).
         $versions = $data['mode'] === 'week'
@@ -468,6 +472,7 @@ class RosterController extends BaseController
                 'total' => $targets->count(),
                 'published' => $targets->where('status', Shift::STATUS_PUBLISHED)->count(),
                 'kept' => $kept->count(),
+                'requested' => $requested->count(),
                 'versions' => $versions->count(),
             ]);
         }
@@ -677,6 +682,11 @@ class RosterController extends BaseController
             return $this->removeOff($request, $shift, $employee);
         }
 
+        // Tương tự: mở khóa ca nhân viên xin = gỡ ca.
+        if (! $locked && $shift?->isShiftRequest()) {
+            return $this->removeShiftRequest($request, $shift, $employee);
+        }
+
         if (! $shift && $locked) {
             $shift = $this->assigner->assign($employee, $date, ['kind' => Shift::KIND_OFF, 'source' => 'manual'], $request->user()?->getKey());
         }
@@ -834,7 +844,7 @@ class RosterController extends BaseController
         $message = $written ? "Đã ghi {$written} ô ca {$template->code} nhân viên xin và khóa." : 'Không có ô nào được ghi.';
 
         if ($kept) {
-            $message .= ' ⚠ Giữ nguyên ô đang khóa (mở khóa / gỡ OFF trước nếu muốn đổi): ' . implode('; ', $kept) . '.';
+            $message .= ' ⚠ Giữ nguyên ô đang khóa (mở khóa / gỡ ca / gỡ OFF trước nếu muốn đổi): ' . implode('; ', $kept) . '.';
         }
 
         return $this->gridResponse($request, $message);
@@ -872,7 +882,7 @@ class RosterController extends BaseController
     }
 
     /**
-     * Gỡ OFF quản lý đã cho (thiếu người – cho nhân viên đi làm ngày đó). Cần quyền roster.approve.
+     * Gỡ ô nhân viên xin: OFF đã cho (thiếu người – cho nhân viên đi làm ngày đó) hoặc ca M6 / A2 đã xin. Cần quyền roster.approve.
      */
     public function offRemove(Request $request)
     {
@@ -884,11 +894,33 @@ class RosterController extends BaseController
         $employee = Employee::query()->findOrFail($data['employee_id']);
         $shift = Shift::query()->with('template')->where('employee_id', $employee->getKey())->whereDate('date', $data['date'])->first();
 
+        if ($shift?->isShiftRequest()) {
+            return $this->removeShiftRequest($request, $shift, $employee);
+        }
+
         if (! $shift?->isRecordedOff()) {
             return $this->httpResponse()->setError()->setMessage('Ô này không phải OFF quản lý đã cho.');
         }
 
         return $this->removeOff($request, $shift, $employee);
+    }
+
+    protected function removeShiftRequest(Request $request, Shift $shift, Employee $employee)
+    {
+        if (! $request->user()?->hasPermission('roster.approve')) {
+            return $this->httpResponse()->setError()->setMessage('Chỉ người có quyền ghi / gỡ OFF mới gỡ được ca nhân viên xin.');
+        }
+
+        $code = $shift->notation;
+        $date = $shift->date->copy();
+
+        DB::transaction(function () use ($request, $shift, $employee, $date): void {
+            $before = $this->snapshot($shift);
+            $shift->delete();
+            $this->logChange($request, $employee->getKey(), $date, $before, null, 'shift_request_remove');
+        });
+
+        return $this->gridResponse($request, "Đã gỡ ca {$code} nhân viên xin ngày {$date->format('d/m')} của {$employee->name}. Ô đã trống – xếp ca khác hoặc để lịch tự động xếp.");
     }
 
     protected function removeOff(Request $request, Shift $shift, Employee $employee)

@@ -433,6 +433,7 @@
                                     @if ($shift?->overtime_status) data-ot-status="{{ $shift->overtime_status }}" @endif
                                     @if ($shift?->is_locked) data-locked="1" @endif
                                     @if ($shift?->isRecordedOff()) data-recorded-off="1" @endif
+                                    @if ($shift?->isShiftRequest()) data-shift-requested="1" @endif
                                     @if ($shift?->needs_review) data-review="{{ $shift->review_note }}" @endif
                                     @if ($warnings) data-warnings="{{ json_encode($warnings, JSON_UNESCAPED_UNICODE) }}" @endif
                                     @if ($shift || $warnings) title="{{ implode("\n", [...$tooltip, ...$warnings]) }}" @endif

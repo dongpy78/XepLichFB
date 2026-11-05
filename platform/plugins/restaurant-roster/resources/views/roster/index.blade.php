@@ -211,6 +211,15 @@
                             </div>
                         </div>
 
+                        <div class="alert alert-secondary d-none" id="roster-cell-requested-shift">
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                <span><x-core::icon name="ti ti-lock" /> Ca nhân viên xin – ô đang khóa, thuật toán không đổi và xóa lịch vẫn giữ.</span>
+                                @if (Auth::user()->hasPermission('roster.approve'))
+                                    <button type="button" class="btn btn-sm btn-warning" data-off-remove data-confirm="Gỡ ca nhân viên xin ngày này? Ô sẽ trống để xếp ca khác.">Gỡ ca</button>
+                                @endif
+                            </div>
+                        </div>
+
                         <div class="alert alert-warning d-none" id="roster-cell-review">
                             <div class="mb-2"><x-core::icon name="ti ti-alert-circle" /> <span id="roster-cell-review-text"></span></div>
                             @if (Auth::user()->hasPermission('roster.approve'))

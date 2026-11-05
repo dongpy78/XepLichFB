@@ -133,7 +133,7 @@ class GridUxTest extends TestCase
 
         foreach (['id="roster-cell-notation"', 'data-assign="notation"', 'data-assign="shift"', 'data-assign="off"', 'data-assign="leave"', 'data-assign="clear"',
             'id="roster-cell-request"', 'data-requestable="1"', 'class="roster-tag-input"', 'id="roster-cell-overtime"', 'id="roster-cell-note"', 'id="roster-cell-lock"',
-            'data-off-remove', 'data-review="keep"', 'data-review="off"', 'data-ot-status="approved"', 'data-ot-status="rejected"', 'id="roster-cell-warnings"'] as $control) {
+            'id="roster-cell-requested-shift"', 'data-off-remove', 'data-review="keep"', 'data-review="off"', 'data-ot-status="approved"', 'data-ot-status="rejected"', 'id="roster-cell-warnings"'] as $control) {
             $this->assertStringContainsString($control, str_replace('class="form-check-input roster-tag-input"', 'class="roster-tag-input"', $html), "Thiếu {$control}");
         }
 
