@@ -123,7 +123,6 @@ class EmployeeForm extends FormAbstract
                     ->selected($employee?->room_service_fixed ? 'fixed' : ($employee?->can_room_service ? 'support' : 'none'))
                     ->colspan(1)
             )
-            ->add('status', SelectField::class, StatusFieldOption::make()->label('Trạng thái (Ngưng hoạt động sẽ ẩn khỏi bảng xếp ca)'))
             ->add(
                 'area_script',
                 HtmlField::class,
@@ -141,6 +140,7 @@ class EmployeeForm extends FormAbstract
                     sync();
                 });</script>')
             )
+            ->add('status', SelectField::class, StatusFieldOption::make()->label('Trạng thái (Ngưng hoạt động sẽ ẩn khỏi bảng xếp ca)'))
             ->setBreakFieldPoint('status');
     }
 }

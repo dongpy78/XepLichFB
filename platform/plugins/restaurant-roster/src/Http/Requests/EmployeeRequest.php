@@ -104,7 +104,9 @@ class EmployeeRequest extends Request
     public function withValidator($validator): void
     {
         $validator->after(function ($validator): void {
-            if ($validator->errors()->has('schedule_group_id')) {
+            // Botble kiểm tra quy tắc "exists" trên trình duyệt bằng cách gửi riêng từng ô (_js_validation), không kèm các ô khác:
+            // lúc đó chưa biết nhà hàng làm việc, chỉ kiểm tra khi lưu thật.
+            if ($validator->errors()->has('schedule_group_id') || $this->has((string) config('core.js-validation.js-validation.remote_validation_field', '_js_validation'))) {
                 return;
             }
 

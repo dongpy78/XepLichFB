@@ -128,6 +128,8 @@ class TraineeAreaTest extends TestCase
 
         $this->assertStringContainsString('noOutlet = ["' . $this->groups['TRAINEE']->getKey() . '"]', $html, 'Script ẩn / hiện ô theo khu vực có trong trang');
 
+        $this->assertStringNotContainsString('Area Script', $html, 'Script không tạo thẻ trống ở cột bên phải');
+
         // Nhà hàng làm việc: chỉ Gusto / Villa.
         $this->assertMatchesRegularExpression('/name="outlet_id".*?<\/select>/s', $html);
         preg_match('/name="outlet_id".*?<\/select>/s', $html, $select);
@@ -135,6 +137,21 @@ class TraineeAreaTest extends TestCase
         $this->assertStringContainsString('Villa', $select[0]);
         $this->assertStringNotContainsString('Night', $select[0]);
         $this->assertStringNotContainsString('Lobby', $select[0]);
+    }
+
+    /**
+     * Lỗi 05/11/2026: chọn Khu vực = TRAINEE báo đỏ. Botble kiểm tra quy tắc "exists" bằng cách gửi riêng từng ô lên máy chủ (_js_validation), không kèm nhà hàng làm việc,
+     * nên kiểm tra "phải có nhà hàng" báo lỗi nhầm và chặn lưu. Kiểm tra đó chỉ được chạy khi lưu thật.
+     */
+    public function test_remote_check_of_area_field_passes_for_trainee(): void
+    {
+        $remote = fn (array $data) => $this->actingAs($this->user)->postJson(route('roster.employees.create.store'), ['_js_validation' => 'schedule_group_id', 'schedule_group_id' => $this->groups['TRAINEE']->getKey(), ...$data]);
+
+        $remote([])->assertOk()->assertExactJson([true]);
+        $this->assertSame(0, Employee::query()->count(), 'Kiểm tra từng ô không tạo nhân viên');
+
+        // Lưu thật không có nhà hàng vẫn bị chặn.
+        $this->store(['schedule_group_id' => $this->groups['TRAINEE']->getKey()])->assertSessionHasErrors('outlet_id');
     }
 
     public function test_area_decides_outlet_and_trainee_flag(): void
