@@ -205,6 +205,26 @@ class SchedulePublicationTest extends TestCase
         $this->assertSame(0, Shift::query()->where('status', 'draft')->count(), 'Công bố hết');
     }
 
+    /** Xem trên điện thoại: ảnh không hẹp hơn 1 : 2 để phủ kín chiều ngang màn hình, kể cả tuần đông người. */
+    public function test_png_keeps_phone_width_ratio(): void
+    {
+        $this->staff();
+        $this->publish();
+        $snapshot = ScheduleVersion::query()->firstOrFail()->snapshot;
+        $row = $snapshot['sections'][0]['rows'][0];
+        $service = app(\Botble\RestaurantRoster\Services\ScheduleExportService::class);
+
+        foreach ([59 => 3600, 80 => null] as $count => $expectedWidth) {
+            $snapshot['sections'] = [['label' => 'Gusto', 'rows' => array_fill(0, $count, $row)]];
+            $info = getimagesizefromstring($service->png($snapshot));
+            $this->assertGreaterThanOrEqual(0.5, $info[0] / $info[1], "{$count} người");
+
+            if ($expectedWidth) {
+                $this->assertSame($expectedWidth, $info[0], 'Thường không phải rộng thêm, chỉ giảm chiều cao hàng');
+            }
+        }
+    }
+
     /** PNG, Excel, PDF tải được từ cùng một phiên bản; tiếng Việt, tên file có tuần + phiên bản. */
     public function test_exports_from_published_version(): void
     {

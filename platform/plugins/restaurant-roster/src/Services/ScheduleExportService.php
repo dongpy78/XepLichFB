@@ -148,8 +148,6 @@ class ScheduleExportService
         $draft = ! isset($snapshot['version']);
         $rows = array_merge(...array_map(fn ($s) => $s['rows'], $sections));
 
-        // Khổ cố định 1800px (rộng hơn A4 một chút); cột ngày chia đều phần còn lại để bảng phủ kín chiều rộng ảnh.
-        $width = 1800;
         // Sinh nhật rơi vào tháng của tuần lịch → tô nổi bật như Bảng xếp ca.
         // Như Bảng xếp ca, lấy ngày đầu tuần làm "hôm nay": sinh nhật từ đầu tuần đến hết tháng đó (hoặc hết tuần nếu tuần sang tháng
         // mới) thì tô nổi; đã qua rồi hoặc ở tháng sau thì không. Vd tuần 26/10 – 01/11: 26/10 … 01/11 tô, 03/11 không.
@@ -170,11 +168,17 @@ class ScheduleExportService
 
             return false;
         };
-        $pad = 36;
+        $pad = 20;
         $headerH = 164;
         $headH = 68;
         $sectionH = 46;
-        $rowH = 66;
+        $footerH = 110;
+        // Xem trên điện thoại: ảnh hẹp hơn màn hình thì hai bên dư đen. Giữ rộng / cao từ 1 : 2 (màn hình điện thoại 9 : 18 trở lên phủ kín chiều ngang):
+        // trước hết giảm chiều cao hàng (66 → 50), đông người quá nữa thì rộng ảnh thêm (cột ngày rộng ra).
+        $width = 1800;
+        $fixedH = $headerH + $headH + $sectionH * count($sections) + $footerH;
+        $rowH = max(50, min(66, (int) floor(($width * 2 - $fixedH) / count($rows))));
+        $width = max($width, min(2400, (int) ceil(($fixedH + $rowH * count($rows)) / 2)));
         $colNo = 56;
         $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['semibold'], 19, $r['name'])
             + (! empty($r['birthday']) ? $this->textWidth($f['bold'], 16, '(' . $r['birthday'] . ')') + 30 : 0), $rows));
@@ -183,7 +187,7 @@ class ScheduleExportService
         $colName = $width - $pad * 2 - $colNo - $colDay * count($days);
         $tableTop = $headerH;
         $tableH = $headH + $sectionH * count($sections) + $rowH * count($rows);
-        $height = $tableTop + $tableH + 110;
+        $height = $tableTop + $tableH + $footerH;
 
         // Vẽ ở độ phân giải cao (quản lý 02/11/2026: ảnh gửi nhân viên bị mờ khi phóng to trên điện thoại): tọa độ logic vẫn rộng 1800,
         // ảnh thật gấp đôi. Thiếu bộ nhớ thì tự hạ tỉ lệ thay vì lỗi.
@@ -261,7 +265,8 @@ class ScheduleExportService
                 // Tên + ngày sinh "(13/12)" như Bảng xếp ca: chữ xám nhạt; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
                 $nx = $x0 + $colNo + 8;
                 $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 100 : 0));
-                $this->drawText($img, 19, 0, $nx, $y + 31, $text, $f['semibold'], $name);
+                $nameY = $y + (int) floor($rowH / 2) - 3;
+                $this->drawText($img, 19, 0, $nx, $nameY, $text, $f['semibold'], $name);
 
                 if (! empty($row['birthday'])) {
                     $label = '(' . $row['birthday'] . ')';
@@ -269,14 +274,14 @@ class ScheduleExportService
 
                     if ($birthdayThisMonth($row)) {
                         $bw = $this->textWidth($f['bold'], 16, $label) + 18;
-                        $this->roundRect($img, $bx, $y + 11, $bx + $bw, $y + 37, 13, $c('FEE2E2'));
-                        $this->drawText($img, 16, 0, $bx + 9, $y + 30, $c('DC2626'), $f['bold'], $label);
+                        $this->roundRect($img, $bx, $nameY - 20, $bx + $bw, $nameY + 6, 13, $c('FEE2E2'));
+                        $this->drawText($img, 16, 0, $bx + 9, $nameY - 1, $c('DC2626'), $f['bold'], $label);
                     } else {
-                        $this->drawText($img, 16, 0, $bx, $y + 30, $faint, $f['regular'], $label);
+                        $this->drawText($img, 16, 0, $bx, $nameY - 1, $faint, $f['regular'], $label);
                     }
                 }
 
-                $this->drawText($img, 14, 0, $nx, $y + 54, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));
+                $this->drawText($img, 14, 0, $nx, $nameY + 21, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));
 
                 foreach ($row['cells'] as $k => $cell) {
                     if ($cell === '') {
@@ -284,7 +289,8 @@ class ScheduleExportService
                     }
 
                     [$fill, $fg] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
-                    $this->roundRect($img, $dayX($k) + 10, $y + 14, $dayX($k) + $colDay - 10, $y + $rowH - 14, 8, $c($fill));
+                    $cellGap = max(8, $rowH - 52);
+                    $this->roundRect($img, $dayX($k) + 10, $y + $cellGap, $dayX($k) + $colDay - 10, $y + $rowH - $cellGap, 8, $c($fill));
                     $this->cellText($img, $f['semibold'], mb_strlen($cell) > 6 ? 14 : 17, $c($fg), $dayX($k), $colDay, $y, $rowH, $cell, true);
                 }
 
