@@ -308,6 +308,12 @@ class RosterStatistics
             if (! $restaurants->has($outletId)) {
                 $other[$outletId][$date][$code] = ($other[$outletId][$date][$code] ?? 0) + 1;
 
+                // Làm trọn ca ở Lobby (M9(L)): vẫn hiện ở dòng Lobby của nhà hàng gốc (nhà hàng gốc đóng cửa thì nhà hàng đang mở).
+                if ($outletId === $lobbyId && $restaurants->has($home)) {
+                    $to = $openBy($home, $date);
+                    $roles[$to]['lobby'][$date][$code] = ($roles[$to]['lobby'][$date][$code] ?? 0) + 1;
+                }
+
                 continue;
             }
 
@@ -374,7 +380,7 @@ class RosterStatistics
                 'waiter_female' => ['Waiter nữ', null, true, true],
                 'waiter_male' => ['Waiter nam', 'không tính quản lý', true, true],
                 'other' => ['Vị trí khác', null, false, false],
-                'lobby' => ['Hỗ trợ Lobby (L)', 'chưa tính vào tổng', false, false],
+                'lobby' => ['Lên Lobby (L)', 'M9(L), OH(L), M6(L)… chưa tính vào tổng', true, false],
             ] as $key => [$label, $hint, $always, $balance]) {
                 $data = $roles[$id][$key] ?? [];
 

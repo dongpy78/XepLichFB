@@ -239,6 +239,10 @@ class NightAndScheduleGroupTest extends TestCase
         $this->placeShift($make('N1', 'NIGHT', 'male', null), $date, 'M6', 'VILLA');
         $this->placeShift($make('G1', 'GUSTO', 'female', null), $date, 'A2', 'GUSTO');
         Shift::query()->create(['employee_id' => $make('G2', 'GUSTO', 'female', null)->getKey(), 'date' => $date, 'kind' => Shift::KIND_OFF, 'status' => 'draft']);
+        // M9(L): làm trọn ca ở Lobby – hiện ở dòng Lobby của nhà hàng gốc và ở khu vực Lobby.
+        $this->outlets['LOBBY'] = \Botble\RestaurantRoster\Models\Outlet::query()->create(['name' => 'Lobby', 'code' => 'LOBBY', 'order' => 9, 'status' => 'published']);
+        $this->templates['M9'] = ShiftTemplate::query()->create(['code' => 'M9', 'name' => 'M9', 'start_time' => '09:00:00', 'end_time' => '17:00:00', 'hours' => 8, 'status' => 'published']);
+        $this->placeShift($make('G3', 'GUSTO', 'female', null), $date, 'M9', 'LOBBY');
 
         [$board, $html] = $this->staffBoard();
         $blocks = collect($board['restaurants'])->keyBy('code');
@@ -251,7 +255,10 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame(['A2' => 1], $villa['Hostess']['cells'][$date]);
         $this->assertSame(['M6' => 1], $villa['Từ NIGHT']['cells'][$date], 'Nam Night sang Villa');
         $this->assertSame(['off' => 1], $blocks['GUSTO']['absent'][$date]);
-        $this->assertEquals(['work' => 6, 'off' => 1], $board['grand'][$date]);
+        $this->assertEquals(['work' => 7, 'off' => 1], $board['grand'][$date]);
+        $this->assertSame(['M9' => 1], collect($blocks['GUSTO']['rows'])->keyBy('label')['Lên Lobby (L)']['cells'][$date], 'M9 hiện ở nhà hàng gốc');
+        $this->assertSame(['A2' => 1], $blocks['GUSTO']['total'][$date]['codes'], 'M9 chưa tính vào tổng nhà hàng');
+        $this->assertSame(['M9' => 1], collect($board['others'])->keyBy('label')['LOBBY']['cells'][$date]['codes']);
 
         $this->assertGreaterThan(strrpos($html, 'class="roster-row'), strpos($html, 'id="roster-board"'), 'Thống kê nằm sau nhân viên cuối cùng');
         $this->assertSame(1, substr_count($html, 'id="roster-board"'));
