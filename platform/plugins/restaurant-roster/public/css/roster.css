@@ -812,3 +812,36 @@
 .roster-cell-more > summary { cursor: pointer; font-size: 13px; color: var(--r-muted, #64748b); }
 .roster-cell-more .roster-ot-input { width: 170px; }
 [data-bs-theme="dark"] .roster-quick__item.is-current { border-color: var(--roster-gold); box-shadow: inset 0 0 0 1px var(--roster-gold); }
+
+/* Thống kê nhân sự cuối bảng xếp ca */
+.roster-table--compact .roster-board-title td {
+    padding: 8px 6px !important;
+    background: var(--roster-navy);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+}
+.roster-table--compact .roster-board-title .roster-table__staff { text-align: left; }
+.roster-board-title__name { display: block; font-size: 13px; letter-spacing: .04em; }
+.roster-board-title__hint { display: block; font-size: 11px; font-weight: 400; opacity: .8; }
+.roster-table--compact .roster-board-head td { background: var(--r-line); border-top: 2px solid var(--r-line); }
+.roster-table--compact tbody tr.roster-board-head:hover td { background: var(--r-line); }
+.roster-table--compact .roster-board-total td { background: var(--r-line); font-weight: 600; color: var(--r-text); }
+.roster-stat-row__role { font-weight: 600; color: var(--r-text); margin-right: .35rem; }
+.roster-table--compact .roster-stat-row td.roster-stat { vertical-align: middle; }
+.roster-count {
+    display: inline-block;
+    margin: 1px 2px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.roster-count b { font-size: 12px; font-weight: 800; }
+.roster-count--closed { background: var(--c-off-bg); color: var(--c-off-fg); }
+.roster-table--compact .roster-stat-row td.is-warn { background: #fef3c7; color: #92400e; }
+[data-bs-theme="dark"] .roster-table--compact .roster-board-head td,
+[data-bs-theme="dark"] .roster-table--compact tbody tr.roster-board-head:hover td { background: rgba(148, 163, 184, .18); }
+[data-bs-theme="dark"] .roster-table--compact .roster-stat-row td.is-warn { background: rgba(245, 158, 11, .2); color: #fcd34d; }

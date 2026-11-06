@@ -1042,29 +1042,28 @@ class RosterController extends BaseController
 
         $outletId = $request->input('outlet_id');
 
-        // Thống kê trong bảng: số người đi làm theo ngày × outlet × ca (đối chiếu quy định).
+        // Thống kê cuối bảng: số người đi làm theo ngày × nơi làm × ca.
         $statistics = app(\Botble\RestaurantRoster\Services\RosterStatistics::class);
         $employeesById = $employees->keyBy('id');
         $weekShifts = $shifts->flatten()
             ->filter(fn (Shift $shift) => $shift->date->betweenIncluded($weekStart, $weekEnd))
             ->each(fn (Shift $shift) => $shift->setRelation('employee', $employeesById->get($shift->employee_id)));
         $outlets = Outlet::query()->orderBy('order')->get(['id', 'name', 'code']);
-        $parents = config('plugins.restaurant-roster.general.scheduling.outlet_parents', []);
+        $onDuty = $statistics->onDuty($weekStart->copy(), $outlets, $weekShifts);
+        $restaurantStatus = $this->restaurantStatus($weekStart);
 
         $grid = [
             'stats' => [
-                'onDuty' => $statistics->onDuty($weekStart->copy(), $outlets, $weekShifts),
-                'rules' => $statistics->rules(),
-                // Khu trực thuộc (Kid-Deline) hiện dưới outlet chủ quản (Gusto).
-                'children' => $outlets->filter(fn ($o) => isset($parents[$o->code]))
-                    ->groupBy(fn ($o) => $outlets->firstWhere('code', $parents[$o->code])?->id)->all(),
+                'onDuty' => $onDuty,
                 'outlets' => $outlets->keyBy('id'),
             ],
+            // Thống kê nhân sự cuối bảng.
+            'board' => $statistics->board($weekShifts, $outlets, array_keys($onDuty['days']), $onDuty, $restaurantStatus['outlets']),
             'weekStart' => $weekStart,
             'weekEnd' => $weekEnd,
             'weekLabel' => sprintf('Tuần %d · %s – %s', $weekStart->isoWeek(), $weekStart->format('d/m'), $weekEnd->format('d/m/Y')),
             'merge' => $merge,
-            'restaurantStatus' => $this->restaurantStatus($weekStart),
+            'restaurantStatus' => $restaurantStatus,
             'mergeOutlets' => $this->mergeOutlets()->mapWithKeys(fn (Outlet $o) => [(int) $o->getKey() => (string) ($o->code ?: $o->name)])->all(),
             'days' => $days,
             'rows' => $rows,

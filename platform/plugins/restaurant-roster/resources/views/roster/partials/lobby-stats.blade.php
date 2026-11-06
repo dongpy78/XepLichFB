@@ -4,10 +4,10 @@
 @endphp
 
 @if ($lobby)
-    <tr class="roster-stat-row roster-stat-row--first">
+    <tr class="roster-stat-row">
         <td class="roster-table__staff">
-            <span class="roster-stat-row__label">LOBBY</span>
-            <span class="roster-stat-row__hint">cùng lúc ít nhất / tối thiểu</span>
+            <span class="roster-stat-row__role">Lobby cùng lúc</span>
+            <span class="roster-stat-row__hint">ít nhất / tối thiểu</span>
         </td>
         @foreach ($grid['days'] as $day)
             @php

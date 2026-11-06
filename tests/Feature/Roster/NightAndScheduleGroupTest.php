@@ -190,6 +190,105 @@ class NightAndScheduleGroupTest extends TestCase
         $this->assertSame([], array_filter($plain->requirements, fn ($r) => $r->outletId === $gusto && $r->targetMale > 0), 'Tắt được bằng cấu hình');
     }
 
+    private function placeShift(Employee $employee, string $date, string $code, string $outlet): void
+    {
+        Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => $date, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates[$code]->getKey(),
+            'outlet_id' => $this->outlets[$outlet]->getKey(), 'status' => 'draft', 'start_at' => "{$date} 06:00:00", 'end_at' => "{$date} 14:00:00", 'hours' => 8]);
+    }
+
+    /** @return array{0: array, 1: string} [dữ liệu thống kê, html bảng] */
+    private function staffBoard(): array
+    {
+        $html = $this->gridHtml();
+        $outlets = \Botble\RestaurantRoster\Models\Outlet::query()->orderBy('order')->get(['id', 'name', 'code']);
+        $statistics = app(\Botble\RestaurantRoster\Services\RosterStatistics::class);
+        $week = Carbon::parse(self::WEEK);
+        $shifts = Shift::query()->with(['employee', 'template'])->whereBetween('date', [self::WEEK, $week->copy()->addDays(6)->toDateString()])->get();
+        $onDuty = $statistics->onDuty($week->copy(), $outlets, $shifts);
+        $status = ['GUSTO', 'VILLA'];
+        $rows = [];
+
+        foreach ($status as $code) {
+            $id = $this->outlets[$code]->getKey();
+            $rows[$id] = ['days' => []];
+
+            foreach (array_keys($onDuty['days']) as $date) {
+                $rows[$id]['days'][$date] = ['closed' => \Botble\RestaurantRoster\Models\OutletDay::query()->where('outlet_id', $id)->whereDate('date', $date)->where('is_closed', true)->exists()];
+            }
+        }
+
+        return [$statistics->board($shifts, $outlets, array_keys($onDuty['days']), $onDuty, $rows), $html];
+    }
+
+    /** Hai nhà hàng mở: mỗi nhà hàng một khối theo vai trò, tính theo nơi làm; nam Night sang Villa hiện "Từ NIGHT"; khối nằm sau toàn bộ nhân viên. */
+    public function test_staff_board_with_both_restaurants_open(): void
+    {
+        $date = self::WEEK;
+        $position = fn (string $name, bool $manager = false) => \Botble\RestaurantRoster\Models\Position::query()->create(['name' => $name, 'is_manager' => $manager, 'status' => 'published'])->getKey();
+        $make = function (string $code, string $home, string $gender, ?int $positionId) {
+            $employee = $this->employee($code, $home, $gender);
+            $positionId && $employee->update(['position_id' => $positionId]);
+
+            return $employee->fresh();
+        };
+        $captain = $position('Junior Restaurant Captain', true);
+        $this->placeShift($make('C1', 'VILLA', 'male', $captain), $date, 'M6', 'VILLA');
+        $this->placeShift($make('C2', 'VILLA', 'female', $captain), $date, 'M6', 'VILLA');
+        $this->placeShift($make('RM', 'VILLA', 'male', $position('Restaurant Manager', true)), $date, 'A2', 'VILLA');
+        $this->placeShift($make('H1', 'VILLA', 'female', $position('Hostess')), $date, 'A2', 'VILLA');
+        $this->placeShift($make('N1', 'NIGHT', 'male', null), $date, 'M6', 'VILLA');
+        $this->placeShift($make('G1', 'GUSTO', 'female', null), $date, 'A2', 'GUSTO');
+        Shift::query()->create(['employee_id' => $make('G2', 'GUSTO', 'female', null)->getKey(), 'date' => $date, 'kind' => Shift::KIND_OFF, 'status' => 'draft']);
+
+        [$board, $html] = $this->staffBoard();
+        $blocks = collect($board['restaurants'])->keyBy('code');
+        $villa = collect($blocks['VILLA']['rows'])->keyBy('label');
+
+        $this->assertSame(['M6' => 3, 'A2' => 2], $blocks['VILLA']['total'][$date]['codes']);
+        $this->assertSame(['M6' => 2], $villa['Incharge']['cells'][$date]);
+        $this->assertSame('Incharge lệch: M6 2 / A2 0', $villa['Incharge']['warn'][$date], 'Không tính Restaurant Manager');
+        $this->assertSame(['A2' => 1], $villa['Quản lý']['cells'][$date]);
+        $this->assertSame(['A2' => 1], $villa['Hostess']['cells'][$date]);
+        $this->assertSame(['M6' => 1], $villa['Từ NIGHT']['cells'][$date], 'Nam Night sang Villa');
+        $this->assertSame(['off' => 1], $blocks['GUSTO']['absent'][$date]);
+        $this->assertEquals(['work' => 6, 'off' => 1], $board['grand'][$date]);
+
+        $this->assertGreaterThan(strrpos($html, 'class="roster-row'), strpos($html, 'id="roster-board"'), 'Thống kê nằm sau nhân viên cuối cùng');
+        $this->assertSame(1, substr_count($html, 'id="roster-board"'));
+        $this->assertStringContainsString('Incharge lệch: M6 2 / A2 0', $html);
+    }
+
+    /** Một nhà hàng đóng: một ngày → ô "Đóng cửa", OFF tính sang nhà hàng mở; cả tuần → chỉ còn khối nhà hàng mở, có "Từ <nhà hàng đóng>". */
+    public function test_staff_board_when_one_restaurant_is_closed(): void
+    {
+        $date = self::WEEK;
+        $villaPerson = $this->employee('V1', 'VILLA', 'female');
+        $villaOff = $this->employee('V2', 'VILLA', 'female');
+        $this->placeShift($this->employee('G1', 'GUSTO', 'female'), $date, 'M6', 'GUSTO');
+        $this->placeShift($villaPerson, $date, 'A2', 'GUSTO');
+        Shift::query()->create(['employee_id' => $villaOff->getKey(), 'date' => $date, 'kind' => Shift::KIND_OFF, 'status' => 'draft']);
+        $this->placeShift($villaPerson, Carbon::parse($date)->addDay()->toDateString(), 'A2', 'VILLA');
+
+        \Botble\RestaurantRoster\Models\OutletDay::query()->create(['outlet_id' => $this->outlets['VILLA']->getKey(), 'date' => $date, 'is_closed' => true]);
+        [$board, $html] = $this->staffBoard();
+        $blocks = collect($board['restaurants'])->keyBy('code');
+        $this->assertTrue($blocks['VILLA']['total'][$date]['closed']);
+        $this->assertSame(['M6' => 1, 'A2' => 1], $blocks['GUSTO']['total'][$date]['codes']);
+        $this->assertSame(['off' => 1], $blocks['GUSTO']['absent'][$date], 'OFF nhân viên Villa tính sang nhà hàng đang mở');
+        $this->assertStringContainsString('Đóng cửa', $html);
+
+        Shift::query()->where('employee_id', $villaPerson->getKey())->whereDate('date', '!=', $date)->delete();
+
+        foreach (range(1, 6) as $d) {
+            \Botble\RestaurantRoster\Models\OutletDay::query()->create(['outlet_id' => $this->outlets['VILLA']->getKey(), 'date' => Carbon::parse($date)->addDays($d)->toDateString(), 'is_closed' => true]);
+        }
+
+        [$board] = $this->staffBoard();
+        $this->assertSame(['GUSTO'], array_column($board['restaurants'], 'code'), 'Villa đóng cả tuần: chỉ còn khối Gusto');
+        $this->assertStringContainsString('VILLA đóng cửa cả tuần', $board['restaurants'][0]['hint']);
+        $this->assertSame(['A2' => 1], collect($board['restaurants'][0]['rows'])->keyBy('label')['Từ VILLA']['cells'][$date]);
+    }
+
     /** Phân loại theo tên vị trí: Assistant Manager, Restaurant Manager không tính incharge; Hostess chia đều M6 / A2. */
     public function test_positions_map_to_incharge_and_balanced_groups(): void
     {

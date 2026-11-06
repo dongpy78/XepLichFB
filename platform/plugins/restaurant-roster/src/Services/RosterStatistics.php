@@ -221,6 +221,248 @@ class RosterStatistics
     }
 
     /**
+     * Thống kê nhân sự cuối Bảng xếp ca: mỗi nhà hàng một khối (tổng, Incharge, Quản lý, Hostess, Waiter nữ / nam, hỗ trợ Lobby, người từ nơi khác sang, OFF),
+     * rồi các khu vực khác và tổng toàn bộ. Người tính theo nơi làm thực tế.
+     * Nhà hàng đóng cửa: ngày đó hiện "Đóng cửa", OFF của nhân viên nhà hàng đó tính sang nhà hàng còn mở; đóng cả tuần thì chỉ còn khối nhà hàng mở, có dòng "Từ <nhà hàng đóng>".
+     *
+     * @param string[] $dates
+     * @param array $status RosterController::restaurantStatus()['outlets']
+     */
+    public function board(Collection $shifts, Collection $outlets, array $dates, array $onDuty, array $status = []): array
+    {
+        $rules = $this->rules();
+        $templates = \Botble\RestaurantRoster\Models\ShiftTemplate::query()->orderBy('start_time')->get(['code', 'color', 'start_time']);
+        $codeOrder = $templates->pluck('code')->values()->flip()->all();
+        $names = fn (string $key) => array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config("plugins.restaurant-roster.general.scheduling.{$key}", []));
+        $balancedNames = $names('balance_positions');
+        $hostessIds = Position::query()->get(['id', 'name'])
+            ->filter(fn ($p) => in_array(mb_strtolower(trim((string) $p->name)), $balancedNames, true))->map(fn ($p) => (int) $p->id)->values()->all();
+        $labelOf = fn ($outlet) => (string) ($outlet->code ?: $outlet->name);
+        $transfer = (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']);
+        $restaurants = $outlets->filter(fn ($o) => in_array($o->code, $transfer, true))->keyBy('id');
+        $byId = $outlets->keyBy('id');
+        $lobbyId = (int) ($outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY'))?->id ?? 0);
+        $isClosed = fn (int $id, string $date) => (bool) ($status[$id]['days'][$date]['closed'] ?? false);
+        $openBy = function (int $home, string $date) use ($restaurants, $isClosed): int {
+            if (! $restaurants->has($home) || ! $isClosed($home, $date)) {
+                return $home;
+            }
+
+            foreach ($restaurants->keys() as $id) {
+                if (! $isClosed((int) $id, $date)) {
+                    return (int) $id;
+                }
+            }
+
+            return $home;
+        };
+
+        $roles = [];
+        $from = [];
+        $other = [];
+        $absent = [];
+        $trainee = [];
+        $grand = [];
+
+        foreach ($shifts as $shift) {
+            $employee = $shift->employee;
+            $date = $shift->date->toDateString();
+
+            if (! $employee || ! in_array($date, $dates, true)) {
+                continue;
+            }
+
+            $home = (int) $employee->outlet_id;
+            $code = (string) ($shift->template?->code ?? 'Ca');
+            $working = $shift->isWorking();
+            $absentKind = $shift->kind === Shift::KIND_LEAVE ? 'leave' : 'off';
+
+            if ($employee->is_trainee) {
+                $working ? $trainee[$date]['codes'][$code] = ($trainee[$date]['codes'][$code] ?? 0) + 1
+                    : $trainee[$date]['absent'][$absentKind] = ($trainee[$date]['absent'][$absentKind] ?? 0) + 1;
+
+                continue;
+            }
+
+            if (! $working) {
+                $grand[$date][$absentKind] = ($grand[$date][$absentKind] ?? 0) + 1;
+                $to = $openBy($home, $date);
+                $absent[$to][$date][$absentKind] = ($absent[$to][$date][$absentKind] ?? 0) + 1;
+
+                continue;
+            }
+
+            $grand[$date]['work'] = ($grand[$date]['work'] ?? 0) + 1;
+            $outletId = (int) ($shift->outlet_id ?: $home);
+            $position = (int) $employee->position_id;
+            $isMale = $employee->gender === 'male';
+
+            // Hỗ trợ Lobby (L): làm ca của nhà hàng nhưng lên quầy Lobby trong khung giờ, tính riêng như định biên.
+            if (in_array('L', $shift->tags ?: [], true) && ! $shift->template?->support_station) {
+                $roles[$outletId]['lobby'][$date][$code] = ($roles[$outletId]['lobby'][$date][$code] ?? 0) + 1;
+                $other[$lobbyId][$date][$code] = ($other[$lobbyId][$date][$code] ?? 0) + 1;
+
+                continue;
+            }
+
+            if (! $restaurants->has($outletId)) {
+                $other[$outletId][$date][$code] = ($other[$outletId][$date][$code] ?? 0) + 1;
+
+                continue;
+            }
+
+            $role = match (true) {
+                in_array($position, $rules['inChargeIds'], true) => 'incharge',
+                in_array($position, $rules['leaderIds'], true) => 'manager',
+                in_array($position, $hostessIds, true) => 'hostess',
+                $isMale && in_array($position, $rules['maleStaffIds'], true) => 'waiter_male',
+                ! $isMale && in_array($position, $rules['femaleStaffIds'], true) => 'waiter_female',
+                default => 'other',
+            };
+            $roles[$outletId][$role][$date][$code] = ($roles[$outletId][$role][$date][$code] ?? 0) + 1;
+
+            if ($home && $home !== $outletId) {
+                $from[$outletId][$home][$date][$code] = ($from[$outletId][$home][$date][$code] ?? 0) + 1;
+            }
+        }
+
+        $sorted = function (array $codes) use ($codeOrder): array {
+            uksort($codes, fn ($a, $b) => [$codeOrder[$a] ?? 999, $a] <=> [$codeOrder[$b] ?? 999, $b]);
+
+            return $codes;
+        };
+        $problemsOf = function (int $outletId, string $date) use ($onDuty): array {
+            $list = [];
+
+            foreach ($onDuty['problems'][$date][$outletId] ?? [] as $code => $problems) {
+                array_push($list, ...$problems);
+            }
+
+            return array_values(array_unique($list));
+        };
+        // Định biên nữ waiter trực tiếp (nếu có cấu hình): NW đang có / tối thiểu.
+        $notesOf = function (int $outletId, string $date) use ($onDuty): array {
+            $notes = [];
+
+            foreach ($onDuty['female_rules'][$date][$outletId] ?? [] as $code => [$min]) {
+                $notes[] = "{$code}: NW" . ($onDuty['cells'][$date][$outletId][$code]['female_staff'] ?? 0) . "/{$min}";
+            }
+
+            return $notes;
+        };
+        $balanceCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.open_shift_codes', ['M6', 'A2']));
+        [$am, $pm] = [$balanceCodes[0] ?? 'M6', $balanceCodes[1] ?? 'A2'];
+        $hasData = fn (int $id) => ! empty($roles[$id]) || ! empty($absent[$id]);
+        $blocks = [];
+
+        foreach ($restaurants as $id => $outlet) {
+            $id = (int) $id;
+
+            if (! $hasData($id)) {
+                continue;
+            }
+
+            $closedAll = $restaurants->keys()->reject(fn ($o) => (int) $o === $id)
+                ->filter(fn ($o) => collect($dates)->every(fn ($d) => $isClosed((int) $o, $d)))
+                ->map(fn ($o) => $labelOf($restaurants[$o]))->values()->all();
+            $rows = [];
+
+            foreach ([
+                'incharge' => ['Incharge', 'Junior Captain → Senior Supervisor', true, true],
+                'manager' => ['Quản lý', 'Assistant, Restaurant Manager', false, false],
+                'hostess' => ['Hostess', null, true, true],
+                'waiter_female' => ['Waiter nữ', null, true, true],
+                'waiter_male' => ['Waiter nam', 'không tính quản lý', true, true],
+                'other' => ['Vị trí khác', null, false, false],
+                'lobby' => ['Hỗ trợ Lobby (L)', 'chưa tính vào tổng', false, false],
+            ] as $key => [$label, $hint, $always, $balance]) {
+                $data = $roles[$id][$key] ?? [];
+
+                if (! $always && ! $data) {
+                    continue;
+                }
+
+                $warn = [];
+
+                foreach ($balance ? $data : [] as $date => $codes) {
+                    [$morning, $afternoon] = [$codes[$am] ?? 0, $codes[$pm] ?? 0];
+
+                    if (\Botble\RestaurantRoster\Scheduling\ScheduleState::managerPenalty($morning, $afternoon) > 0) {
+                        $warn[$date] = "{$label} lệch: {$am} {$morning} / {$pm} {$afternoon}";
+                    }
+                }
+
+                $rows[] = ['label' => $label, 'hint' => $hint, 'cells' => array_map($sorted, $data), 'warn' => $warn];
+            }
+
+            foreach ($from[$id] ?? [] as $home => $data) {
+                $rows[] = ['label' => 'Từ ' . ($byId->has($home) ? $labelOf($byId[$home]) : '#' . $home), 'hint' => 'đã tính trong các dòng trên', 'cells' => array_map($sorted, $data), 'warn' => []];
+            }
+
+            $total = [];
+
+            foreach ($dates as $date) {
+                $codes = [];
+
+                foreach (($roles[$id] ?? []) as $key => $data) {
+                    if ($key !== 'lobby') {
+                        foreach ($data[$date] ?? [] as $code => $count) {
+                            $codes[$code] = ($codes[$code] ?? 0) + $count;
+                        }
+                    }
+                }
+
+                $total[$date] = ['count' => array_sum($codes), 'codes' => $sorted($codes), 'closed' => $isClosed($id, $date), 'problems' => $problemsOf($id, $date), 'notes' => $notesOf($id, $date)];
+            }
+
+            $blocks[] = [
+                'code' => $labelOf($outlet),
+                'hint' => $closedAll ? 'gồm nhân viên ' . implode(', ', $closedAll) . ' – ' . implode(', ', $closedAll) . ' đóng cửa cả tuần' : 'tổng tại nhà hàng',
+                'total' => $total,
+                'rows' => $rows,
+                'absent' => $absent[$id] ?? [],
+                'absent_hint' => $closedAll ? 'nhân viên ' . implode(' + ', [$labelOf($outlet), ...$closedAll]) : 'nhân viên nhà hàng',
+            ];
+        }
+
+        $others = [];
+
+        foreach ($outlets as $outlet) {
+            $id = (int) $outlet->id;
+
+            if ($restaurants->has($id) || (empty($other[$id]) && empty($absent[$id]))) {
+                continue;
+            }
+
+            $cells = [];
+
+            foreach ($dates as $date) {
+                $cells[$date] = ['codes' => $sorted($other[$id][$date] ?? []), 'absent' => $absent[$id][$date] ?? [], 'problems' => $problemsOf($id, $date), 'notes' => $notesOf($id, $date)];
+            }
+
+            $others[] = ['label' => $labelOf($outlet), 'hint' => $id === $lobbyId ? 'gồm người hỗ trợ (L)' : null, 'cells' => $cells];
+        }
+
+        if ($trainee) {
+            $cells = [];
+
+            foreach ($dates as $date) {
+                $cells[$date] = ['codes' => $sorted($trainee[$date]['codes'] ?? []), 'absent' => $trainee[$date]['absent'] ?? [], 'problems' => [], 'notes' => []];
+            }
+
+            $others[] = ['label' => 'TRAINEE', 'hint' => 'không tính định biên', 'cells' => $cells];
+        }
+
+        return [
+            'has_shifts' => $shifts->isNotEmpty(),
+            'colors' => $templates->pluck('color', 'code')->all(),
+            'restaurants' => $blocks,
+            'others' => $others,
+            'grand' => $grand,
+        ];
+    }
+
+    /**
      * Người đi làm theo ngày × outlet làm việc × ca trong tuần (người đi Lobby (L) tính riêng),
      * kèm số OFF / nghỉ phép theo outlet chính và các ô vi phạm quy định.
      */

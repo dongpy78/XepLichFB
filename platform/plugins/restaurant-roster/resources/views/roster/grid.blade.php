@@ -276,7 +276,6 @@
                 <tbody>
                     @php
                         $currentSection = null;
-                        $currentStatOutlet = null;
                         $nightRoles = ['core' => ['N cố định', 'Night cố định (hồ sơ nhân viên) – thuật toán tự xếp ca đêm']];
                     @endphp
                     @foreach ($grid['rows'] as $row)
@@ -285,9 +284,6 @@
                             $check = $row['check'];
                         @endphp
                         @if ($currentSection !== $row['section']['key'])
-                            @if ($currentSection !== null && $currentStatOutlet)
-                                @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentStatOutlet])
-                            @endif
                             @php
                                 $currentSection = $row['section']['key'];
                                 $currentStatOutlet = $row['section']['stat_outlet_id'];
@@ -457,10 +453,7 @@
                             @endforeach
                         </tr>
                     @endforeach
-                    @if ($currentSection !== null && $currentStatOutlet)
-                        @include('plugins/restaurant-roster::roster.partials.section-stats', ['outletId' => $currentStatOutlet])
-                    @endif
-                    @include('plugins/restaurant-roster::roster.partials.lobby-stats')
+                    @include('plugins/restaurant-roster::roster.partials.staff-board')
                 </tbody>
             </table>
         </div>
