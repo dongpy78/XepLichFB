@@ -105,7 +105,7 @@ class ScheduleVersionController extends RosterController
             throw new RuntimeException('Tuần này chưa có lịch đã công bố – bấm "Công bố lịch tuần" trên Bảng xếp ca trước (hoặc tải bản nháp).');
         }
 
-        return [$row->snapshot, $row];
+        return [\Botble\RestaurantRoster\Services\ScheduleSnapshotService::withShortLabels($row->snapshot), $row];
     }
 
     private function canDraft(Request $request): bool

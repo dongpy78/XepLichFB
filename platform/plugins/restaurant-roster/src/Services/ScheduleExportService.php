@@ -174,11 +174,11 @@ class ScheduleExportService
         $sectionH = 46;
         $footerH = 110;
         // Xem trên điện thoại: ảnh hẹp hơn màn hình thì hai bên dư đen. Giữ rộng / cao từ 1 : 2 (màn hình điện thoại 9 : 18 trở lên phủ kín chiều ngang):
-        // trước hết giảm chiều cao hàng (66 → 50), đông người quá nữa thì rộng ảnh thêm (cột ngày rộng ra).
+        // trước hết giảm chiều cao hàng (66 → 62, giữ khoảng thoáng dễ đọc), đông người quá nữa thì rộng ảnh thêm (cột ngày rộng ra).
         $width = 1800;
         $fixedH = $headerH + $headH + $sectionH * count($sections) + $footerH;
-        $rowH = max(50, min(66, (int) floor(($width * 2 - $fixedH) / count($rows))));
-        $width = max($width, min(2400, (int) ceil(($fixedH + $rowH * count($rows)) / 2)));
+        $rowH = max(62, min(66, (int) floor(($width * 2 - $fixedH) / count($rows))));
+        $width = max($width, min(2800, (int) ceil(($fixedH + $rowH * count($rows)) / 2)));
         $colNo = 56;
         $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['semibold'], 19, $r['name'])
             + (! empty($r['birthday']) ? $this->textWidth($f['bold'], 16, '(' . $r['birthday'] . ')') + 30 : 0), $rows));
@@ -265,7 +265,7 @@ class ScheduleExportService
                 // Tên + ngày sinh "(13/12)" như Bảng xếp ca: chữ xám nhạt; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
                 $nx = $x0 + $colNo + 8;
                 $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 100 : 0));
-                $nameY = $y + (int) floor($rowH / 2) - 3;
+                $nameY = $y + (int) floor($rowH / 2) - 2;
                 $this->drawText($img, 19, 0, $nx, $nameY, $text, $f['semibold'], $name);
 
                 if (! empty($row['birthday'])) {
@@ -289,7 +289,7 @@ class ScheduleExportService
                     }
 
                     [$fill, $fg] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
-                    $cellGap = max(8, $rowH - 52);
+                    $cellGap = max(10, $rowH - 52);
                     $this->roundRect($img, $dayX($k) + 10, $y + $cellGap, $dayX($k) + $colDay - 10, $y + $rowH - $cellGap, 8, $c($fill));
                     $this->cellText($img, $f['semibold'], mb_strlen($cell) > 6 ? 14 : 17, $c($fg), $dayX($k), $colDay, $y, $rowH, $cell, true);
                 }

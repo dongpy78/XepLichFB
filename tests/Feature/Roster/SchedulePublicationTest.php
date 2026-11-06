@@ -205,6 +205,14 @@ class SchedulePublicationTest extends TestCase
         $this->assertSame(0, Shift::query()->where('status', 'draft')->count(), 'Công bố hết');
     }
 
+    /** Bản công bố cũ lưu tiêu đề khu gộp dài: xem / tải chỉ còn tên nhà hàng. */
+    public function test_old_versions_show_short_merged_section_label(): void
+    {
+        $snapshot = ['sections' => [['label' => 'Gusto – hiển thị chung nhân viên GUSTO + VILLA (VILLA đóng cửa cả tuần)', 'rows' => []], ['label' => 'Night', 'rows' => []]]];
+
+        $this->assertSame(['Gusto', 'Night'], array_column(\Botble\RestaurantRoster\Services\ScheduleSnapshotService::withShortLabels($snapshot)['sections'], 'label'));
+    }
+
     /** Xem trên điện thoại: ảnh không hẹp hơn 1 : 2 để phủ kín chiều ngang màn hình, kể cả tuần đông người. */
     public function test_png_keeps_phone_width_ratio(): void
     {
@@ -214,7 +222,7 @@ class SchedulePublicationTest extends TestCase
         $row = $snapshot['sections'][0]['rows'][0];
         $service = app(\Botble\RestaurantRoster\Services\ScheduleExportService::class);
 
-        foreach ([59 => 3600, 80 => null] as $count => $expectedWidth) {
+        foreach ([40 => 3600, 59 => null, 80 => null] as $count => $expectedWidth) {
             $snapshot['sections'] = [['label' => 'Gusto', 'rows' => array_fill(0, $count, $row)]];
             $info = getimagesizefromstring($service->png($snapshot));
             $this->assertGreaterThanOrEqual(0.5, $info[0] / $info[1], "{$count} người");

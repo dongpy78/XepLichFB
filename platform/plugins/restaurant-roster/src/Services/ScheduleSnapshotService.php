@@ -88,6 +88,19 @@ class ScheduleSnapshotService
     }
 
     /** Dấu vân tay nội dung lịch (khu, thứ tự, nhân viên, ca từng ngày) – không tính thời điểm tạo. */
+    /**
+     * Bản đã công bố trước 05/11/2026 lưu tiêu đề khu gộp dài ("GUSTO – hiển thị chung nhân viên GUSTO + VILLA (VILLA đóng cửa cả tuần)"):
+     * khi xem / tải PNG, Excel, PDF chỉ còn tên nhà hàng như bảng xếp ca hiện tại. Bản lưu trong database không đổi.
+     */
+    public static function withShortLabels(array $snapshot): array
+    {
+        foreach ($snapshot['sections'] ?? [] as $key => $section) {
+            $snapshot['sections'][$key]['label'] = (string) preg_replace('/\s+[–-]\s+hiển thị chung nhân viên.*$/iu', '', (string) ($section['label'] ?? ''));
+        }
+
+        return $snapshot;
+    }
+
     public function hash(array $snapshot): string
     {
         return hash('sha256', json_encode([$snapshot['days'], $snapshot['sections']], JSON_UNESCAPED_UNICODE));
