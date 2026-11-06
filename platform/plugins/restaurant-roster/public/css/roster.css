@@ -845,3 +845,12 @@
 [data-bs-theme="dark"] .roster-table--compact .roster-board-head td,
 [data-bs-theme="dark"] .roster-table--compact tbody tr.roster-board-head:hover td { background: rgba(148, 163, 184, .18); }
 [data-bs-theme="dark"] .roster-table--compact .roster-stat-row td.is-warn { background: rgba(245, 158, 11, .2); color: #fcd34d; }
+/* Dòng tiêu đề thống kê: giữ nền cả cột Thứ 7 / Chủ nhật (is-weekend) và khi di chuột (hover hàng) */
+.roster-table--compact tbody tr.roster-board-title td,
+.roster-table--compact tbody tr.roster-board-title:hover td { background-color: var(--roster-navy); color: #fff; }
+.roster-table--compact tbody tr.roster-board-head td,
+.roster-table--compact tbody tr.roster-board-head:hover td { background-color: var(--r-line); }
+[data-bs-theme="dark"] .roster-table--compact tbody tr.roster-board-head td,
+[data-bs-theme="dark"] .roster-table--compact tbody tr.roster-board-head:hover td { background-color: rgba(148, 163, 184, .18); }
+.roster-table--compact tbody tr.roster-board-head td.is-problem,
+.roster-table--compact tbody tr.roster-board-head:hover td.is-problem { background-color: var(--c-off-bg); }
