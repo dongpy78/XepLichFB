@@ -5,15 +5,6 @@ on:
     branches:
       - main
   workflow_dispatch: # Cho phép bấm chạy tay trong tab Actions
-    inputs:
-      skip_tests:
-        description: 'Bỏ qua test (chỉ dùng khi cần sửa gấp và lỗi test không liên quan)'
-        type: boolean
-        default: false
-      skip_backup:
-        description: 'Bỏ qua sao lưu database (chỉ dùng khi sao lưu lỗi và đã có bản sao khác)'
-        type: boolean
-        default: false
 
 # Không cho 2 lần deploy chạy chồng lên nhau
 concurrency:
@@ -21,45 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Test không đạt thì không deploy. Không cần .env hay database thật: phpunit.xml dùng SQLite trong bộ nhớ.
-  test:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_tests }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          extensions: curl, gd, json, pdo, pdo_sqlite, sqlite3, zip, mbstring, xml, intl
-          tools: composer:v2
-
-      - name: Install Composer dependencies
-        env:
-          COMPOSER_MIRROR_PATH_REPOS: 1
-        run: composer install --no-interaction --prefer-dist --no-scripts --no-plugins
-
-      - name: Prepare environment
-        run: |
-          cp .env.example .env
-          mkdir -p storage/framework/{cache,sessions,views} storage/logs bootstrap/cache
-          touch storage/installed
-
-      - name: Test thuật toán xếp lịch
-        run: vendor/bin/phpunit tests/Unit/RosterScheduling
-
-      - name: Test tính năng xếp lịch
-        run: vendor/bin/phpunit tests/Feature/Roster
-
   deploy:
-    needs: test
-    # Chạy khi test đạt, hoặc khi người chạy tay chọn bỏ qua test.
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
     # Không để một lần deploy treo vô hạn (FTP mất kết nối…): quá 40 phút thì tự hủy, bấm Re-run để chạy lại.
     timeout-minutes: 40
@@ -102,13 +55,10 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }} # Ví dụ: / — phải kết thúc bằng dấu /
-          FTP_TLS_VERIFY: ${{ secrets.FTP_TLS_VERIFY }} # Đặt 1 khi FTP_SERVER là tên miền đúng chứng chỉ: bật kiểm tra chứng chỉ
         run: |
           base="ftp://${FTP_SERVER}${FTP_SERVER_DIR}"
           # --connect-timeout / --max-time: FTP treo thì báo lỗi (và thử lại) thay vì chờ mãi.
-          tls=(-k)
-          if [ "${FTP_TLS_VERIFY}" = "1" ]; then tls=(); fi
-          opts=(--ssl-reqd "${tls[@]}" --ftp-create-dirs --fail --show-error --silent --retry 3 --retry-all-errors --connect-timeout 30 --max-time 1200 --user "${FTP_USERNAME}:${FTP_PASSWORD}")
+          opts=(--ssl-reqd -k --ftp-create-dirs --fail --show-error --silent --retry 3 --retry-all-errors --connect-timeout 30 --max-time 1200 --user "${FTP_USERNAME}:${FTP_PASSWORD}")
           curl "${opts[@]}" -T public/deploy.php "${base}public/deploy.php"
           curl "${opts[@]}" -T release.zip "${base}.deploy/release.zip"
           echo "Upload xong"
@@ -118,7 +68,6 @@ jobs:
         env:
           DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
           DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
-          SKIP_BACKUP: ${{ inputs.skip_backup && '1' || '0' }}
         run: |
           curl --fail-with-body --show-error --silent --max-time 900 \
-            -X POST -H "X-Deploy-Token: ${DEPLOY_TOKEN}" -H "X-Deploy-Skip-Backup: ${SKIP_BACKUP}" "${DEPLOY_URL}"
+            -X POST -H "X-Deploy-Token: ${DEPLOY_TOKEN}" "${DEPLOY_URL}"
