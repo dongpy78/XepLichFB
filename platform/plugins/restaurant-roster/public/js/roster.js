@@ -160,7 +160,7 @@ $(() => {
     // Bỏ dấu tiếng Việt: gõ "phien" vẫn tìm ra "Phiên".
     const plain = (text) => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
     // Mã ca của ô: "M6(L)+2" → "M6", "OFF" → "OFF", nghỉ phép → mã loại nghỉ.
-    const codeOf = (cell) => String(cell.dataset.notation || '').split(/[(+]/)[0]
+    const codeOf = (cell) => String(cell.dataset.notation || '').split(/[(+\s]/)[0]
 
     const fillSelect = ($select, options, value) => {
         $select.find('option:not(:first)').remove()
@@ -592,7 +592,7 @@ $(() => {
         const cell = currentCell
         const tags = $modal.find('.roster-tag-input:checked').map((_, input) => input.value).get()
         const notation = $('#roster-cell-notation').val()
-        const text = action === 'notation' ? notation.toUpperCase() : (label ?? '') + (action === 'shift' ? tags.map((tag) => `(${tag})`).join('') : '')
+        const text = action === 'notation' ? notation.trim() : (label ?? '') + (action === 'shift' ? tags.map((tag) => `(${tag})`).join('') : '')
 
         $modal.modal('hide')
         paintCell(cell, text)

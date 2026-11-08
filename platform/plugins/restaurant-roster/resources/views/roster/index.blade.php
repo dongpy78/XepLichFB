@@ -242,7 +242,7 @@
 
                         {{-- Gõ mã rồi Enter (con trỏ sẵn ở đây), hoặc bấm một nút bên dưới: lưu ngay. --}}
                         <div class="input-group mb-3">
-                            <input type="text" class="form-control font-monospace text-uppercase" id="roster-cell-notation" maxlength="40" placeholder="Gõ mã rồi Enter: M6, A2(L), M6+3, OFF, AL" aria-label="Gõ mã ca" autocomplete="off">
+                            <input type="text" class="form-control font-monospace" id="roster-cell-notation" maxlength="40" placeholder="Gõ mã hoặc nội dung tự do rồi Enter: M6, A2(L), M6(EL), OFF" aria-label="Gõ mã ca" autocomplete="off">
                             <button type="button" class="btn btn-primary" data-assign="notation">Lưu</button>
                         </div>
 

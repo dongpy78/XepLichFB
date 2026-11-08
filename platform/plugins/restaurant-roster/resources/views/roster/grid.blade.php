@@ -317,7 +317,7 @@
                                 $rowCodes[] = match ($rowShift->kind) {
                                     'shift' => $rowShift->template?->code ?? 'Ca',
                                     'off' => 'OFF',
-                                    default => (string) $rowShift->leave_type,
+                                    default => (string) $rowShift->notation,
                                 };
                                 $rowTransfer = $rowTransfer || ($rowShift->isWorking() && in_array((int) $rowShift->outlet_id, $restaurantIds, true)
                                     && (int) $rowShift->outlet_id !== (int) $employee->outlet_id);
@@ -435,7 +435,7 @@
                                     @if ($shift || $warnings) title="{{ implode("\n", [...$tooltip, ...$warnings]) }}" @endif
                                 >
                                     <div class="roster-mini roster-mini--{{ $variant }} {{ $shift?->status === 'draft' ? 'is-draft' : '' }} {{ $shift?->is_locked ? 'is-locked' : '' }} {{ $shift?->isRecordedOff() ? 'is-recorded-off' : '' }} {{ $shift?->needs_review ? 'needs-review' : '' }}">
-                                        @if ($shift && $shift->kind === 'shift')
+                                        @if ($shift && $shift->kind === 'shift' && ! $shift->display_notation)
                                             <span class="roster-mini__code">{{ $shift->template?->code ?? 'Ca' }}</span>
                                             @if ($shift->tags)
                                                 <span class="roster-mini__tags">{{ collect($shift->tags)->map(fn ($tag) => "({$tag})")->implode('') }}</span>

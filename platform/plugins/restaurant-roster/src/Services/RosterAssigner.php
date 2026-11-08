@@ -59,6 +59,40 @@ class RosterAssigner
     }
 
     /**
+     * Ô nhập tự do của quản lý: ký hiệu chuẩn xử lý như parse(); còn lại vẫn lưu và in đúng nguyên văn.
+     * Bắt đầu bằng mã ca ("M6(EL)", "A2 học việc"): vẫn là ca đó, tính giờ và ký hiệu phụ đã khai báo. Không có mã ca ("Training"): ô không làm việc.
+     */
+    public function parseFree(string $notation): array
+    {
+        $text = trim((string) preg_replace('/\s+/u', ' ', $notation));
+
+        try {
+            return $this->parse($text);
+        } catch (InvalidArgumentException) {
+            // Không phải ký hiệu chuẩn: giữ nguyên văn bên dưới.
+        }
+
+        $template = ShiftTemplate::query()->get()->sortByDesc(fn (ShiftTemplate $t) => mb_strlen((string) $t->code))
+            ->first(fn (ShiftTemplate $t) => $t->code && preg_match('/^' . preg_quote((string) $t->code, '/') . '(?![\p{L}\p{N}])/iu', $text));
+
+        if (! $template) {
+            return ['kind' => Shift::KIND_LEAVE, 'template' => null, 'tags' => [], 'overtime' => 0.0, 'leave_type' => Shift::LEAVE_FREE_TEXT, 'display' => $text];
+        }
+
+        preg_match_all('/\(([^()]+)\)/u', $text, $tagMatches);
+        preg_match('/\+(\d+(?:[.,]\d+)?)$/u', $text, $overtime);
+
+        return [
+            'kind' => Shift::KIND_SHIFT,
+            'template' => $template,
+            'tags' => array_values(array_intersect(array_unique(array_map(fn ($tag) => mb_strtoupper(trim($tag)), $tagMatches[1])), array_keys($this->tagDefinitions()))),
+            'overtime' => isset($overtime[1]) ? (float) str_replace(',', '.', $overtime[1]) : 0.0,
+            'leave_type' => null,
+            'display' => $text,
+        ];
+    }
+
+    /**
      * @param array{kind: string, template?: ?ShiftTemplate, tags?: string[], overtime?: float, leave_type?: ?string, note?: ?string, outlet_id?: ?int, source?: string, run_id?: ?int} $spec
      */
     public function assign(Employee $employee, CarbonInterface $date, array $spec, ?int $userId = null, string $status = Shift::STATUS_DRAFT): Shift
@@ -108,6 +142,7 @@ class RosterAssigner
             'shift_template_id' => null,
             'leave_type' => null,
             'tags' => null,
+            'display_notation' => $spec['display'] ?? null,
             'start_at' => null,
             'end_at' => null,
             'split_start_at' => null,

@@ -118,7 +118,7 @@ class RosterController extends BaseController
 
         if ($data['action'] === 'notation') {
             try {
-                $spec = $this->assigner->parse($data['notation']);
+                $spec = $this->assigner->parseFree($data['notation']);
             } catch (InvalidArgumentException $exception) {
                 return $this->httpResponse()->setError()->setMessage($exception->getMessage());
             }
@@ -137,6 +137,11 @@ class RosterController extends BaseController
         // Quản lý là người quyết định lịch: xếp tay thế nào cũng lưu và chỉ báo đã lưu, không kèm cảnh báo quy định.
         // Các trường hợp bên dưới vẫn tự khóa ô để xếp tự động giữ nguyên, ô hiện biểu tượng khóa trên bảng.
         $message = "Đã lưu {$shift->notation} cho {$employee->name}.";
+
+        // Ký hiệu tự nhập: khóa ô để xếp tự động không ghi đè.
+        if ($shift->display_notation && ! $shift->is_locked) {
+            $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
+        }
 
         // Ca chạy tiệc (BQ) do quản lý chọn người có kinh nghiệm: tự khóa để thuật toán xếp những người còn lại xung quanh.
         if (in_array('BQ', $shift->tags ?: [], true) && ! $shift->is_locked) {

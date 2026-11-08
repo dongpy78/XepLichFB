@@ -355,7 +355,7 @@ class ScheduleExportService
             'sky' => ['E0F2FE', '0369A1'], 'sand' => ['FFEDD5', 'C2410C'], 'amber' => ['FEF3C7', 'B45309'], 'navy' => ['334155', 'FFFFFF'],
             'violet' => ['EDE9FE', '6D28D9'], 'emerald' => ['DCFCE7', '15803D'], 'slate' => ['F1F5F9', '475569'],
         ];
-        $code = (string) preg_replace('/[(+].*$/u', '', $cell);
+        $code = (string) preg_replace('/[(+\s].*$/u', '', $cell);
         $color = $snapshot['colors'][$code] ?? null;
 
         if ($color === null && isset($snapshot['legend'][$code])) {

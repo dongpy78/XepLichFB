@@ -13,6 +13,8 @@ class Shift extends BaseModel
     public const KIND_SHIFT = 'shift';
     public const KIND_OFF = 'off';
     public const KIND_LEAVE = 'leave';
+    // Ô quản lý nhập chữ tự do không thuộc mẫu ca nào: không tính giờ làm, không xếp ca ngày đó.
+    public const LEAVE_FREE_TEXT = 'NOTE';
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
@@ -41,6 +43,7 @@ class Shift extends BaseModel
         'shift_template_id',
         'leave_type',
         'tags',
+        'display_notation',
         'start_at',
         'end_at',
         'split_start_at',
@@ -158,6 +161,10 @@ class Shift extends BaseModel
      */
     public function getNotationAttribute(): string
     {
+        if ($this->display_notation) {
+            return (string) $this->display_notation;
+        }
+
         return match ($this->kind) {
             self::KIND_OFF => 'OFF',
             self::KIND_LEAVE => (string) $this->leave_type,

@@ -392,6 +392,33 @@ class CellLockHttpTest extends TestCase
         $this->assertNull($cell(), 'Xóa được ô khóa');
     }
 
+    /** Ô nhập tự do: lưu và in đúng nguyên văn; có mã ca thì vẫn là ca đó; ô được khóa để xếp tự động không ghi đè. */
+    public function test_free_text_notation_is_kept_exactly(): void
+    {
+        ShiftTemplate::query()->firstOrCreate(['code' => 'M6'], ['name' => 'Sáng', 'start_time' => '06:00:00', 'end_time' => '14:00:00', 'status' => 'published']);
+        $admin = $this->user([], true);
+        $save = fn (string $text, string $date) => $this->actingAs($admin)->postJson(route('roster.assign'), ['employee_id' => $this->employee->getKey(), 'date' => $date, 'action' => 'notation', 'notation' => $text, 'week' => '2030-01-07'])->assertJson(['error' => false]);
+        $cell = fn (string $date) => Shift::query()->with('template')->where('employee_id', $this->employee->getKey())->whereDate('date', $date)->first();
+
+        $response = $save('M6(EL)', '2030-01-09');
+        $shift = $cell('2030-01-09');
+        $this->assertSame(['M6(EL)', Shift::KIND_SHIFT, 'M6', true], [$shift->notation, $shift->kind, $shift->template->code, (bool) $shift->is_locked]);
+        $this->assertTrue($shift->isWorking());
+        $this->assertStringContainsString('M6(EL)', (string) $response->json('data.html'));
+
+        $save('Training ngoài', '2030-01-10');
+        $note = $cell('2030-01-10');
+        $this->assertSame(['Training ngoài', Shift::KIND_LEAVE, false], [$note->notation, $note->kind, $note->isWorking()]);
+
+        $save('m6', '2030-01-11');
+        $this->assertSame(['M6', null, false], [$cell('2030-01-11')->notation, $cell('2030-01-11')->display_notation, (bool) $cell('2030-01-11')->is_locked], 'Ký hiệu chuẩn giữ nguyên cách cũ');
+
+        $this->actingAs($admin)->postJson(route('roster.publish'), ['week' => '2030-01-07'])->assertJson(['error' => false]);
+        $cells = \Botble\RestaurantRoster\Models\ScheduleVersion::query()->latest('id')->firstOrFail()->snapshot['sections'][0]['rows'][0]['cells'];
+        $this->assertContains('M6(EL)', $cells, 'Bản in đúng nguyên văn');
+        $this->assertContains('Training ngoài', $cells);
+    }
+
     /** P0-3: danh mục đang được dùng không xóa được; chưa dùng thì xóa bình thường. */
     public function test_catalog_in_use_cannot_be_deleted(): void
     {
