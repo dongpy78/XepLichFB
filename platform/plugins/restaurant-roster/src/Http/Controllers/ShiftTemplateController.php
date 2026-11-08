@@ -67,6 +67,18 @@ class ShiftTemplateController extends BaseController
 
     public function destroy(ShiftTemplate $shiftTemplate)
     {
+        $id = $shiftTemplate->getKey();
+        $used = array_filter([
+            'ô lịch' => \Botble\RestaurantRoster\Models\Shift::query()->where('shift_template_id', $id)->count(),
+            'nhân viên có ca cứng này' => \Botble\RestaurantRoster\Models\Employee::query()->where('fixed_shift_template_id', $id)->count(),
+            'dòng định biên' => \Botble\RestaurantRoster\Models\StaffingRequirement::query()->where('shift_template_id', $id)->count(),
+        ]);
+
+        if ($used) {
+            return $this->httpResponse()->setError()->setMessage('Không thể xóa: mẫu ca đang được dùng ở '
+                . implode(', ', array_map(fn ($label, $count) => "{$count} {$label}", array_keys($used), $used)) . '. Hãy chuyển trạng thái sang ngừng dùng để giữ lịch sử.');
+        }
+
         return DeleteResourceAction::make($shiftTemplate);
     }
 }

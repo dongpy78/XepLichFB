@@ -62,7 +62,6 @@ class CostEquivalenceTest extends TestCase
             $this->genderBalance(fn ($i, $o, $s) => $this->femaleCount($i, $o, $s)),
             $this->genderBalance(fn ($i, $o, $s) => $this->maleCount($i, $o, $s)),
             $this->genderBalance(fn ($i, $o, $s) => $this->waiterCount($i, $o, $s)),
-            $this->genderBalance(fn ($i, $o, $s) => $this->allMaleCount["{$i}|{$o}|{$s}"] ?? 0),
             array_sum(array_map(fn ($i) => $this->flexDayPenalty($i), array_keys($this->balanceKeys ?? []))),
         ];
         mt_srand(7);

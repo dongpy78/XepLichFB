@@ -6,7 +6,6 @@ use Botble\RestaurantRoster\Models\ShiftTemplate;
 use Botble\Table\Abstracts\TableAbstract;
 use Botble\Table\Actions\DeleteAction;
 use Botble\Table\Actions\EditAction;
-use Botble\Table\BulkActions\DeleteBulkAction;
 use Botble\Table\BulkChanges\StatusBulkChange;
 use Botble\Table\Columns\FormattedColumn;
 use Botble\Table\Columns\IdColumn;
@@ -47,9 +46,6 @@ class ShiftTemplateTable extends TableAbstract
                     ->getValueUsing(fn (FormattedColumn $column) => number_format($column->getItem()->hours, 1) . 'h'),
                 FormattedColumn::make('order')->title('Thứ tự')->width(90)->alignCenter(),
                 StatusColumn::make(),
-            ])
-            ->addBulkActions([
-                DeleteBulkAction::make()->permission('roster.settings'),
             ])
             ->addBulkChanges([
                 StatusBulkChange::make(),

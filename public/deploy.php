@@ -36,6 +36,90 @@ function readEnvValue(string $envFile, string $key): ?string
     return null;
 }
 
+/**
+ * Sao lưu toàn bộ database thành file .sql.gz (nhập lại được bằng phpMyAdmin) trong storage/app/deploy-backups – thư mục ngoài web.
+ * Dùng PDO trực tiếp để vẫn sao lưu được khi code hiện tại đang lỗi. Giữ 7 bản gần nhất.
+ */
+function backup_database(string $basePath): string
+{
+    $env = fn (string $key, string $default = '') => readEnvValue($basePath . '/.env', $key) ?? $default;
+    $driver = $env('DB_CONNECTION', 'mysql');
+
+    if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+        throw new RuntimeException("chưa hỗ trợ sao lưu {$driver}");
+    }
+
+    $dir = $basePath . '/storage/app/deploy-backups';
+
+    if (! is_dir($dir) && ! mkdir($dir, 0750, true) && ! is_dir($dir)) {
+        throw new RuntimeException('không tạo được thư mục sao lưu');
+    }
+
+    $pdo = new PDO(sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $env('DB_HOST', '127.0.0.1'), $env('DB_PORT', '3306'), $env('DB_DATABASE')), $env('DB_USERNAME'), $env('DB_PASSWORD'), [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false,
+    ]);
+    $target = $dir . '/db-' . date('Ymd-His') . '.sql.gz';
+    $tmp = $target . '.tmp';
+    $gz = gzopen($tmp, 'wb6');
+
+    if (! $gz) {
+        throw new RuntimeException('không ghi được file sao lưu');
+    }
+
+    gzwrite($gz, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n");
+    $tables = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")->fetchAll(PDO::FETCH_COLUMN, 0);
+
+    foreach ($tables as $table) {
+        $name = '`' . str_replace('`', '``', $table) . '`';
+        $create = $pdo->query("SHOW CREATE TABLE {$name}")->fetchAll(PDO::FETCH_NUM)[0][1];
+        gzwrite($gz, "\nDROP TABLE IF EXISTS {$name};\n{$create};\n");
+        $rows = $pdo->query("SELECT * FROM {$name}", PDO::FETCH_NUM);
+        $batch = [];
+
+        foreach ($rows as $row) {
+            $batch[] = '(' . implode(',', array_map(fn ($v) => $v === null ? 'NULL' : $pdo->quote((string) $v), $row)) . ')';
+
+            if (count($batch) >= 200) {
+                gzwrite($gz, "INSERT INTO {$name} VALUES\n" . implode(",\n", $batch) . ";\n");
+                $batch = [];
+            }
+        }
+
+        $rows->closeCursor();
+
+        if ($batch) {
+            gzwrite($gz, "INSERT INTO {$name} VALUES\n" . implode(",\n", $batch) . ";\n");
+        }
+    }
+
+    gzwrite($gz, "\nSET FOREIGN_KEY_CHECKS=1;\n");
+    gzclose($gz);
+    rename($tmp, $target);
+    $backups = glob($dir . '/db-*.sql.gz') ?: [];
+    sort($backups);
+
+    foreach (array_slice($backups, 0, max(0, count($backups) - 7)) as $old) {
+        @unlink($old);
+    }
+
+    return basename($target) . ' (' . round(filesize($target) / 1048576, 1) . ' MB, ' . count($tables) . ' bảng)';
+}
+
+/** Website thật không chạy chế độ gỡ lỗi: tự tắt APP_DEBUG trong .env trên hosting. */
+function disable_debug(string $envFile): bool
+{
+    $content = @file_get_contents($envFile);
+
+    if ($content === false) {
+        return false;
+    }
+
+    $updated = preg_replace('/^(\s*APP_DEBUG\s*=\s*)["\']?(true|1|on)["\']?(\s*)$/mi', '${1}false${3}', $content);
+
+    return $updated !== null && $updated !== $content && file_put_contents($envFile, $updated, LOCK_EX) !== false;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     fail(404, 'Not found');
 }
@@ -59,6 +143,27 @@ if (! is_file($zipPath)) {
     fail(500, 'Không tìm thấy file ' . $zipPath);
 }
 
+// Bảo trì trong lúc cập nhật: file storage/framework/down là chế độ bảo trì của Laravel.
+// Luôn gỡ khi script kết thúc (kể cả lỗi); nếu quản trị đã bật bảo trì từ trước thì giữ nguyên.
+$downFile = $basePath . '/storage/framework/down';
+
+if (! is_file($downFile)) {
+    @file_put_contents($downFile, json_encode(['except' => [], 'redirect' => null, 'retry' => 60, 'refresh' => 15, 'secret' => null, 'status' => 503, 'template' => null]));
+    register_shutdown_function(static fn () => @unlink($downFile));
+    echo "Đã bật chế độ bảo trì\n";
+}
+
+// Sao lưu database trước khi thay code và migrate. Không sao lưu được thì dừng, website giữ nguyên.
+if (($_SERVER['HTTP_X_DEPLOY_SKIP_BACKUP'] ?? '') === '1') {
+    echo "CẢNH BÁO: bỏ qua sao lưu database theo yêu cầu\n";
+} else {
+    try {
+        echo 'Đã sao lưu database: ' . backup_database($basePath) . "\n";
+    } catch (Throwable $e) {
+        fail(500, 'Không sao lưu được database, chưa thay đổi gì trên website: ' . $e->getMessage());
+    }
+}
+
 $zip = new ZipArchive();
 
 if ($zip->open($zipPath) !== true) {
@@ -75,6 +180,10 @@ if (! $zip->extractTo($basePath)) {
 $zip->close();
 @unlink($zipPath);
 echo "Đã giải nén {$count} file\n";
+
+if (disable_debug($basePath . '/.env')) {
+    echo "Đã tắt APP_DEBUG trong .env\n";
+}
 
 // Xóa cache để Laravel đọc lại code mới
 foreach (glob($basePath . '/bootstrap/cache/*.php') ?: [] as $file) {

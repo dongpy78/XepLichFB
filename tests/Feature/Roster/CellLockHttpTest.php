@@ -375,6 +375,50 @@ class CellLockHttpTest extends TestCase
         $this->actingAs($manager)->get(route('roster.requirements.create'))->assertOk()->assertSee('Định biên theo nhóm nhân sự')->assertSee('Nữ waiter');
     }
 
+    /** Quản lý có quyền phân công ca được mở khóa ô và xóa cả ô khóa, không cần quyền duyệt. */
+    public function test_manager_can_unlock_and_clear_locked_cells(): void
+    {
+        $manager = $this->user(['roster.index', 'roster.manage']);
+        $admin = $this->user([], true);
+        $at = ['employee_id' => $this->employee->getKey(), 'date' => '2030-01-09', 'week' => '2030-01-07'];
+        $cell = fn () => Shift::query()->where('employee_id', $this->employee->getKey())->whereDate('date', '2030-01-09')->first();
+
+        $this->actingAs($admin)->postJson(route('roster.lock'), [...$at, 'locked' => 1])->assertJson(['error' => false]);
+        $this->actingAs($manager)->postJson(route('roster.lock'), [...$at, 'locked' => 0])->assertJson(['error' => false]);
+        $this->assertFalse((bool) $cell()->is_locked);
+
+        $this->actingAs($admin)->postJson(route('roster.lock'), [...$at, 'locked' => 1])->assertJson(['error' => false]);
+        $this->actingAs($manager)->postJson(route('roster.clear-cells'), ['week' => '2030-01-07', 'mode' => 'week', 'include_locked' => 1])->assertJson(['error' => false]);
+        $this->assertNull($cell(), 'Xóa được ô khóa');
+    }
+
+    /** P0-3: danh mục đang được dùng không xóa được; chưa dùng thì xóa bình thường. */
+    public function test_catalog_in_use_cannot_be_deleted(): void
+    {
+        $admin = $this->user([], true);
+        $used = ShiftTemplate::query()->create(['code' => 'U1', 'name' => 'Dùng', 'start_time' => '06:00:00', 'end_time' => '14:00:00', 'status' => 'published']);
+        $free = ShiftTemplate::query()->create(['code' => 'F1', 'name' => 'Chưa dùng', 'start_time' => '06:00:00', 'end_time' => '14:00:00', 'status' => 'published']);
+        Shift::query()->create(['employee_id' => $this->employee->getKey(), 'date' => '2030-01-09', 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $used->getKey(), 'status' => 'draft']);
+
+        $this->actingAs($admin)->deleteJson(route('roster.shift-templates.destroy', $used->getKey()))->assertJson(['error' => true]);
+        $this->assertNotNull($used->fresh());
+        $this->actingAs($admin)->deleteJson(route('roster.shift-templates.destroy', $free->getKey()))->assertJson(['error' => false]);
+        $this->assertNull($free->fresh());
+
+        $position = \Botble\RestaurantRoster\Models\Position::query()->create(['name' => 'Waiter thử', 'status' => 'published']);
+        $this->employee->update(['position_id' => $position->getKey()]);
+        $this->actingAs($admin)->deleteJson(route('roster.positions.destroy', $position->getKey()))->assertJson(['error' => true]);
+        $this->assertSame((int) $position->getKey(), (int) $this->employee->fresh()->position_id);
+
+        $this->actingAs($admin)->deleteJson(route('roster.employees.destroy', $this->employee->getKey()))->assertJson(['error' => true]);
+        $this->assertNotNull($this->employee->fresh());
+        $this->assertSame(2, Shift::query()->where('employee_id', $this->employee->getKey())->count(), 'Lịch vẫn còn');
+
+        $newcomer = Employee::query()->create(['code' => 'NEW1', 'name' => 'Synthetic mới', 'outlet_id' => $this->employee->outlet_id, 'weekly_hours' => 48, 'days_off_per_week' => 2, 'status' => 'published']);
+        $this->actingAs($admin)->deleteJson(route('roster.employees.destroy', $newcomer->getKey()))->assertJson(['error' => false]);
+        $this->assertNull($newcomer->fresh());
+    }
+
     public function test_removing_recorded_off_requires_permission(): void
     {
         $this->actingAs($this->user(['roster.index', 'roster.manage']))->postJson(route('roster.lock'), [

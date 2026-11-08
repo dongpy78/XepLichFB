@@ -93,8 +93,10 @@ class EmployeeController extends BaseController
 
     public function destroy(Employee $employee)
     {
-        return DeleteResourceAction::make($employee)->afterDeleting(function () use ($employee): void {
-            $employee->shifts()->delete();
-        });
+        if ($count = $employee->shifts()->count()) {
+            return $this->httpResponse()->setError()->setMessage("Không thể xóa: nhân viên này có {$count} ô lịch. Hãy chuyển trạng thái sang ngừng hoạt động để giữ lịch sử.");
+        }
+
+        return DeleteResourceAction::make($employee);
     }
 }

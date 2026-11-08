@@ -6,7 +6,6 @@ use Botble\RestaurantRoster\Models\Position;
 use Botble\Table\Abstracts\TableAbstract;
 use Botble\Table\Actions\DeleteAction;
 use Botble\Table\Actions\EditAction;
-use Botble\Table\BulkActions\DeleteBulkAction;
 use Botble\Table\BulkChanges\NameBulkChange;
 use Botble\Table\BulkChanges\StatusBulkChange;
 use Botble\Table\Columns\FormattedColumn;
@@ -40,9 +39,6 @@ class PositionTable extends TableAbstract
                     ->getValueUsing(fn (FormattedColumn $column) => $column->getItem()->is_manager ? '<span class="badge bg-primary-lt">Quản lý</span>' : '—'),
                 FormattedColumn::make('order')->title('Thứ tự')->width(100)->alignCenter(),
                 StatusColumn::make(),
-            ])
-            ->addBulkActions([
-                DeleteBulkAction::make()->permission('roster.settings'),
             ])
             ->addBulkChanges([
                 NameBulkChange::make(),

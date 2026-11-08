@@ -64,8 +64,10 @@ class PositionController extends BaseController
 
     public function destroy(Position $position)
     {
-        return DeleteResourceAction::make($position)->afterDeleting(function () use ($position): void {
-            Employee::query()->where('position_id', $position->getKey())->update(['position_id' => null]);
-        });
+        if ($count = Employee::query()->where('position_id', $position->getKey())->count()) {
+            return $this->httpResponse()->setError()->setMessage("Không thể xóa: vị trí này còn {$count} nhân viên. Hãy chuyển họ sang vị trí khác trước.");
+        }
+
+        return DeleteResourceAction::make($position);
     }
 }

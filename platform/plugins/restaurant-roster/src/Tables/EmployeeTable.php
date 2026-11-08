@@ -8,7 +8,6 @@ use Botble\RestaurantRoster\Models\ShiftTemplate;
 use Botble\Table\Abstracts\TableAbstract;
 use Botble\Table\Actions\DeleteAction;
 use Botble\Table\Actions\EditAction;
-use Botble\Table\BulkActions\DeleteBulkAction;
 use Botble\Table\BulkChanges\SelectBulkChange;
 use Botble\Table\BulkChanges\StatusBulkChange;
 use Botble\Table\Columns\FormattedColumn;
@@ -61,9 +60,6 @@ class EmployeeTable extends TableAbstract
                         default => '<span class="text-warning">Chưa khai báo</span>',
                     }),
                 StatusColumn::make(),
-            ])
-            ->addBulkActions([
-                DeleteBulkAction::make()->permission('roster.settings'),
             ])
             ->addBulkChanges([
                 SelectBulkChange::make()
