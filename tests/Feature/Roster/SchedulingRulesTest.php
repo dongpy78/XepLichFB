@@ -213,12 +213,36 @@ class SchedulingRulesTest extends TestCase
         $this->assertSame(['M9(L)', 'LOBBY'], [$plain->fresh()->load('template')->notation, Outlet::query()->whereKey($plain->outlet_id)->value('code')], 'M9 thường vẫn là Lobby');
     }
 
+    /** Quản lý nhập tay tự do: Snack đang mở Elprimo vẫn gõ được M9(V) (quầy chưa có thì tự tạo), hiện đúng như gõ, không bị cảnh báo. */
+    public function test_manager_can_type_any_snack_code_freely(): void
+    {
+        $this->setRules(['snack' => ['mode' => 'elprimo']]);
+        $admin = $this->admin();
+        $employee = $this->people['GCF2'];
+        $date = Carbon::today()->addDay();
+        $week = $date->copy()->startOfWeek()->toDateString();
+        $type = fn (string $text, string $day) => $this->actingAs($admin)->postJson(route('roster.assign'), ['employee_id' => $employee->getKey(), 'date' => $day,
+            'action' => 'notation', 'notation' => $text, 'week' => $week])->assertJson(['error' => false]);
+        $cell = fn (string $day) => Shift::query()->with('template')->where('employee_id', $employee->getKey())->whereDate('date', $day)->first();
+
+        $type('M9(V)', $date->toDateString());
+        $this->assertSame(['M9(V)', 'SNACK_V'], [$cell($date->toDateString())->notation, Outlet::query()->whereKey($cell($date->toDateString())->outlet_id)->value('code')]);
+
+        $next = $date->copy()->addDay()->toDateString();
+        $type('M9', $next);
+        $this->assertSame('M9(L)', $cell($next)->notation, 'M9 gõ tay vẫn là M9(L) như trước');
+
+        $html = (string) $this->actingAs($admin)->getJson(route('roster.grid', ['week' => $week]))->json('data.html');
+        $this->assertStringNotContainsString('(Cấu hình quy tắc xếp lịch)', $html, 'Ô nhập tay không bị cảnh báo');
+        $this->assertStringContainsString('M9(V)', $html);
+    }
+
     /** 8, 9, 12: đổi cấu hình ảnh hưởng lịch → hỏi xác nhận, liệt kê ô; lưu xong ô khóa / chỉnh tay vẫn còn; có lịch sử; không đủ quyền thì không đổi được. */
     public function test_saving_rules_warns_keeps_cells_and_needs_permission(): void
     {
         $day = Carbon::today()->addDay()->toDateString();
         $lobbyShift = Shift::query()->create(['employee_id' => $this->people['GCF1']->getKey(), 'date' => $day, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['M9']->getKey(),
-            'outlet_id' => $this->outlets['LOBBY']->getKey(), 'tags' => ['L'], 'status' => 'draft', 'is_locked' => true, 'source' => 'manual']);
+            'outlet_id' => $this->outlets['LOBBY']->getKey(), 'tags' => ['L'], 'status' => 'draft', 'is_locked' => true, 'source' => 'engine']);
         $this->setRules(['lobby' => ['codes' => ['M9' => true, 'A2' => true, 'OH' => false, 'M6' => true]]]);
         // Công tắc tổng tắt: các công tắc con bị khóa nên trình duyệt không gửi.
         $form = ['snack_mode' => 'off', 'snack_count' => 1, 'lobby_enabled' => 0];

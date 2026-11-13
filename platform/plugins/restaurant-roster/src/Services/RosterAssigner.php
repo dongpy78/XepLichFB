@@ -306,9 +306,15 @@ class RosterAssigner
             return null;
         }
 
-        foreach (SchedulingRules::snackOptions() as $option) {
-            if (in_array($option['tag'], $tags, true) && ($id = $this->outletIdsByCode()[$option['code']] ?? null)) {
-                return (int) $id;
+        // Quản lý gõ M9(V) / M9(EL) là ca Snack của nhà hàng đó, kể cả khi đang chọn nhà hàng Snack khác hoặc quầy chưa từng được tạo.
+        foreach (SchedulingRules::snackOptions() as $mode => $option) {
+            if (in_array($option['tag'], $tags, true)) {
+                if (! isset($this->outletIdsByCode()[$option['code']])) {
+                    app(SchedulingRules::class)->ensureSnackOutlet($mode);
+                    $this->outletIds = null;
+                }
+
+                return ($id = $this->outletIdsByCode()[$option['code']] ?? null) ? (int) $id : null;
             }
         }
 

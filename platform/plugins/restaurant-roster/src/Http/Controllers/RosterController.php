@@ -136,6 +136,16 @@ class RosterController extends BaseController
         $shift = $this->assigner->assign($employee, $date, [...$spec, 'note' => $data['note'] ?? null, 'source' => 'manual'], $request->user()?->getKey());
         // Quản lý là người quyết định lịch: xếp tay thế nào cũng lưu và chỉ báo đã lưu, không kèm cảnh báo quy định.
         // Các trường hợp bên dưới vẫn tự khóa ô để xếp tự động giữ nguyên, ô hiện biểu tượng khóa trên bảng.
+        // Nhập tay: ô hiện đúng như quản lý gõ (trừ chữ hoa / khoảng trắng và M9 → M9(L) như trước).
+        if ($data['action'] === 'notation' && ! $shift->display_notation) {
+            $typed = trim((string) preg_replace('/\s+/u', ' ', (string) $data['notation']));
+            $plain = fn (string $text) => strtoupper((string) preg_replace('/\s+/u', '', $text));
+
+            if ($plain($typed) !== $plain($shift->notation) && $plain($typed) . '(L)' !== $plain($shift->notation)) {
+                $shift->update(['display_notation' => mb_substr($typed, 0, 40)]);
+            }
+        }
+
         $message = "Đã lưu {$shift->notation} cho {$employee->name}.";
 
         // Ký hiệu tự nhập: khóa ô để xếp tự động không ghi đè.

@@ -226,6 +226,7 @@ class SchedulingRules
                     'date' => $shift->date->toDateString(),
                     'notation' => (string) $shift->notation,
                     'reason' => $reason,
+                    'manual' => $shift->source === 'manual',
                     'state' => match (true) {
                         (bool) $shift->is_locked => 'Đã khóa',
                         $shift->status === Shift::STATUS_PUBLISHED => 'Đã công bố',

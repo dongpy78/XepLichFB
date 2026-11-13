@@ -39,7 +39,8 @@
         }
     }
 
-    foreach ($grid['ruleConflicts'] ?? [] as $conflict) {
+    // Ô quản lý tự nhập không bị cảnh báo – quản lý được tự do chỉnh lịch.
+    foreach (collect($grid['ruleConflicts'] ?? [])->reject(fn ($conflict) => $conflict['manual']) as $conflict) {
         $alerts[] = ['level' => 'warning', 'employee' => $conflict['employee_id'], 'date' => $conflict['date'], 'who' => $conflict['name'],
             'text' => "Ca {$conflict['notation']}: {$conflict['reason']} (Cấu hình quy tắc xếp lịch) – ô giữ nguyên, quản lý tự quyết định"];
     }
