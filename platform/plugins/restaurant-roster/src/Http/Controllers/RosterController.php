@@ -1069,6 +1069,9 @@ class RosterController extends BaseController
             'weekLabel' => sprintf('Tuần %d · %s – %s', $weekStart->isoWeek(), $weekStart->format('d/m'), $weekEnd->format('d/m/Y')),
             'merge' => $merge,
             'restaurantStatus' => $restaurantStatus,
+            // Ô thuộc nhóm ca đã tắt ở "Cấu hình quy tắc xếp lịch" (chỉ cảnh báo, không đổi lịch).
+            'ruleConflicts' => app(\Botble\RestaurantRoster\Services\SchedulingRules::class)
+                ->affected(app(\Botble\RestaurantRoster\Services\SchedulingRules::class)->get(), $weekStart, $weekEnd, $employees->modelKeys()),
             'mergeOutlets' => $this->mergeOutlets()->mapWithKeys(fn (Outlet $o) => [(int) $o->getKey() => (string) ($o->code ?: $o->name)])->all(),
             'days' => $days,
             'rows' => $rows,

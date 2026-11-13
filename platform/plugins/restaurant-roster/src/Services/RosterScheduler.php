@@ -312,6 +312,11 @@ class RosterScheduler
     {
         $allowed = array_map(fn ($c) => strtoupper(str_replace(' ', '', (string) $c)), (array) config('plugins.restaurant-roster.general.scheduling.auto_shift_codes', []));
 
+        // Ca Snack của nhà hàng đang chọn trong "Cấu hình quy tắc xếp lịch" được tự xếp (M9(V) hoặc M9(EL)).
+        if ($allowed && ($snack = app(SchedulingRules::class)->activeSnack())) {
+            $allowed[] = strtoupper((string) SchedulingRules::snackConfig('shift_code', 'M9')) . "({$snack['tag']})";
+        }
+
         if (! $allowed) {
             return [];
         }
@@ -335,6 +340,7 @@ class RosterScheduler
             $code = strtoupper((string) $template->code) . match (true) {
                 ! empty($row['support']) || ($station !== false && $outletId === (int) $station) => '(L)',
                 in_array($outletId, $children, true) => '(K)',
+                (bool) ($snackTag = $this->assigner->snackTagFor($outletId)) => "({$snackTag})",
                 default => '',
             };
             $current = $existing[$row['employee_id'] . '|' . $row['date']] ?? null;

@@ -44,6 +44,21 @@ return [
         ],
         // Trạm hỗ trợ: ký hiệu (L) = lên hỗ trợ quầy bar Lobby trong khung giờ cấu hình ở từng mẫu ca.
         'station_code' => 'LOBBY',
+        // Ca hỗ trợ Lobby / Bar bật / tắt được ở "Cấu hình quy tắc xếp lịch" (mặc định bật hết, như trước).
+        'lobby_support_codes' => ['M9', 'A2', 'OH', 'M6'],
+        // Ca Snack (quản lý 13/11/2026): quầy Snack riêng, rời nhà hàng cả ca, giờ theo mẫu ca shift_code. Chỉ một nhà hàng Snack hoạt động
+        // (chọn ở "Cấu hình quy tắc xếp lịch"). Chỉ tự xếp cho người đủ cả ba: vị trí positions, giới gender, khu vực sinh sống residence.
+        // Khu Snack được tạo khi quản lý chọn lần đầu (mã code); tag là ký hiệu in trên lịch: M9(V), M9(EL).
+        'snack' => [
+            'shift_code' => 'M9',
+            'positions' => ['Waiter'],
+            'gender' => 'female',
+            'residence' => 'cam_ranh',
+            'outlets' => [
+                'villa' => ['code' => 'SNACK_V', 'name' => 'Snack Villa', 'tag' => 'V'],
+                'elprimo' => ['code' => 'SNACK_EL', 'name' => 'Snack Elprimo', 'tag' => 'EL'],
+            ],
+        ],
         // Hỗ trợ Lobby (L) và Kid Deline (K) chỉ dành cho nhân viên nữ.
         'support_gender' => 'female',
         'female_only_tags' => ['L', 'K'],
@@ -161,6 +176,8 @@ return [
         'RS' => ['label' => 'Room Service', 'description' => 'Đi Room Service', 'outlet' => 'ROOM'],
         'RS1' => ['label' => 'RS học việc', 'description' => 'Theo hỗ trợ và học việc Room Service', 'outlet' => 'ROOM'],
         'BQ' => ['label' => 'Tiệc', 'description' => 'Chạy tiệc (Banquet)'],
+        // Snack Elprimo (Cấu hình quy tắc xếp lịch): M9(EL). Snack Villa ghi M9(V) – xem scheduling.snack.
+        'EL' => ['label' => 'Snack Elprimo', 'description' => 'Ca Snack tại nhà hàng Elprimo (Waiter nữ Cam Ranh), rời nhà hàng cả ca'],
         'K' => ['label' => 'Kid-Deline', 'description' => 'Đứng Kid-Deline của nhà hàng Gusto (nữ; nhân viên Villa sang đứng ghi thêm (V), vd A2(V)(K))', 'outlet' => 'KID'],
     ],
 

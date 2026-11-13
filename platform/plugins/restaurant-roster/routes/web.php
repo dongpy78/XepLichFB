@@ -97,6 +97,10 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
             Route::group(['permission' => 'roster.settings'], function (): void {
                 Route::post('swap-waiters', 'RosterController@swapWaiters')->name('swap-waiters');
 
+                // Cấu hình quy tắc xếp lịch (Snack, hỗ trợ Lobby/Bar).
+                Route::get('rules', 'SchedulingRuleController@index')->name('rules.index');
+                Route::post('rules', 'SchedulingRuleController@update')->name('rules.update');
+
                 Route::group(['prefix' => 'schedule-groups', 'as' => 'schedule-groups.'], function (): void {
                     Route::resource('', 'ScheduleGroupController')->parameters(['' => 'group'])->except('show');
                 });

@@ -97,6 +97,25 @@ class ProblemBuilder
             ->pluck('id')->map(fn ($id) => (int) $id)->values()->all() ?: null;
 
         $childStaff = $this->childOutletStaffRules($outlets);
+
+        // Cấu hình quy tắc xếp lịch (database): Snack nhà hàng nào, ca hỗ trợ Lobby nào được tự xếp.
+        $ruleService = app(SchedulingRules::class);
+        $rules = $ruleService->get();
+        $stationCodeName = (string) config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY');
+        $snack = $ruleService->activeSnack($rules);
+        $snackOutletIds = $outlets->whereIn('code', array_column(SchedulingRules::snackOptions(), 'code'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $snackOutletId = $snack ? (int) ($outlets->firstWhere('code', $snack['code'])?->getKey() ?? 0) : 0;
+        $snackTemplateId = $snack ? (int) ($templates->first(fn (ShiftTemplate $t) => strtoupper((string) $t->code) === strtoupper((string) SchedulingRules::snackConfig('shift_code', 'M9')))?->getKey() ?? 0) : 0;
+        $snackPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) SchedulingRules::snackConfig('positions', ['Waiter']));
+
+        if ($snack && (! $snackOutletId || ! $snackTemplateId)) {
+            $this->notes['snack_missing'] = true;
+        }
+
+        // Ca được nhân viên nhà hàng tự xếp ở Lobby: bật đủ thì giữ như trước (mọi ca); tắt một phần thì chỉ các ca còn bật.
+        $lobbyFullyOn = $ruleService->lobbyFullyOn($rules);
+        $lobbyShiftIds = $templates->filter(fn (ShiftTemplate $t) => ($t->support_station === $stationCodeName || ($t->lobby_start_time && $t->lobby_end_time))
+            && $ruleService->lobbyAllowed((string) $t->code, $rules))->pluck('id')->map(fn ($id) => (int) $id)->all();
         // Vị trí được tính là "nữ waiter" cho định biên nữ trực tiếp tại outlet (trống = mọi vị trí không thuộc cấp quản lý).
         $femaleStaffPositions = array_map(fn ($name) => mb_strtolower(trim((string) $name)), (array) config('plugins.restaurant-roster.general.scheduling.female_staff_positions', ['Waiter']));
         $positionNames = Position::query()->pluck('name', 'id')->map(fn ($name) => mb_strtolower(trim((string) $name)))->all();
@@ -171,11 +190,33 @@ class ProblemBuilder
             $position = $positionNames[(int) $employee->position_id] ?? '';
             $isManagerLevel = isset($managerPositions[(int) $employee->position_id]);
 
+            // Ca Snack: chỉ tự xếp người đủ cả vị trí, giới tính, khu vực sinh sống (không nới điều kiện để lấp đủ). Không ai khác có năng lực ở quầy Snack.
+            foreach (array_keys($skills) as $key) {
+                if (in_array((int) explode(':', $key)[0], $snackOutletIds, true)) {
+                    unset($skills[$key]);
+                }
+            }
+
+            if ($snackOutletId && $snackTemplateId && ! $isManagerLevel && ! $employee->is_trainee && ! $employee->isNightCore() && ! $employee->room_service_fixed
+                && $employee->gender === SchedulingRules::snackConfig('gender', 'female') && $employee->residence === SchedulingRules::snackConfig('residence', 'cam_ranh')
+                && in_array($position, $snackPositions, true)) {
+                $skills["{$snackOutletId}:{$snackTemplateId}"] = EmployeeSpec::ELIGIBLE;
+            }
+
             // Nữ waiter outlet nhà hàng → hỗ trợ Lobby (L); OH(L) / M9(L) vẫn lọc theo khu vực sống của mẫu ca.
+            // Cấu hình quy tắc xếp lịch: tắt hỗ trợ Lobby / tắt từng ca thì chỉ còn năng lực ở các ca đang bật.
             if ($stationId && $employee->gender === 'female' && ! $isManagerLevel && $employee->outlet_id
                 && ! in_array((int) $employee->outlet_id, [(int) $stationId, $roomOutletKey], true) && ! isset($childStaff[(int) $employee->outlet_id])
                 && (! $femaleStaffPositions || in_array($position, $femaleStaffPositions, true))) {
-                $skills["{$stationId}:0"] ??= EmployeeSpec::ELIGIBLE;
+                if ($lobbyFullyOn) {
+                    $skills["{$stationId}:0"] ??= EmployeeSpec::ELIGIBLE;
+                } else {
+                    unset($skills["{$stationId}:0"]);
+
+                    foreach ($lobbyShiftIds as $lobbyShiftId) {
+                        $skills["{$stationId}:{$lobbyShiftId}"] ??= EmployeeSpec::ELIGIBLE;
+                    }
+                }
             }
 
             // Night: chỉ Night cố định được tự xếp ca đêm. Người khác bỏ mọi năng lực ca đêm ở outlet Night:
@@ -316,7 +357,8 @@ class ProblemBuilder
         $stationCode = config('plugins.restaurant-roster.general.scheduling.station_code', 'LOBBY');
         $stationOutletId = ($id = $outlets->firstWhere('code', $stationCode)?->getKey()) ? (int) $id : null;
         $withStation = $stationOutletId !== null && (! $outletIds || in_array($stationOutletId, $targetOutletIds, true));
-        $coverage = $withStation ? $this->coverage($days, $stationCode, $templates) : [];
+        // Tắt hỗ trợ Lobby/Bar: không còn định biên phủ Lobby (Bar tự lo nhân sự) – không sinh chỗ (L) / M9(L) cho nhân viên nhà hàng.
+        $coverage = $withStation && $rules['lobby']['enabled'] ? $this->coverage($days, $stationCode, $templates) : [];
 
         $employeeIds = $employees->pluck('id')->all();
         [$hard, $soft] = $this->availability($employeeIds, $from, $to);
@@ -327,6 +369,13 @@ class ProblemBuilder
         $requirements = $this->applyNightCoreOnly($requirements, $specs, $nightStaff);
         $requirements = $this->applyRoomServiceProfile($requirements, $specs, $days, $roomOutletId, $targetOutletIds, $templates);
         $requirements = $this->applyGenderPresence($requirements, $specs);
+
+        // Ca Snack nhà hàng đang chọn: đúng số người cấu hình mỗi ngày (thiếu thì báo thiếu, không lấy người khác).
+        if ($snackOutletId && $snackTemplateId && (! $outletIds || in_array($snackOutletId, $targetOutletIds, true))) {
+            foreach ($days as $date) {
+                $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($date, $snackOutletId, $snackTemplateId, $snack['count'], $snack['count'], $snack['count']);
+            }
+        }
 
         // Khoảng đánh giá công bằng: quản lý chọn khi chạy (4 / 8 tuần…), mặc định theo cấu hình.
         $historyWeeks = max(1, min(26, (int) ($overrides['history_weeks'] ?? config('plugins.restaurant-roster.general.scheduling.history_weeks', 4))));
@@ -355,7 +404,7 @@ class ProblemBuilder
                 ...$this->supportSlots($coverage, $requirements, $specs, $shifts, array_values(array_diff($targetOutletIds, [$stationOutletId]))),
             ],
             rules: Rules::fromConfig(
-                array_merge(config('plugins.restaurant-roster.general.scheduling', []), $overrides),
+                array_merge(config('plugins.restaurant-roster.general.scheduling', []), $this->snackAutoCodes($snack), $overrides),
                 ShiftTransition::query()->get()->mapWithKeys(fn ($t) => ["{$t->from_template_id}:{$t->to_template_id}" => $t->rule])->all()
             ),
             hardUnavailable: $hard,
@@ -379,8 +428,24 @@ class ProblemBuilder
             closedOutletDays: $this->closedRestaurantDays($transferOutletIds, $days),
             seedPlan: $overrides['seed_plan'] ?? [],
             roomOutletId: $roomOutletId ? (int) $roomOutletId : null,
+            snackOutlets: $outlets->whereIn('code', array_column(SchedulingRules::snackOptions(), 'code'))
+                ->mapWithKeys(fn ($o) => [(int) $o->id => collect(SchedulingRules::snackOptions())->firstWhere('code', $o->code)['tag']])->all(),
             flexOverflowOutletId: $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.flex_overflow_outlet', 'GUSTO'))?->getKey(),
         );
+    }
+
+    /**
+     * Ca Snack đang bật được tự xếp: thêm đúng mã của nhà hàng đang chọn (M9(V) hoặc M9(EL)) vào auto_shift_codes.
+     */
+    private function snackAutoCodes(?array $snack): array
+    {
+        $codes = config('plugins.restaurant-roster.general.scheduling.auto_shift_codes');
+
+        if (! $snack || $codes === null) {
+            return [];
+        }
+
+        return ['auto_shift_codes' => [...(array) $codes, strtoupper((string) SchedulingRules::snackConfig('shift_code', 'M9')) . "({$snack['tag']})"]];
     }
 
     /**

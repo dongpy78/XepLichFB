@@ -155,6 +155,15 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'permissions' => ['roster.settings'],
                 ])
                 ->registerItem([
+                    'id' => 'cms-plugins-restaurant-roster-rules',
+                    'priority' => 5,
+                    'parent_id' => 'cms-plugins-restaurant-roster',
+                    'name' => 'Cấu hình quy tắc xếp lịch',
+                    'icon' => 'ti ti-adjustments',
+                    'route' => 'roster.rules.index',
+                    'permissions' => ['roster.settings'],
+                ])
+                ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster-coverage',
                     'priority' => 6,
                     'parent_id' => 'cms-plugins-restaurant-roster',

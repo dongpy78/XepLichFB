@@ -1822,6 +1822,7 @@ final class ScheduleState
         return match (true) {
             $support || ($outletId !== null && $outletId === $this->problem->stationOutletId) => $code . '(L)',
             $outletId !== null && isset($this->problem->outletParents[$outletId]) => $code . '(K)',
+            $outletId !== null && isset($this->problem->snackOutlets[$outletId]) => $code . '(' . $this->problem->snackOutlets[$outletId] . ')',
             default => $code,
         };
     }

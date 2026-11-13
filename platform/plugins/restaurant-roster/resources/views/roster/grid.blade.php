@@ -39,6 +39,11 @@
         }
     }
 
+    foreach ($grid['ruleConflicts'] ?? [] as $conflict) {
+        $alerts[] = ['level' => 'warning', 'employee' => $conflict['employee_id'], 'date' => $conflict['date'], 'who' => $conflict['name'],
+            'text' => "Ca {$conflict['notation']}: {$conflict['reason']} (Cấu hình quy tắc xếp lịch) – ô giữ nguyên, quản lý tự quyết định"];
+    }
+
     foreach ($grid['restaurantStatus']['warnings'] ?? [] as $message) {
         $alerts[] = ['level' => 'danger', 'employee' => null, 'date' => null, 'who' => 'Nhà hàng', 'text' => $message];
     }

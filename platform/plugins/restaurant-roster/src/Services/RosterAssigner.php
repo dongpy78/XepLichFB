@@ -49,6 +49,13 @@ class RosterAssigner
             throw new InvalidArgumentException('Ký hiệu phụ chưa được khai báo: ' . implode(', ', $unknown) . '.');
         }
 
+        // Ký hiệu chỉ dành cho ca Snack (EL – không phải ký hiệu outlet chung như V): đi với ca khác thì là nội dung tự do (parseFree giữ nguyên văn).
+        $snackOnly = array_filter(array_column(SchedulingRules::snackOptions(), 'tag'), fn ($tag) => ! isset($this->tagDefinitions()[$tag]['outlet']));
+
+        if (array_intersect($tags, $snackOnly) && strtoupper((string) $match[1]) !== strtoupper((string) SchedulingRules::snackConfig('shift_code', 'M9'))) {
+            throw new InvalidArgumentException('Ký hiệu ' . implode(', ', array_intersect($tags, $snackOnly)) . ' chỉ dùng với ca Snack.');
+        }
+
         return [
             'kind' => Shift::KIND_SHIFT,
             'template' => $template,
@@ -117,13 +124,15 @@ class RosterAssigner
     {
         $tags = array_values(array_intersect($spec['tags'] ?? [], array_keys($this->tagDefinitions())));
 
-        // Chuẩn hóa mã ca: ca làm trọn ở trạm Lobby (vd M9) luôn là "M9(L)" – "M9" và "M9(L)" là cùng một ca, không tạo hai cách ghi.
-        if (($spec['template'] ?? null)?->support_station && isset($this->tagDefinitions()['L']) && ! in_array('L', $tags, true)) {
-            $tags[] = 'L';
-        }
         $overtime = max(0, min(12, (float) ($spec['overtime'] ?? 0)));
 
         $outletId = $spec['outlet_id'] ?? $this->resolveOutletId($employee, $tags, $spec['template'] ?? null);
+
+        // Chuẩn hóa mã ca: ca làm trọn ở trạm Lobby (vd M9) luôn là "M9(L)" – "M9" và "M9(L)" là cùng một ca, không tạo hai cách ghi.
+        // Cùng mẫu ca nhưng làm ở quầy Snack thì không phải Lobby: M9(V) / M9(EL).
+        if (($spec['template'] ?? null)?->support_station && isset($this->tagDefinitions()['L']) && ! in_array('L', $tags, true) && ! $this->snackTagFor($outletId)) {
+            $tags[] = 'L';
+        }
 
         // Nhà hàng gốc đóng cửa ngày này (chỉ còn một nhà hàng hoạt động): người đó làm thẳng tại nhà hàng còn mở - outlet làm việc là
         // nhà hàng đó, ca ghi M6 / A2 (không thêm (G) / (V); A2(V)(K) -> A2(K)). Outlet gốc trong hồ sơ không đổi.
@@ -165,8 +174,8 @@ class RosterAssigner
             $template = $spec['template'];
             $resolved = $template->resolveForDate($date);
 
-            // Ca làm trọn ở Lobby (M9) luôn ghi ký hiệu (L): M9(L).
-            if ($template->support_station && ! in_array('L', $tags, true)) {
+            // Ca làm trọn ở Lobby (M9) luôn ghi ký hiệu (L): M9(L). Ở quầy Snack thì không.
+            if ($template->support_station && ! in_array('L', $tags, true) && ! $this->snackTagFor($values['outlet_id'] ?? null)) {
                 $tags[] = 'L';
             }
 
@@ -215,6 +224,11 @@ class RosterAssigner
      */
     public function resolveOutletId(Employee $employee, array $tags, ?ShiftTemplate $template = null): ?int
     {
+        // Ca Snack: mẫu ca Snack + ký hiệu nhà hàng Snack (M9(V), M9(EL)) là quầy Snack, không phải điều chuyển sang Villa.
+        if ($snack = $this->snackOutletFor($tags, $template)) {
+            return $snack;
+        }
+
         // Ký hiệu khu trực thuộc (K → Kid-Deline) quyết định outlet trước: A2(V)(K) = người Villa đứng Kid-Deline của Gusto.
         $parents = config('plugins.restaurant-roster.general.scheduling.outlet_parents', []);
         usort($tags, fn ($a, $b) => (int) isset($parents[$this->tagDefinitions()[$b]['outlet'] ?? '']) <=> (int) isset($parents[$this->tagDefinitions()[$a]['outlet'] ?? '']));
@@ -269,6 +283,36 @@ class RosterAssigner
         }
 
         return $tag ? [$tag] : [];
+    }
+
+    /** Ký hiệu in trên lịch của quầy Snack (V / EL), hoặc null nếu không phải quầy Snack. */
+    public function snackTagFor(?int $outletId): ?string
+    {
+        $code = $outletId ? (array_flip($this->outletIdsByCode())[$outletId] ?? null) : null;
+
+        foreach (SchedulingRules::snackOptions() as $option) {
+            if ($code !== null && $option['code'] === $code) {
+                return $option['tag'];
+            }
+        }
+
+        return null;
+    }
+
+    /** Quầy Snack theo ký hiệu khi nhập tay (M9(V), M9(EL)); chỉ với mẫu ca Snack và khi quầy đã được tạo. */
+    public function snackOutletFor(array $tags, ?ShiftTemplate $template): ?int
+    {
+        if (! $template || strtoupper((string) $template->code) !== strtoupper((string) SchedulingRules::snackConfig('shift_code', 'M9'))) {
+            return null;
+        }
+
+        foreach (SchedulingRules::snackOptions() as $option) {
+            if (in_array($option['tag'], $tags, true) && ($id = $this->outletIdsByCode()[$option['code']] ?? null)) {
+                return (int) $id;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -329,6 +373,10 @@ class RosterAssigner
      */
     public function tagForOutlet(?int $outletId, ?ShiftTemplate $template = null): ?string
     {
+        if ($snack = $this->snackTagFor($outletId)) {
+            return $snack;
+        }
+
         $code = $outletId ? (array_flip($this->outletIdsByCode())[$outletId] ?? null) : null;
 
         if (! $code || config('plugins.restaurant-roster.general.scheduling.shift_outlet.' . $template?->code) === $code) {
