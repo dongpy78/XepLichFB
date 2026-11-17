@@ -428,10 +428,31 @@ class ProblemBuilder
             closedOutletDays: $this->closedRestaurantDays($transferOutletIds, $days),
             seedPlan: $overrides['seed_plan'] ?? [],
             roomOutletId: $roomOutletId ? (int) $roomOutletId : null,
+            offPairs: $this->offPairs($rules, $specs),
             snackOutlets: $outlets->whereIn('code', array_column(SchedulingRules::snackOptions(), 'code'))
                 ->mapWithKeys(fn ($o) => [(int) $o->id => collect(SchedulingRules::snackOptions())->firstWhere('code', $o->code)['tag']])->all(),
             flexOverflowOutletId: $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.flex_overflow_outlet', 'GUSTO'))?->getKey(),
         );
+    }
+
+    /**
+     * Cặp nghỉ chung đang áp dụng (bật trong Cấu hình quy tắc xếp lịch), cả hai người đang hoạt động và có trong bài toán.
+     *
+     * @param EmployeeSpec[] $specs
+     * @return array<int, array{0: int, 1: int}>
+     */
+    private function offPairs(array $rules, array $specs): array
+    {
+        if (! ($rules['off_pairs']['enabled'] ?? true)) {
+            return [];
+        }
+
+        $ids = array_flip(array_map(fn (EmployeeSpec $spec) => $spec->id, $specs));
+
+        return \Botble\RestaurantRoster\Models\OffPair::query()->where('is_active', true)->get(['employee_a_id', 'employee_b_id'])
+            ->map(fn ($pair) => [(int) $pair->employee_a_id, (int) $pair->employee_b_id])
+            ->filter(fn ($pair) => isset($ids[$pair[0]], $ids[$pair[1]]))
+            ->values()->all();
     }
 
     /**

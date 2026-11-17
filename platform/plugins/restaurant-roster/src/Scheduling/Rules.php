@@ -70,6 +70,9 @@ final class Rules
         // Nhân viên (không phải quản lý) OFF rải đều các ngày trong tuần, kể cả thứ 7 / Chủ nhật (quản lý 28/10/2026):
         // tổng bình phương số người OFF theo outlet chính × ngày. Dưới Lobby / Night / định biên; ngang OFF liền nhau.
         'off_spread' => 400,
+        // Cặp nghỉ chung (quản lý 17/11/2026): mỗi ngày một người trong cặp OFF mà người kia đi làm. Ràng buộc mềm: dưới thiếu người, cân bằng
+        // M6 / A2 (2500 / đơn vị) và OFF quản lý; trên rải OFF đều – một lần lệch thường là 2 đơn vị = 2400, thắng các thay đổi rải OFF nhỏ.
+        'off_pair' => 1200,
         // Ca ở outlet khác do người chỉ "đủ điều kiện" (người thay thế Room Service, người điều chuyển) làm: dùng người dự phòng /
         // chuyên trách trước. Trên OFF rải đều – rải OFF không được đổi người dự phòng lấy người thay thế.
         'substitute_use' => 1000,

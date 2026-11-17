@@ -100,6 +100,9 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 // Cấu hình quy tắc xếp lịch (Snack, hỗ trợ Lobby/Bar).
                 Route::get('rules', 'SchedulingRuleController@index')->name('rules.index');
                 Route::post('rules', 'SchedulingRuleController@update')->name('rules.update');
+                Route::post('off-pairs', 'OffPairController@store')->name('off-pairs.store');
+                Route::post('off-pairs/{pair}', 'OffPairController@update')->name('off-pairs.update')->wherePrimaryKey('pair');
+                Route::delete('off-pairs/{pair}', 'OffPairController@destroy')->name('off-pairs.destroy')->wherePrimaryKey('pair');
 
                 Route::group(['prefix' => 'schedule-groups', 'as' => 'schedule-groups.'], function (): void {
                     Route::resource('', 'ScheduleGroupController')->parameters(['' => 'group'])->except('show');

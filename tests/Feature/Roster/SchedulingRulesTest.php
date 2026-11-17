@@ -268,6 +268,56 @@ class SchedulingRulesTest extends TestCase
         $this->assertStringContainsString('Hỗ trợ Lobby/Bar đang tắt (Cấu hình quy tắc xếp lịch)', $html, 'Bảng xếp ca cảnh báo ô bị ảnh hưởng');
     }
 
+    /** Cặp nghỉ chung: thêm, chặn A–A / trùng (kể cả đảo B–A) / một người hai cặp; xếp tự động OFF cùng ngày; xóa liên kết không đổi lịch; sau xóa không còn ưu tiên. */
+    public function test_off_pairs_crud_and_scheduling(): void
+    {
+        $admin = $this->admin();
+        [$a, $b, $c] = [$this->people['GCF1'], $this->people['VCF2'], $this->people['GNF1']];
+        $store = fn (int $x, int $y) => $this->actingAs($admin)->post(route('roster.off-pairs.store'), ['employee_a_id' => $x, 'employee_b_id' => $y]);
+        $active = fn () => \Botble\RestaurantRoster\Models\OffPair::query()->where('is_active', true)->get()->map(fn ($p) => [$p->employee_a_id, $p->employee_b_id])->all();
+
+        $store($a->getKey(), $b->getKey())->assertRedirect();
+        $this->assertSame([[min($a->getKey(), $b->getKey()), max($a->getKey(), $b->getKey())]], $active());
+
+        $store($a->getKey(), $a->getKey())->assertSessionHas('error_msg');
+        $store($b->getKey(), $a->getKey())->assertSessionHas('error_msg');
+        $store($a->getKey(), $c->getKey())->assertSessionHas('error_msg');
+        $this->assertCount(1, $active(), 'Không tạo A–A, trùng B–A, hay người thứ hai cặp');
+
+        $this->actingAs($admin)->get(route('roster.rules.index'))->assertOk()->assertSee('Cặp nghỉ chung (Shared Day Off)')->assertSee('Synthetic GCF1')->assertSee('Đang áp dụng');
+
+        $from = Carbon::parse(self::WEEK);
+        $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['time_limit_seconds' => 30, 'max_iterations' => 60000, 'search_min_seconds' => null]);
+        $this->assertCount(1, $problem->offPairs);
+        $result = (new HeuristicSolver())->solve($problem);
+        $off = fn (Employee $e) => collect($result->assignments)->where('employee_id', $e->getKey())->where('kind', '!=', 'shift')->pluck('date')->sort()->values()->all();
+        $this->assertSame($off($a), $off($b), 'Cặp khác nhà hàng OFF cùng ngày');
+
+        Shift::query()->create(['employee_id' => $a->getKey(), 'date' => self::WEEK, 'kind' => Shift::KIND_OFF, 'status' => 'published']);
+        $pair = \Botble\RestaurantRoster\Models\OffPair::query()->firstOrFail();
+        $this->actingAs($admin)->delete(route('roster.off-pairs.destroy', $pair->getKey()))->assertRedirect();
+        $this->assertSame([], $active());
+        $this->assertNotNull(\Botble\RestaurantRoster\Models\OffPair::withTrashed()->find($pair->getKey())?->deleted_at, 'Giữ lịch sử (xóa mềm)');
+        $this->assertSame(1, Shift::query()->where('employee_id', $a->getKey())->count(), 'Lịch đã công bố giữ nguyên');
+        $this->assertSame([], app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6))->offPairs, 'Sau khi xóa: xếp OFF độc lập');
+
+        $store($a->getKey(), $c->getKey())->assertRedirect();
+        $this->assertCount(1, $active(), 'Xóa xong thì ghép người khác được');
+    }
+
+    /** Nhân viên ngừng hoạt động: cặp hiện "Tạm không áp dụng", thuật toán bỏ qua. */
+    public function test_off_pair_with_inactive_employee_is_ignored(): void
+    {
+        $admin = $this->admin();
+        [$a, $b] = [$this->people['GCF1'], $this->people['VCF2']];
+        $this->actingAs($admin)->post(route('roster.off-pairs.store'), ['employee_a_id' => $a->getKey(), 'employee_b_id' => $b->getKey()])->assertRedirect();
+        $b->update(['status' => 'draft']);
+
+        $this->actingAs($admin)->get(route('roster.rules.index'))->assertOk()->assertSee('Tạm không áp dụng');
+        $from = Carbon::parse(self::WEEK);
+        $this->assertSame([], app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6))->offPairs);
+    }
+
     private function admin(): User
     {
         return $this->user([], true);

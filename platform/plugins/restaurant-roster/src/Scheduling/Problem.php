@@ -93,6 +93,8 @@ final class Problem
         public readonly ?int $roomOutletId = null,
         /** @var array<int, string> quầy Snack: outlet id => ký hiệu in trên lịch (V, EL) */
         public readonly array $snackOutlets = [],
+        /** @var array<int, array{0: int, 1: int}> cặp nghỉ chung đang áp dụng: [nhân viên A, nhân viên B] */
+        public readonly array $offPairs = [],
     ) {
         if (! $days) {
             throw new InvalidArgumentException('Phạm vi xếp lịch không có ngày nào.');
@@ -191,7 +193,7 @@ final class Problem
             $this->days, $this->employees, $this->shifts, $this->requirements, $this->rules,
             $this->hardUnavailable, $this->softUnavailable, $this->fixed, $this->baseline, $this->regularOff, $this->coverage, $this->lobbyHistory, $this->nightHistory,
             $this->supportHistory, $this->shiftHistory, $this->historyWeeks, $this->nightPlan, $this->lobbyPreferred,
-            $this->restaurantOutletIds, $this->closedOutletDays, $this->seedPlan, $this->flexOverflowOutletId, $this->roomOutletId, $this->snackOutlets,
+            $this->restaurantOutletIds, $this->closedOutletDays, $this->seedPlan, $this->flexOverflowOutletId, $this->roomOutletId, $this->snackOutlets, $this->offPairs,
         ]));
     }
 }

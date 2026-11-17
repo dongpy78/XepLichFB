@@ -44,6 +44,7 @@ class SchedulingRuleController extends BaseController
             'lobby_codes' => ['nullable', 'array'],
             'lobby_codes.*' => [Rule::in($codes)],
             'confirmed' => ['nullable', 'boolean'],
+            'off_pairs_enabled' => ['nullable', 'boolean'],
         ]);
 
         // Công tắc tổng tắt: trình duyệt không gửi các công tắc con (bị khóa) – giữ nguyên lựa chọn từng ca để bật lại không mất.
@@ -53,6 +54,7 @@ class SchedulingRuleController extends BaseController
             'lobby' => ['enabled' => $enabled, 'codes' => $enabled
                 ? array_map(fn ($code) => in_array($code, $data['lobby_codes'] ?? [], true), array_combine($codes, $codes))
                 : $this->rules->get()['lobby']['codes']],
+            'off_pairs' => ['enabled' => $request->has('off_pairs_enabled') ? $request->boolean('off_pairs_enabled') : $this->rules->get()['off_pairs']['enabled']],
         ]);
 
         // Ô đang có (từ hôm nay) sẽ thuộc nhóm bị tắt mà trước đó chưa bị: hỏi lại trước khi lưu. Không ô nào bị sửa / xóa.
@@ -86,6 +88,10 @@ class SchedulingRuleController extends BaseController
             'activeSnack' => $this->rules->activeSnack($rules),
             'affected' => $this->rules->affected($this->rules->get(), Carbon::today()),
             'revisions' => RuleRevision::query()->latest('id')->limit(10)->get(),
+            'offPairs' => \Botble\RestaurantRoster\Models\OffPair::query()->with(['employeeA.position:id,name', 'employeeA.outlet:id,code,name', 'employeeB.position:id,name', 'employeeB.outlet:id,code,name'])
+                ->latest('id')->get(),
+            'pairEmployees' => \Botble\RestaurantRoster\Models\Employee::query()->where('status', \Botble\Base\Enums\BaseStatusEnum::PUBLISHED)
+                ->with(['position:id,name', 'outlet:id,code,name'])->orderBy('name')->get(['id', 'name', 'code', 'position_id', 'outlet_id']),
             'pending' => null,
         ];
     }

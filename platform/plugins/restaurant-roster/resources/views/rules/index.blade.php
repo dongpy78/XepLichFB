@@ -78,6 +78,19 @@
 
             <div class="col-12">
                 <div class="card">
+                    <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <input type="hidden" name="off_pairs_enabled" value="0">
+                        <label class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" name="off_pairs_enabled" value="1" @checked($rules['off_pairs']['enabled'])>
+                            <span class="form-check-label"><b>Ưu tiên Cặp nghỉ chung khi xếp tự động</b> – danh sách cặp ở cuối trang</span>
+                        </label>
+                        {!! $status($rules['off_pairs']['enabled']) !!}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card">
                     <div class="card-header"><h3 class="card-title">C. Ảnh hưởng của cấu hình {{ $pending ? 'mới' : 'hiện tại' }}</h3></div>
                     <div class="card-body">
                         <div class="row g-3 mb-3">
@@ -138,6 +151,8 @@
             </div>
         </div>
     </form>
+
+    @include('plugins/restaurant-roster::rules.partials.off-pairs')
 
     <script>
         document.getElementById('lobby_enabled')?.addEventListener('change', function (event) {

@@ -128,6 +128,8 @@ final class HeuristicSolver implements SolverInterface
             // của ngày đó; đổi ca kéo theo kiểm tra giờ nghỉ với ngày kề (violation) và chấm lại toàn bộ lịch (cost) – chỉ nhận khi tốt hơn.
             // Dời cặp ngày OFF của từng người sang vị trí khác trong tuần khi lịch tốt hơn (OFF rải đều, ca có đủ nam / nữ).
             $stats['off_relocated'] = $this->relocateOffs($state, microtime(true) + 4);
+            // Cặp nghỉ chung còn lệch: thử chép đúng ngày OFF của người này sang người kia (thêm tối đa 2 giây).
+            $stats['pairs_aligned'] = $state->problem->offPairs ? $this->alignOffPairs($state, microtime(true) + 2) : 0;
             $stats['day_repaired'] = $this->repairDays($state, microtime(true) + 3);
             // Sửa riêng ca nặng còn lại (vd A2 nối M6): đổi ca trong tuần của một người, hoặc đổi cả đoạn ngày giữa hai người.
             $stats['heavy_repaired'] = $this->repairHeavy($state, microtime(true) + 3);
@@ -2288,6 +2290,109 @@ final class HeuristicSolver implements SolverInterface
      * chỉ nhận khi điểm phạt toàn lịch giảm. Ngày OFF đã duyệt, ô khóa, Night (ca đêm) không bị đụng.
      * Bước này gỡ chỗ kẹt của tìm kiếm: dời OFF cần đổi nhiều ô cùng lúc nên tìm kiếm ngẫu nhiên khó tự tìm ra.
      */
+    /**
+     * Cặp nghỉ chung (quản lý 17/11/2026): cặp còn lệch ngày OFF → thử cho một người OFF đúng những ngày người kia OFF (dời cả cụm OFF một lần,
+     * bước tìm kiếm thường dời từng ngày nên khó vượt luật OFF liền nhau). Không đụng ô khóa / OFF đã duyệt; chỉ nhận khi điểm phạt cả lịch giảm.
+     */
+    private function alignOffPairs(ScheduleState $state, float $deadline): int
+    {
+        $aligned = 0;
+
+        foreach ($state->offPairMismatches() as [$a, $b]) {
+            foreach ([[$a, $b], [$b, $a]] as [$x, $partner]) {
+                if (microtime(true) >= $deadline) {
+                    return $aligned;
+                }
+
+                $toOff = [];
+                $toWork = [];
+
+                foreach ($state->scopeIndexes() as $d) {
+                    $xWorks = isset($state->plan[$x][$d]);
+                    $partnerWorks = isset($state->plan[$partner][$d]);
+
+                    if ($xWorks === $partnerWorks) {
+                        continue;
+                    }
+
+                    if ($state->isFixed($x, $d) || isset($state->problem->hardUnavailable[$x][$state->dates[$d]])) {
+                        continue 2;
+                    }
+
+                    $xWorks ? $toOff[] = $d : $toWork[] = $d;
+                }
+
+                if (! $toOff || count($toOff) !== count($toWork)) {
+                    continue;
+                }
+
+                $before = $state->cost();
+                $journal = [];
+                $freed = array_map(fn ($d) => $state->plan[$x][$d], $toOff);
+                $ok = true;
+
+                foreach ($toOff as $d) {
+                    $ok = $ok && $this->journalPut($state, $journal, $x, $d, null);
+                }
+
+                foreach ($toWork as $d) {
+                    $slot = $ok ? $this->bestSlotFor($state, $x, $d, $freed) : null;
+                    $ok = $slot !== null && $this->journalPut($state, $journal, $x, $d, $slot);
+                }
+
+                if ($ok && $state->cost() < $before - 1e-6) {
+                    $aligned++;
+
+                    continue 2;
+                }
+
+                $this->rollback($state, $journal);
+
+                // Đổi chéo với đồng nghiệp: x lấy ô của C ngày đi làm mới, C lấy ô của x ngày x sẽ OFF – số người mỗi ô giữ nguyên
+                // (không làm lệch cân bằng M6 / A2). Chỉ cặp ngày một-một; chọn đồng nghiệp làm điểm phạt cả lịch giảm nhiều nhất.
+                if (count($toOff) !== 1) {
+                    continue;
+                }
+
+                [$y, $w] = [$toOff[0], $toWork[0]];
+                [$oy, $sy] = ScheduleState::parseSlot($state->plan[$x][$y]);
+                $best = null;
+
+                foreach ($this->eligibleFor($state, $oy, $sy) as $c) {
+                    if ($c === $x || $c === $partner || ! isset($state->plan[$c][$w]) || isset($state->plan[$c][$y]) || $state->isOccupied($c, $y)
+                        || $state->isFixed($c, $w) || isset($state->problem->hardUnavailable[$c][$state->dates[$y]]) || microtime(true) >= $deadline) {
+                        continue;
+                    }
+
+                    $slotW = $state->plan[$c][$w];
+                    $journal = [];
+                    $ok = $this->journalPut($state, $journal, $x, $y, null) && $this->journalPut($state, $journal, $c, $w, null)
+                        && $this->journalPut($state, $journal, $c, $y, ScheduleState::slotKey($oy, $sy)) && $this->journalPut($state, $journal, $x, $w, $slotW);
+                    $cost = $ok ? $state->cost() : INF;
+                    $this->rollback($state, $journal);
+
+                    if ($cost < $before - 1e-6 && ($best === null || $cost < $best[1])) {
+                        $best = [$c, $cost, $slotW];
+                    }
+                }
+
+                if ($best) {
+                    [$c, , $slotW] = $best;
+                    $journal = [];
+                    $this->journalPut($state, $journal, $x, $y, null);
+                    $this->journalPut($state, $journal, $c, $w, null);
+                    $this->journalPut($state, $journal, $c, $y, ScheduleState::slotKey($oy, $sy));
+                    $this->journalPut($state, $journal, $x, $w, $slotW);
+                    $aligned++;
+
+                    continue 2;
+                }
+            }
+        }
+
+        return $aligned;
+    }
+
     private function relocateOffs(ScheduleState $state, float $deadline): int
     {
         $improved = 0;

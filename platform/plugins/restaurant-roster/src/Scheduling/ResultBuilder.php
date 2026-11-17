@@ -46,7 +46,13 @@ final class ResultBuilder
         $warnings = [...$this->managerWarnings($state), ...$this->supportWarnings($state), ...$this->femaleWarnings($femaleStaffing), ...$this->femaleBalanceWarnings($state, $femaleStaffing),
             ...$balance['warnings'],
             ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
+        $pairMisses = $this->offPairWarnings($state);
+        $warnings = [...$warnings, ...$pairMisses];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
+
+        if ($problem->offPairs) {
+            $explanation[] = sprintf('Cặp nghỉ chung: %d / %d cặp OFF cùng ngày cả tuần.', count($problem->offPairs) - count($pairMisses), count($problem->offPairs));
+        }
 
         if ($warnings) {
             $explanation[] = sprintf('%d cảnh báo vận hành (quản lý lệch ca sáng / chiều, Lobby vượt định biên, mượn người đứng Kid-Deline) – xem bên dưới.', count($warnings));
@@ -1439,6 +1445,28 @@ final class ResultBuilder
                 'message' => sprintf('%s %s: quản lý ca sáng %d / ca chiều %d – %s.', $problem->outletName($outletId),
                     date('d/m', strtotime($date)), $row['morning'], $row['afternoon'], $reason),
             ];
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * Cặp nghỉ chung chưa OFF cùng ngày: ngày lệch của từng người và nguyên nhân (ô khóa / OFF đã duyệt, hoặc giữ đủ người, cân bằng OFF).
+     */
+    private function offPairWarnings(ScheduleState $state): array
+    {
+        $problem = $state->problem;
+        $warnings = [];
+        $day = fn (array $indexes) => $indexes ? implode(', ', array_map(fn ($i) => date('d/m', strtotime($state->dates[$i])), $indexes)) : '—';
+
+        foreach ($state->offPairMismatches() as [$a, $b, $onlyA, $onlyB]) {
+            $fixed = array_filter([...$onlyA, ...$onlyB], fn ($i) => $state->isFixed($a, $i) || $state->isFixed($b, $i)
+                || isset($problem->hardUnavailable[$a][$state->dates[$i]]) || isset($problem->hardUnavailable[$b][$state->dates[$i]]));
+            $warnings[] = ['code' => 'off_pair', 'date' => null, 'outlet_id' => null, 'outlet_name' => '',
+                'message' => sprintf('Cặp nghỉ chung %s – %s chưa OFF cùng ngày: chỉ %s OFF %s; chỉ %s OFF %s. %s',
+                    $problem->employees[$a]->name ?? "#{$a}", $problem->employees[$b]->name ?? "#{$b}",
+                    $problem->employees[$a]->name ?? "#{$a}", $day($onlyA), $problem->employees[$b]->name ?? "#{$b}", $day($onlyB),
+                    $fixed ? 'Có ô đã khóa / OFF đã duyệt không đổi được – quản lý xem lại nếu cần.' : 'Để giữ đủ người và cân bằng OFF theo quy tắc hiện có.')];
         }
 
         return $warnings;

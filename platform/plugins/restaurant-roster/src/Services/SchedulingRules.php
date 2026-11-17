@@ -26,6 +26,7 @@ class SchedulingRules
         return [
             'snack' => ['mode' => 'off', 'count' => 1],
             'lobby' => ['enabled' => true, 'codes' => array_fill_keys(self::lobbyCodes(), true)],
+            'off_pairs' => ['enabled' => true],
         ];
     }
 
@@ -73,6 +74,7 @@ class SchedulingRules
                 'count' => max(1, min(20, (int) ($input['snack']['count'] ?? 1))),
             ],
             'lobby' => ['enabled' => (bool) ($input['lobby']['enabled'] ?? true), 'codes' => $codes],
+            'off_pairs' => ['enabled' => (bool) ($input['off_pairs']['enabled'] ?? true)],
         ];
     }
 
@@ -156,6 +158,10 @@ class SchedulingRules
 
         if ($before['lobby']['enabled'] !== $after['lobby']['enabled']) {
             $changes[] = "Hỗ trợ Lobby/Bar: {$onOff($after['lobby']['enabled'])}";
+        }
+
+        if (($before['off_pairs']['enabled'] ?? true) !== $after['off_pairs']['enabled']) {
+            $changes[] = "Cặp nghỉ chung: {$onOff($after['off_pairs']['enabled'])}";
         }
 
         foreach ($after['lobby']['codes'] as $code => $value) {

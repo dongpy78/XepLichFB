@@ -156,6 +156,11 @@ final class ScheduleState
 
     public function __construct(public readonly Problem $problem)
     {
+        foreach ($problem->offPairs as [$a, $b]) {
+            $this->pairOf[$a] = $b;
+            $this->pairOf[$b] = $a;
+        }
+
         $this->buildTimeline();
 
         $hasCore = (bool) array_filter($problem->employees, fn (EmployeeSpec $e) => $e->isNightCore());
@@ -1198,7 +1203,7 @@ final class ScheduleState
         return [
             'hard' => $this->fixedHardViolations, 'source_shortage' => count($this->sourceShortages()), 'min_shortage' => $this->minShort,
             'off_split' => $offSplit, 'over_norm' => $overNorm, 'target_shortage' => $this->targetShort, 'busy_day_off' => $busyOff, 'night_rotation' => $nightRotation, 'lobby_mix' => $lobbyMix, 'lobby_partial' => $t['lobby_partial'] ?? 0, 'night_extra' => $t['night_extra'] ?? 0, 'lobby_round' => $this->lobbyRound(), 'female_balance' => $genderBalances[0], 'male_balance' => $genderBalances[1], 'waiter_balance' => $genderBalances[2], 'flex_placement' => $genderBalances[3], 'rs_support_excess' => $this->rsSupportExcess, 'home_balance' => $this->homeBalance(), 'manager_off_spread' => $this->managerOffSpread(), 'off_spread' => $this->offSpread(), 'lobby_over' => $this->lobbyOver, 'night_no_core' => $this->nightWithoutCore(), 'borrow_excess' => $this->borrowExcess, 'borrow_order' => $t['borrow_order'] ?? 0, 'substitute_use' => $t['substitute_use'] ?? 0, 'under_norm' => $underNorm, 'child_borrow' => $childBorrow,
-            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'position_balance' => $this->positionImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
+            'heavy_transitions' => $heavy, 'shift_mix' => $shiftMix, 'shift_history' => $shiftHistory, 'manager_balance' => $this->managerImbalance, 'off_pair' => $this->pairMismatch, 'position_balance' => $this->positionImbalance, 'fairness' => $fairness, 'off_comfort' => $offComfort, 'preference' => $preference,
         ];
     }
 
@@ -2353,8 +2358,56 @@ final class ScheduleState
     /** @var array<int, int> [dayIndex] => số người luân phiên đang làm ca đêm */
     private array $rotationNights = [];
 
+    /** @var array<int, int> cặp nghỉ chung: nhân viên => người cùng cặp (hai chiều) */
+    private array $pairOf = [];
+
+    /** @var array<int, array<int, int>> [nhân viên trong cặp][ngày] => số ô làm việc */
+    private array $pairWork = [];
+
+    /** Số (cặp, ngày trong phạm vi) chỉ một người OFF – cập nhật tăng dần. */
+    private int $pairMismatch = 0;
+
+    /**
+     * Cặp nghỉ chung chưa OFF cùng ngày: [A, B, ngày chỉ A OFF, ngày chỉ B OFF] (chỉ số ngày trong phạm vi).
+     *
+     * @return array<int, array{0: int, 1: int, 2: int[], 3: int[]}>
+     */
+    public function offPairMismatches(): array
+    {
+        $rows = [];
+
+        foreach ($this->problem->offPairs as [$a, $b]) {
+            [$onlyA, $onlyB] = [[], []];
+
+            foreach ($this->scopeIndexes() as $i) {
+                $aWorks = ($this->pairWork[$a][$i] ?? 0) > 0;
+                $bWorks = ($this->pairWork[$b][$i] ?? 0) > 0;
+
+                if ($aWorks !== $bWorks) {
+                    $aWorks ? $onlyB[] = $i : $onlyA[] = $i;
+                }
+            }
+
+            if ($onlyA || $onlyB) {
+                $rows[] = [$a, $b, $onlyA, $onlyB];
+            }
+        }
+
+        return $rows;
+    }
+
     private function adjustCount(int $i, int $outletId, int $shiftId, int $employeeId, int $delta, bool $support = false): void
     {
+        // Cặp nghỉ chung: ngày chỉ một người OFF (người kia đi làm) bị tính một đơn vị.
+        if (isset($this->pairOf[$employeeId]) && ($this->inScope[$i] ?? false)) {
+            $partner = $this->pairOf[$employeeId];
+            $partnerWorks = ($this->pairWork[$partner][$i] ?? 0) > 0;
+            $before = ($this->pairWork[$employeeId][$i] ?? 0) > 0;
+            $this->pairWork[$employeeId][$i] = ($this->pairWork[$employeeId][$i] ?? 0) + $delta;
+            $after = $this->pairWork[$employeeId][$i] > 0;
+            $this->pairMismatch += (int) ($after !== $partnerWorks) - (int) ($before !== $partnerWorks);
+        }
+
         // Waiter của từng nhà hàng (theo outlet chính) làm ca sáng / chiều mở (M6 / A2) – ở bất kỳ nhà hàng nào – để cân bằng riêng.
         $spec = $this->problem->employees[$employeeId] ?? null;
 
