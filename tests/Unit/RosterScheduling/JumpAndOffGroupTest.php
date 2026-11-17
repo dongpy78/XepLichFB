@@ -43,7 +43,7 @@ class JumpAndOffGroupTest extends TestCase
         $state->place($employee, $state->index[$date], $outlet, $shift);
     }
 
-    /** Chỉ A2 → M6 và N → M6 bị tính; A2 → OH, A2 → M9, OH → M6, M6 → A2 thì không. */
+    /** Chỉ A2 → M6 bị tính (bổ sung 17/11/2026); A2 → OH, A2 → M9, OH → M6, M6 → A2, N → M6 thì không. */
     public function test_only_two_jump_pairs_are_counted(): void
     {
         $days = $this->days();
@@ -62,7 +62,7 @@ class JumpAndOffGroupTest extends TestCase
         $night = new ScheduleState($this->problem([$this->waiterSpec(2, self::GUSTO)], $this->open($days)));
         $this->place($night, 2, $days[0], self::GUSTO, self::N);
         $this->place($night, 2, $days[1], self::GUSTO, self::M6);
-        $this->assertTrue($night->isHeavyAt(2, 0), 'N → M6 được nhận diện (vd ô xếp tay / khóa)');
+        $this->assertFalse($night->isHeavyAt(2, 0), 'Chỉ cấm A2 → M6 – không tự mở rộng sang N → M6');
     }
 
     /**
@@ -129,6 +129,44 @@ class JumpAndOffGroupTest extends TestCase
         $this->assertStringContainsString('A2 ' . date('d/m', strtotime($days[0])) . ' → M6 ' . date('d/m', strtotime($days[1])), $jumps[0]['message']);
         $this->assertStringContainsString('đã khóa', $jumps[0]['message']);
         $this->assertHardConstraintsHold($problem, $result);
+    }
+
+    /** Lịch tuần thường: không có A2 → M6 nào; kết quả ghi "Nhảy ca A2 → M6: không có". Không giới hạn ngày liên tục (0) vẫn đủ OFF / tuần. */
+    public function test_regular_week_has_no_a2_m6(): void
+    {
+        $days = $this->days();
+        $requirements = [];
+
+        foreach ($days as $d) {
+            $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($d, self::GUSTO, self::M6, 3, 3, 5);
+            $requirements[] = new \Botble\RestaurantRoster\Scheduling\Requirement($d, self::GUSTO, self::A2, 3, 3, 5);
+        }
+
+        $problem = $this->problem($this->team(1, 9, self::GUSTO), $requirements, ['time_limit' => 30, 'max_iterations' => 60000, 'busy_weekdays' => [], 'max_consecutive' => 0]);
+        $result = $this->solve($problem);
+
+        $this->assertSame(0, $result->softConstraintScores['objective']['heavy_transitions']);
+        $this->assertSame([], array_values(array_filter($result->warnings, fn ($w) => $w['code'] === 'jump')));
+        $this->assertContains('Nhảy ca A2 → M6: không có.', $result->explanation);
+        $this->assertHardConstraintsHold($problem, $result);
+    }
+
+    /** Bỏ giới hạn 6 ngày liên tục (0): sau 6 ngày làm vẫn xếp được ngày thứ 7 nếu tuần đó đủ OFF; giới hạn 6 thì không. */
+    public function test_consecutive_limit_zero_means_unlimited(): void
+    {
+        $days = $this->days(10);
+        $spec = new EmployeeSpec(1, 'A', 'female', self::GUSTO, 48, 1, [self::GUSTO . ':0' => 'primary'], [], 'cam_ranh', self::WAITER);
+
+        foreach ([0 => null, 6 => 'consecutive'] as $limit => $expected) {
+            $state = new ScheduleState($this->problem([$spec], $this->open($days), ['days' => $days, 'busy_weekdays' => [], 'max_consecutive' => $limit]));
+
+            // Thứ Ba → Chủ nhật tuần 1 (6 ngày, OFF thứ Hai), rồi thứ Hai tuần 2.
+            foreach (range(1, 6) as $d) {
+                $this->place($state, 1, $days[$d], self::GUSTO, self::M6);
+            }
+
+            $this->assertSame($expected, $state->violation(1, 7, self::GUSTO, self::M6)[0] ?? null, "Giới hạn {$limit}");
+        }
     }
 
     /** Nhóm rải OFF: Waiter nam / nữ riêng, Hostess một nhóm, Restaurant / Assistant Manager và người ngoài 4 nhóm không tính; gộp phạm vi khi đóng cả tuần. */

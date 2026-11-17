@@ -346,6 +346,28 @@ class SchedulingRulesTest extends TestCase
         $this->assertSame($this->outlets['GUSTO']->getKey(), $merged[$cap->getKey()]->offScopeOutletId);
     }
 
+    /** Ranh giới tuần: Chủ nhật tuần trước làm A2 → Thứ Hai tuần này không xếp M6. Không còn giới hạn 6 ngày liên tục (cấu hình 0). */
+    public function test_a2_on_previous_sunday_blocks_m6_on_monday(): void
+    {
+        $sunday = Carbon::parse(self::WEEK)->subDay()->toDateString();
+        $people = collect($this->people)->filter(fn ($e, $code) => str_contains($code, 'CF') || str_contains($code, 'CM'));
+
+        foreach ($people as $employee) {
+            Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => $sunday, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['A2']->getKey(),
+                'outlet_id' => $employee->outlet_id, 'status' => 'published', 'start_at' => "{$sunday} 14:00:00", 'end_at' => "{$sunday} 22:00:00", 'hours' => 8]);
+        }
+
+        $from = Carbon::parse(self::WEEK);
+        $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['time_limit_seconds' => 30, 'max_iterations' => 60000, 'search_min_seconds' => null]);
+        $this->assertSame(0, $problem->rules->maxConsecutiveDays);
+        $result = (new HeuristicSolver())->solve($problem);
+        $mondayM6 = collect($result->assignments)->where('date', self::WEEK)->where('kind', 'shift')->where('shift_id', $this->templates['M6']->getKey())
+            ->whereIn('employee_id', $people->map->getKey()->all());
+
+        $this->assertCount(0, $mondayM6, 'Không ai A2 Chủ nhật → M6 Thứ Hai');
+        $this->assertSame([], array_values(array_filter($result->warnings, fn ($w) => $w['code'] === 'jump')));
+    }
+
     /** Bảng xếp ca chỉ báo nhảy ca A2 → M6 (không báo A2 → OH như trước). */
     public function test_grid_flags_only_the_two_jumps(): void
     {

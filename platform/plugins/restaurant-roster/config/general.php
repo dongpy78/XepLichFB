@@ -14,7 +14,8 @@ return [
         // Số giờ làm thêm tối đa / tuần trước khi cảnh báo mức cao.
         'max_weekly_overtime' => 12,
         // Số ngày làm liên tiếp tối đa (Điều 111: nghỉ ít nhất 24 giờ liên tục mỗi tuần).
-        'max_consecutive_days' => 6,
+        // 0 = không giới hạn số ngày làm liên tục (quản lý 17/11/2026): chỉ bắt buộc đủ số ngày OFF mỗi tuần theo hồ sơ nhân viên.
+        'max_consecutive_days' => 0,
     ],
 
     // Thuật toán xếp lịch tự động (Scheduling Engine).
@@ -24,11 +25,12 @@ return [
         // Nghỉ dưới mức này nhưng >= mức cứng: được phép nhưng là "ca nặng" (vd A2 → M6),
         // thuật toán hạn chế và chia đều (quyết định của quản lý ngày 12/10/2026).
         'soft_min_rest_hours' => 12,
-        // Nhảy ca (quản lý 17/11/2026): chỉ hai trường hợp này bị tính và tránh tối đa – ca hôm trước → ca hôm sau theo mã ca.
-        // Các chuyển ca khác (A2 → OH, A2 → M9, OH → M6…) không bị tính nhảy ca; giờ nghỉ tối thiểu cứng (hard_min_rest_hours) vẫn giữ.
-        'jump_pairs' => [['A2', 'M6'], ['N', 'M6']],
+        // Nhảy ca (quản lý 17/11/2026, bổ sung): chỉ một trường hợp bị cấm – A2 hôm trước → M6 hôm sau (cả ranh giới Chủ nhật → Thứ Hai).
+        // Mọi chuyển ca khác giữa M6 / A2 / OFF được phép; giờ nghỉ tối thiểu cứng (hard_min_rest_hours) vẫn giữ.
+        'jump_pairs' => [['A2', 'M6']],
         'max_daily_hours' => 12,
-        'max_consecutive_days' => 6,
+        // 0 = không giới hạn số ngày làm liên tục (quản lý 17/11/2026): chỉ bắt buộc đủ số ngày OFF mỗi tuần theo hồ sơ nhân viên.
+        'max_consecutive_days' => 0,
         // Giới hạn thời gian mỗi lần chạy (giây) – giữ dưới timeout của web server.
         // Tìm lịch tốt nhất (quản lý 02/11/2026): chạy nhiều lượt độc lập, mỗi lượt search_min_seconds, giữ lịch tốt nhất, tổng tối đa time_limit_seconds.
         // Hai lượt cho điểm chênh nhau dưới search_converge_gain (ca nặng ~2.000 điểm) = đã gần tốt nhất → dừng sớm.

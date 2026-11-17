@@ -418,9 +418,9 @@ class NightAndScheduleGroupTest extends TestCase
         return $this->outlets['ROOM']->getKey();
     }
 
-    private function solve(): \Botble\RestaurantRoster\Scheduling\SolveResult
+    private function solve(int $iterations = 120000): \Botble\RestaurantRoster\Scheduling\SolveResult
     {
-        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, ['time_limit_seconds' => 60, 'max_iterations' => 120000]);
+        $problem = app(ProblemBuilder::class)->build(Carbon::parse(self::WEEK), Carbon::parse(self::WEEK)->addDays(6), null, ['time_limit_seconds' => 90, 'max_iterations' => $iterations]);
 
         return (new \Botble\RestaurantRoster\Scheduling\HeuristicSolver())->solve($problem);
     }
@@ -617,7 +617,8 @@ class NightAndScheduleGroupTest extends TestCase
         $this->recordOff($t['fixedM6'], $offM6);
         $this->recordOff($t['fixedA2'], $offA2);
 
-        $result = $this->solve();
+        // Cấm A2 → M6 (ràng buộc cứng từ 17/11/2026) làm bộ tìm kiếm cần nhiều bước hơn – bản chạy thật có ~2 triệu bước.
+        $result = $this->solve(400000);
         $cells = $this->roomCells($result, $t['room']);
         $supports = [$t['support1']->getKey(), $t['support2']->getKey()];
 

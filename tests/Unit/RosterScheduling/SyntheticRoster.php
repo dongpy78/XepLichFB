@@ -251,7 +251,7 @@ trait SyntheticRoster
 
                 $previous = $dayIndex * 1440 + $shifts[$row['shift_id']]->end();
                 $run++;
-                $this->assertLessThanOrEqual($problem->rules->maxConsecutiveDays, $run, "#{$employeeId} làm quá số ngày liên tục");
+                $problem->rules->maxConsecutiveDays > 0 && $this->assertLessThanOrEqual($problem->rules->maxConsecutiveDays, $run, "#{$employeeId} làm quá số ngày liên tục");
 
                 $week = CarbonImmutable::parse($date)->format('o-W');
                 $weekDays[$week] = ($weekDays[$week] ?? 0) + 1;

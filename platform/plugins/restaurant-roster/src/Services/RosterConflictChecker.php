@@ -21,7 +21,7 @@ class RosterConflictChecker
             'min_rest_hours' => 12,
             'max_daily_hours' => 12,
             'max_weekly_overtime' => 12,
-            'max_consecutive_days' => 6,
+            'max_consecutive_days' => 0,
         ];
     }
 
@@ -65,8 +65,8 @@ class RosterConflictChecker
             } elseif ($restHours < $hardRest) {
                 $flag($shift, sprintf('Chỉ nghỉ %sh giữa 2 ca (tối thiểu %sh)', $this->num($restHours), $this->num($hardRest)));
             } elseif ($previous->date->copy()->addDay()->isSameDay($shift->date)
-                && in_array($pair, array_map(fn ($p) => array_map('strtoupper', (array) $p), (array) config('plugins.restaurant-roster.general.scheduling.jump_pairs', [['A2', 'M6'], ['N', 'M6']])), true)) {
-                // Nhảy ca (quản lý 17/11/2026): chỉ A2 → M6, N → M6.
+                && in_array($pair, array_map(fn ($p) => array_map('strtoupper', (array) $p), (array) config('plugins.restaurant-roster.general.scheduling.jump_pairs', [['A2', 'M6']])), true)) {
+                // Nhảy ca (quản lý 17/11/2026): chỉ A2 → M6.
                 $flag($shift, sprintf('Nhảy ca %s → %s (nghỉ %sh)', $pair[0], $pair[1], $this->num($restHours)));
             }
         }
@@ -86,7 +86,7 @@ class RosterConflictChecker
             $run = ($lastDate && $lastDate->copy()->addDay()->isSameDay($shift->date)) ? $run + 1 : 1;
             $lastDate = $shift->date;
 
-            if ($run > $this->rules['max_consecutive_days']) {
+            if ($this->rules['max_consecutive_days'] > 0 && $run > $this->rules['max_consecutive_days']) {
                 $flag($shift, sprintf('Làm liên tục %d ngày (tối đa %d)', $run, $this->rules['max_consecutive_days']));
             }
         }

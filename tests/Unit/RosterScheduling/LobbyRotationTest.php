@@ -128,8 +128,9 @@ class LobbyRotationTest extends TestCase
 
         $this->assertSame([], array_filter($result->unfilledRequirements, fn ($u) => $u['level'] === 'min'));
         // 3 người Nha Trang × 5 ngày làm, vẫn phải xen kẽ ca chiều: phần lớn các sáng là 1 OH(L) + 1 M9.
-        // Từ 17/11/2026 chỉ A2 → M6, N → M6 là nhảy ca (quản lý yêu cầu); A2 → OH / A2 → M9 không còn bị phạt nên lịch xếp khác – 4 / 7 sáng (trước là 5).
-        $this->assertGreaterThanOrEqual(4, $mixed, 'Số sáng có đúng 1 OH(L) + 1 M9: ' . $mixed);
+        // Từ 17/11/2026: chỉ A2 → M6 là nhảy ca và bị cấm hẳn (quản lý yêu cầu), xếp trên ghép OH(L) + M9 (lobby_mix, tiêu chí mềm):
+        // ba người Nha Trang có ít cách xếp hơn nên số sáng ghép đúng giảm (trước 5 / 7). Lobby vẫn đủ người (kiểm tra thiếu tối thiểu ở trên).
+        $this->assertGreaterThanOrEqual(2, $mixed, 'Số sáng có đúng 1 OH(L) + 1 M9: ' . $mixed);
     }
 
     /** @return array<int, int> */

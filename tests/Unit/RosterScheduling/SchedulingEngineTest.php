@@ -546,14 +546,16 @@ class SchedulingEngineTest extends TestCase
         $result = $this->solve($this->problem(
             $team,
             [...$this->dailyRequirements($days, self::GUSTO, self::M6, 3, 3), ...$this->dailyRequirements($days, self::GUSTO, self::A2, 3, 3)],
-            ['days' => $days, 'time_limit' => 60, 'max_iterations' => 60000]
+            ['days' => $days, 'time_limit' => 120, 'max_iterations' => 250000]
         ));
 
         $this->assertSame(SolveResult::FEASIBLE, $result->status);
-        // Chia đều sáng/chiều (lệch ≤ 1) xếp trên ca nặng: ca A2 ở đây vừa đủ 2 ca/người nên đôi khi phải có ca nặng.
-        $this->assertSame(0, $result->softConstraintScores['objective']['shift_mix'], 'Mỗi người mỗi tuần lệch sáng/chiều tối đa 1 ca');
-        $this->assertLessThanOrEqual(6, $result->softConstraintScores['objective']['heavy_transitions'], 'Hạn chế ca nặng A2 → M6');
-        $this->assertSame(0, $result->softConstraintScores['objective']['off_split'], 'OFF 2 ngày phải liền nhau: ' . json_encode(array_map(fn ($w) => [$w['employee_id'], $w['off_split'], $w['off_blocks'], $w['off_days']], $result->employeeWorkload)));
+        // Từ 17/11/2026 cấm A2 → M6 là quy tắc bắt buộc, xếp trên chia đều sáng / chiều (trước đây ngược lại, chấp nhận vài ca nặng):
+        // không còn A2 → M6, đổi lại có tuần lệch sáng / chiều 2 ca.
+        $this->assertSame(0, $result->softConstraintScores['objective']['heavy_transitions'], 'Không còn A2 → M6');
+        $this->assertLessThanOrEqual(4, $result->softConstraintScores['objective']['shift_mix'], 'Lệch sáng / chiều vẫn nhỏ');
+        // Định biên vừa khít (9 người cho 3 M6 + 3 A2 mỗi ngày): cấm A2 → M6 buộc 1–2 ngày OFF lẻ – đúng thứ tự ưu tiên mới.
+        $this->assertLessThanOrEqual(2, $result->softConstraintScores['objective']['off_split'], 'OFF 2 ngày phải liền nhau: ' . json_encode(array_map(fn ($w) => [$w['employee_id'], $w['off_split'], $w['off_blocks'], $w['off_days']], $result->employeeWorkload)));
 
         $byWeek = [];
 
@@ -577,7 +579,7 @@ class SchedulingEngineTest extends TestCase
 
                 $this->assertGreaterThan(0, $m6, "#{$employeeId} tuần {$week}: toàn A2");
                 $this->assertGreaterThan(0, $a2, "#{$employeeId} tuần {$week}: toàn M6");
-                $this->assertLessThanOrEqual(1, abs($m6 - $a2), "#{$employeeId} tuần {$week}: M6 {$m6} / A2 {$a2} lệch quá nhiều");
+                $this->assertLessThanOrEqual(2, abs($m6 - $a2), "#{$employeeId} tuần {$week}: M6 {$m6} / A2 {$a2} lệch quá nhiều");
             }
         }
     }

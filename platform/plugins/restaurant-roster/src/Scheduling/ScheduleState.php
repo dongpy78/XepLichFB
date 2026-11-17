@@ -845,6 +845,12 @@ final class ScheduleState
             }
         }
 
+        // Nhảy ca A2 → M6 (quản lý 17/11/2026, "KHÔNG ĐƯỢC"): thuật toán không tự tạo – kể cả ranh giới với tuần trước / tuần sau.
+        // Ô cố định (khóa / xếp tay) không qua đây nên vẫn được giữ; còn sót thì báo trong kết quả xếp lịch.
+        if ($checkEligibility && ((isset($prev) && $prev && $this->isJump($prev[1], $shiftId)) || (isset($next) && $next && $this->isJump($shiftId, $next[1])))) {
+            return ['jump', 'Không xếp M6 ngay sau A2 (nhảy ca)'];
+        }
+
         // Số ngày làm liên tục.
         $run = 1;
 
@@ -856,7 +862,7 @@ final class ScheduleState
             $run++;
         }
 
-        if ($run > $this->problem->rules->maxConsecutiveDays) {
+        if ($this->problem->rules->maxConsecutiveDays > 0 && $run > $this->problem->rules->maxConsecutiveDays) {
             return ['consecutive', sprintf('Sẽ làm liên tục %d ngày (tối đa %d)', $run, $this->problem->rules->maxConsecutiveDays)];
         }
 

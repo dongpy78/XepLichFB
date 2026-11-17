@@ -57,7 +57,7 @@ class OffRulesTest extends TestCase
         $result = $this->solve($this->problem($team, [
             ...$this->flexRequirements($days, self::GUSTO, self::M6, 2, 3),
             ...$this->flexRequirements($days, self::GUSTO, self::A2, 2, 3),
-        ], ['days' => $days, 'time_limit' => 6]));
+        ], ['days' => $days, 'time_limit' => 90, 'max_iterations' => 200000]));
 
         $this->assertSame(0, $result->softConstraintScores['objective']['under_norm']);
 
@@ -77,7 +77,7 @@ class OffRulesTest extends TestCase
         $result = $this->solve($this->problem($this->team(1, 8, self::GUSTO), [
             ...$this->flexRequirements($days, self::GUSTO, self::M6, 2, 3),
             ...$this->flexRequirements($days, self::GUSTO, self::A2, 2, 3),
-        ], ['days' => $days, 'time_limit' => 6]));
+        ], ['days' => $days, 'time_limit' => 90, 'max_iterations' => 200000]));
 
         foreach ($this->offPattern($result) as $employeeId => $pattern) {
             foreach (str_split($pattern, 7) as $week => $days) {

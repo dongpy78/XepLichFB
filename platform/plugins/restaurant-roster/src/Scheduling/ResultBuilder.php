@@ -47,8 +47,13 @@ final class ResultBuilder
             ...$balance['warnings'],
             ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
         $pairMisses = $this->offPairWarnings($state);
-        $warnings = [...$warnings, ...$this->jumpWarnings($state), ...$pairMisses];
+        $jumps = $this->jumpWarnings($state);
+        $warnings = [...$warnings, ...$jumps, ...$pairMisses];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
+
+        $explanation[] = $jumps
+            ? sprintf('Nhảy ca A2 → M6: %d trường hợp không tránh được (chi tiết trong cảnh báo).', count($jumps))
+            : 'Nhảy ca A2 → M6: không có.';
 
         if ($problem->offPairs) {
             $explanation[] = sprintf('Cặp nghỉ chung: %d / %d cặp OFF cùng ngày cả tuần.', count($problem->offPairs) - count($pairMisses), count($problem->offPairs));
@@ -1451,15 +1456,17 @@ final class ResultBuilder
     }
 
     /**
-     * Nhảy ca còn lại sau khi tối ưu (A2 → M6, N → M6): người, ngày, và có ô cố định / OFF đã duyệt cản việc đổi hay không.
+     * Nhảy ca còn lại sau khi tối ưu (A2 → M6): người, ngày, ca hôm trước / hôm sau, có ô cố định / OFF đã duyệt cản việc đổi hay không.
+     * Xét từng cặp ngày trong phạm vi và cả ranh giới với ngày liền trước phạm vi (Chủ nhật tuần trước → Thứ Hai).
      */
     private function jumpWarnings(ScheduleState $state): array
     {
         $warnings = [];
         $scope = $state->scopeIndexes();
+        $pairs = $scope ? array_values(array_unique(array_filter([min($scope) - 1, ...$scope], fn ($i) => $i >= 0))) : [];
 
         foreach ($state->problem->employees as $id => $employee) {
-            foreach ($scope as $i) {
+            foreach ($pairs as $i) {
                 if (! $state->isHeavyAt($id, $i)) {
                     continue;
                 }
