@@ -141,6 +141,8 @@ return [
         'require_off_confirmation' => false,
         // Ca nhân viên xin (nhắn trong nhóm): quản lý ghi trên Bảng xếp ca và khóa giống OFF xin.
         'request_shift_codes' => ['M6', 'A2', 'N'],
+        // Nút chọn nhanh trong popup xếp ca (quản lý 17/11/2026). Quản lý vẫn gõ được bất kỳ nội dung nào ở ô nhập phía trên.
+        'popup_shift_codes' => ['M6', 'A2', 'OH', 'M9', 'M9(EL)', 'M9(V)', 'OFF', 'N', 'M6(RS1)', 'M6(RS)', 'A2(RS)', 'M6(BQ)', 'A2(BQ)', 'OH(L)', 'M6(L)', 'A2(L)'],
         // Giới hạn tăng ca / tháng (Bộ luật Lao động 2019, Điều 107: không quá 40 giờ/tháng).
         'max_monthly_overtime_hours' => 40,
     ],

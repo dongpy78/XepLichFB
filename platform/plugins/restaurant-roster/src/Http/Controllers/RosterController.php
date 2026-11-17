@@ -62,6 +62,11 @@ class RosterController extends BaseController
         return view('plugins/restaurant-roster::roster.index', [
             'outlets' => $outlets,
             'templates' => $templates,
+            // Nút trong popup xếp ca: màu theo mẫu ca của mã gốc (M6(RS) → màu M6), OFF màu nghỉ.
+            'popupCodes' => collect((array) config('plugins.restaurant-roster.general.scheduling.popup_shift_codes', []))
+                ->mapWithKeys(fn ($code) => [(string) $code => strtoupper((string) $code) === 'OFF' ? 'off'
+                    : ($templates->first(fn ($t) => strtoupper((string) $t->code) === strtoupper((string) preg_replace('/[(+\s].*$/u', '', (string) $code)))?->color ?: 'slate')])
+                ->all(),
             'leaveTypes' => config('plugins.restaurant-roster.general.leave_types', []),
             'shiftTags' => $this->assigner->tagDefinitions(),
             'canManage' => $this->canManage($request),
@@ -89,6 +94,8 @@ class RosterController extends BaseController
             'tags.*' => ['string', Rule::in(array_keys($this->assigner->tagDefinitions()))],
             'overtime_hours' => ['nullable', 'numeric', 'min:0', 'max:12'],
             'note' => ['nullable', 'string', 'max:255'],
+            // Popup xếp ca: bấm Lưu là lưu và khóa ô luôn (dùng cơ chế khóa ô sẵn có).
+            'lock' => ['nullable', 'boolean'],
         ]);
 
         $employee = Employee::query()->findOrFail($data['employee_id']);
@@ -141,7 +148,7 @@ class RosterController extends BaseController
             $typed = trim((string) preg_replace('/\s+/u', ' ', (string) $data['notation']));
             $plain = fn (string $text) => strtoupper((string) preg_replace('/\s+/u', '', $text));
 
-            if ($plain($typed) !== $plain($shift->notation) && $plain($typed) . '(L)' !== $plain($shift->notation)) {
+            if ($plain($typed) !== $plain($shift->notation)) {
                 $shift->update(['display_notation' => mb_substr($typed, 0, 40)]);
             }
         }
@@ -191,6 +198,12 @@ class RosterController extends BaseController
             if ($outsideRules && ! $shift->is_locked) {
                 $shift->update(['is_locked' => true, 'lock_reason' => Shift::LOCK_MANUAL, 'locked_by' => $request->user()?->getKey(), 'locked_at' => now()]);
             }
+        }
+
+        // Lưu từ popup: khóa ngay sau khi lưu thành công (cùng cách khóa của nút khóa ô) – xếp tự động không ghi đè.
+        if ($request->boolean('lock') && ! $shift->is_locked) {
+            $shift->update(['is_locked' => true, 'lock_reason' => $shift->kind === Shift::KIND_SHIFT ? Shift::LOCK_CONFIRMED : Shift::LOCK_MANUAL,
+                'locked_by' => $request->user()?->getKey(), 'locked_at' => now(), 'needs_review' => false, 'review_note' => null]);
         }
 
         $this->logChange($request, $employee->getKey(), $date, $before, $shift->load('template'), 'manual');
@@ -603,6 +616,8 @@ class RosterController extends BaseController
             'employee_id' => ['required', 'integer', 'exists:roster_employees,id'],
             'date' => ['required', 'date_format:Y-m-d'],
             'locked' => ['required', 'boolean'],
+            // Gỡ ca: bỏ khóa và xóa ca khỏi ô (khác "Gỡ khóa" chỉ bỏ khóa, giữ ca).
+            'remove' => ['nullable', 'boolean'],
         ]);
 
         $employee = Employee::query()->findOrFail($data['employee_id']);
@@ -618,6 +633,19 @@ class RosterController extends BaseController
         // Tương tự: mở khóa ca nhân viên xin = gỡ ca.
         if (! $locked && $shift?->isShiftRequest()) {
             return $this->removeShiftRequest($request, $shift, $employee);
+        }
+
+        if (! $locked && $shift && $request->boolean('remove')) {
+            $undoBefore = $shift->getRawOriginal();
+            $code = $shift->notation;
+
+            DB::transaction(function () use ($request, $shift, $employee, $date): void {
+                $before = $this->snapshot($shift);
+                $shift->delete();
+                $this->logChange($request, $employee->getKey(), $date, $before, null, 'delete');
+            });
+
+            return $this->gridResponse($request, "Đã gỡ ca {$code} ngày {$date->format('d/m')} của {$employee->name}.", $this->rememberEdit($request, $employee, $date, $undoBefore, null));
         }
 
         if (! $shift && $locked) {

@@ -512,65 +512,68 @@ $(() => {
         return
     }
 
+    // Popup xếp ca (quản lý 17/11/2026): ô nhập tự do + nút ca; một lựa chọn duy nhất là nội dung ô nhập. Lưu = lưu và khóa ô.
+    // Ô đang khóa: chỉ xem, có "Gỡ khóa" (giữ ca) và "Gỡ ca" (xóa ca); OFF / ca nhân viên xin gỡ bằng nút riêng như trước.
+    const $notation = $('#roster-cell-notation')
+    const $codes = $modal.find('.roster-code')
+    const plainCode = (text) => String(text || '').replace(/\s+/g, '').toUpperCase()
+
+    const markActive = () => {
+        const value = plainCode($notation.val())
+
+        $codes.each((_, button) => $(button).toggleClass('is-active', value !== '' && plainCode(button.dataset.code) === value))
+    }
+
     $grid.on('click', '.roster-table--editable .roster-cell', (event) => {
         const $cell = $(event.currentTarget)
-        const warnings = $cell.data('warnings') || []
+        const recordedOff = Number($cell.data('recorded-off')) === 1
+        const requestedShift = Number($cell.data('shift-requested')) === 1
+        const review = $cell.data('review') || ''
+        const overtime = Number($cell.data('overtime')) || 0
+        const otLabels = { approved: 'đã duyệt', rejected: 'đã từ chối' }
 
         currentCell = {
             employee_id: $cell.data('employee'),
             date: $cell.data('date'),
+            locked: Number($cell.data('locked')) === 1,
+            notation: String($cell.data('notation') || ''),
         }
 
         // Tên nhân viên ở <tr>, nhãn ngày ở <th> cùng cột (không lặp ở từng ô cho bảng gọn).
         $('#roster-cell-title').text($cell.closest('tr').data('employee-name'))
         $('#roster-cell-subtitle').text($grid.find('thead th').eq($cell.index()).data('date-label') || $cell.data('date'))
-        $('#roster-cell-note').val($cell.data('note') || '')
-        $('#roster-cell-notation').val($cell.data('notation') || '')
-        $('#roster-cell-overtime').val($cell.data('overtime') || '')
+        $notation.val(currentCell.notation).prop('disabled', currentCell.locked)
+        $codes.prop('disabled', currentCell.locked)
+        markActive()
 
-        currentCell.locked = Number($cell.data('locked')) === 1
-
-        const overtime = Number($cell.data('overtime')) || 0
-        const otLabels = { approved: 'đã duyệt', rejected: 'đã từ chối' }
+        $('#roster-cell-review').toggleClass('d-none', !review)
+        $('#roster-cell-review-text').text(review)
         $('#roster-cell-ot').toggleClass('d-none', overtime <= 0)
         $('#roster-cell-ot-hours').text(`+${overtime}h`)
         $('#roster-cell-ot-status').text(otLabels[$cell.data('ot-status')] || 'chờ duyệt')
-        const recordedOff = Number($cell.data('recorded-off')) === 1
-        const review = $cell.data('review') || ''
-        const isShift = Boolean($cell.data('template'))
-        const requestedShift = Number($cell.data('shift-requested')) === 1
 
-        // OFF quản lý đã cho: gỡ bằng "Gỡ OFF" (không mở khóa thường); ca làm: khóa = xác nhận ca.
-        $('#roster-cell-recorded-off').toggleClass('d-none', !recordedOff)
-        $('#roster-cell-review').toggleClass('d-none', !review)
-        $('#roster-cell-review-text').text(review)
-        $('#roster-cell-requested-shift').toggleClass('d-none', !requestedShift)
-        $('#roster-cell-lock').toggleClass('d-none', recordedOff || requestedShift)
-        $('#roster-cell-lock span').text(currentCell.locked ? 'Mở khóa ô' : (isShift ? 'Xác nhận & khóa ca' : 'Khóa ô'))
-        $modal.find('[data-assign]').prop('disabled', currentCell.locked)
-        $('#roster-cell-request').prop('checked', false).prop('disabled', currentCell.locked)
-
-        const tags = $cell.data('tags') || []
-
-        $modal.find('.roster-tag-input').each((_, input) => {
-            input.checked = tags.includes(input.value)
-        })
-
-        $modal.find('[data-template]').each((_, item) => {
-            $(item).toggleClass('is-current', String($(item).data('template')) === String($cell.data('template')))
-        })
-
-        // Tùy chọn thêm: thu gọn, chỉ mở sẵn khi ô đang có ký hiệu phụ / tăng ca / ghi chú.
-        $('#roster-cell-more').prop('open', Boolean(tags.length || overtime > 0 || $cell.data('note')))
-
-        const $warnings = $('#roster-cell-warnings')
-
-        $warnings.toggleClass('d-none', !warnings.length).html(warnings.map((text) => $('<div>').text(text).prop('outerHTML')).join(''))
+        const special = recordedOff || requestedShift
+        $('#roster-cell-locked-info').toggleClass('d-none', !currentCell.locked)
+        $('#roster-cell-locked-text').text(recordedOff ? 'OFF nhân viên xin – đang khóa' : (requestedShift ? 'Ca nhân viên xin – đang khóa' : 'Ca đang khóa – xếp tự động giữ nguyên'))
+        $('#roster-cell-save').toggleClass('d-none', currentCell.locked)
+        $('#roster-cell-unlock, #roster-cell-remove').toggleClass('d-none', !currentCell.locked || special)
+        $('#roster-cell-request-remove').toggleClass('d-none', !special)
+            .data('confirm', recordedOff ? 'Gỡ OFF ngày này để xếp ca cho nhân viên đi làm?' : 'Gỡ ca nhân viên xin ngày này? Ô sẽ trống.')
+            .find('span').text(recordedOff ? 'Gỡ OFF' : 'Gỡ ca')
 
         $modal.modal('show')
     })
 
-    $modal.on('shown.bs.modal', () => $('#roster-cell-notation').trigger('focus').trigger('select'))
+    $modal.on('shown.bs.modal', () => !currentCell?.locked && $notation.trigger('focus').trigger('select'))
+
+    // Bấm nút ca: chọn (ghi vào ô nhập); bấm lại nút đang chọn: bỏ chọn. Gõ ô nhập: lựa chọn là nội dung vừa gõ.
+    $codes.on('click', (event) => {
+        const code = event.currentTarget.dataset.code
+
+        $notation.val(plainCode($notation.val()) === plainCode(code) ? '' : code)
+        markActive()
+    })
+    $notation.on('input', markActive)
 
     // Bấm là đóng hộp ngay và hiện mã mới trên ô (ô nhấp nháy "đang lưu"); máy chủ trả về thì vẽ lại đúng. Lỗi: tải lại bảng để ô trở về dữ liệu thật.
     const paintCell = (cell, text) => {
@@ -584,59 +587,56 @@ $(() => {
         .done((response) => response.error && load())
         .fail(() => load())
 
-    const assign = (action, extra = {}, label = null) => {
+    // Lưu: nội dung ô nhập → lưu và khóa (backend khóa sau khi lưu thành công). Ô nhập trống: xóa ca đang có.
+    const save = () => {
+        if (!currentCell || currentCell.locked) {
+            return
+        }
+
+        const cell = currentCell
+        const text = $notation.val().trim()
+
+        $modal.modal('hide')
+
+        if (text === '' && cell.notation === '') {
+            return
+        }
+
+        paintCell(cell, text)
+        saved(request('POST', urls.assignUrl, {
+            employee_id: cell.employee_id,
+            date: cell.date,
+            action: text === '' ? 'clear' : 'notation',
+            notation: text,
+            lock: text === '' ? 0 : 1,
+        }, { cell }))
+    }
+
+    $('#roster-cell-save').on('click', save)
+    $notation.on('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault()
+            save()
+        }
+    })
+
+    // Gỡ khóa: bỏ khóa, giữ ca. Gỡ ca: bỏ khóa và xóa ca (có xác nhận).
+    const unlock = (remove) => {
         if (!currentCell) {
             return
         }
 
         const cell = currentCell
-        const tags = $modal.find('.roster-tag-input:checked').map((_, input) => input.value).get()
-        const notation = $('#roster-cell-notation').val()
-        const text = action === 'notation' ? notation.trim() : (label ?? '') + (action === 'shift' ? tags.map((tag) => `(${tag})`).join('') : '')
 
-        $modal.modal('hide')
-        paintCell(cell, text)
-        saved(request('POST', urls.assignUrl, {
-            ...cell,
-            action,
-            tags,
-            overtime_hours: $('#roster-cell-overtime').val(),
-            notation,
-            note: $('#roster-cell-note').val(),
-            ...extra,
-        }, { cell }))
+        request('POST', urls.lockUrl, { employee_id: cell.employee_id, date: cell.date, locked: 0, remove: remove ? 1 : 0 }, { cell }).done((response) => {
+            if (!response.error) {
+                $modal.modal('hide')
+            }
+        })
     }
 
-    // Công tắc "Nhân viên xin": chỉ các nút ca xin được / OFF còn bấm được.
-    $('#roster-cell-request').on('change', (event) => {
-        const requesting = event.target.checked
-
-        $modal.find('.roster-quick__item').each((_, item) => {
-            item.disabled = currentCell?.locked || (requesting && !item.dataset.requestable)
-        })
-    })
-
-    $modal.on('click', '[data-assign]', (event) => {
-        const $button = $(event.currentTarget)
-        const action = $button.data('assign')
-
-        // Nhân viên xin: ghi và khóa ô (M6 / A2 / N xin ca, OFF xin nghỉ).
-        if ($('#roster-cell-request').prop('checked') && $button.data('requestable') && currentCell) {
-            const cell = currentCell
-            const type = action === 'off' ? 'off_request' : `shift:${$button.data('template')}`
-
-            $modal.modal('hide')
-            paintCell(cell, $button.data('code'))
-            saved(recordOff([{ employee_id: cell.employee_id, date: cell.date }], type, $('#roster-cell-note').val(), { cell }))
-
-            return
-        }
-
-        assign(action, {
-            shift_template_id: $button.data('template') || '',
-            leave_type: $button.data('leave') || '',
-        }, $button.data('code'))
-    })
+    $('#roster-cell-unlock').on('click', () => unlock(false))
+    $('#roster-cell-remove').on('click', (event) => window.confirm($(event.currentTarget).data('confirm')) && unlock(true))
 
     $modal.on('click', '[data-ot-status]', (event) => {
         if (!currentCell) {
@@ -647,22 +647,6 @@ $(() => {
             employee_id: currentCell.employee_id,
             date: currentCell.date,
             status: $(event.currentTarget).data('ot-status'),
-        }, { cell: currentCell }).done((response) => {
-            if (!response.error) {
-                $modal.modal('hide')
-            }
-        })
-    })
-
-    $('#roster-cell-lock').on('click', () => {
-        if (!currentCell) {
-            return
-        }
-
-        request('POST', urls.lockUrl, {
-            employee_id: currentCell.employee_id,
-            date: currentCell.date,
-            locked: currentCell.locked ? 0 : 1,
         }, { cell: currentCell }).done((response) => {
             if (!response.error) {
                 $modal.modal('hide')
@@ -698,10 +682,4 @@ $(() => {
         })
     })
 
-    $('#roster-cell-notation').on('keydown', (event) => {
-        if (event.key === 'Enter') {
-            event.preventDefault()
-            assign('notation')
-        }
-    })
 })

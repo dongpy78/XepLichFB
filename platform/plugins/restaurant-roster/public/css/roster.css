@@ -854,3 +854,22 @@
 [data-bs-theme="dark"] .roster-table--compact tbody tr.roster-board-head:hover td { background-color: rgba(148, 163, 184, .18); }
 .roster-table--compact tbody tr.roster-board-head td.is-problem,
 .roster-table--compact tbody tr.roster-board-head:hover td.is-problem { background-color: var(--c-off-bg); }
+
+/* Popup xếp ca tối giản (17/11/2026): ô nhập + nút ca nhỏ, một lựa chọn, viền nổi khi chọn */
+.roster-cell-dialog { max-width: 500px; }
+.roster-codes { display: flex; flex-wrap: wrap; gap: 6px; }
+.roster-code {
+    min-width: 56px;
+    padding: 5px 9px;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    font: 700 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    cursor: pointer;
+}
+.roster-code:hover:not(:disabled) { filter: brightness(.96); }
+.roster-code:focus-visible { outline: 2px solid var(--roster-gold); outline-offset: 1px; }
+.roster-code.is-active { border-color: var(--roster-navy); box-shadow: 0 0 0 2px rgba(10, 37, 64, .25); }
+.roster-code:disabled { opacity: .4; cursor: default; }
+.roster-code:disabled.is-active { opacity: 1; }
+.roster-cell-locked { margin-bottom: 10px; padding: 6px 10px; border-radius: 6px; background: var(--c-slate-bg, #f1f5f9); font-weight: 600; font-size: 13px; }
+[data-bs-theme="dark"] .roster-code.is-active { border-color: var(--roster-gold); box-shadow: 0 0 0 2px rgba(224, 169, 109, .3); }

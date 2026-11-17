@@ -190,7 +190,7 @@
 
     @if ($canManage)
         <div class="modal" id="roster-cell-modal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered roster-cell-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
                         <div>
@@ -200,112 +200,51 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
                     </div>
                     <div class="modal-body">
-                        <div class="roster-cell-warnings alert alert-warning d-none" id="roster-cell-warnings"></div>
-
-                        <div class="alert alert-secondary d-none" id="roster-cell-recorded-off">
-                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-                                <span><x-core::icon name="ti ti-lock" /> OFF quản lý đã cho – ô đang khóa, thuật toán không đổi. Thiếu người thì gỡ OFF rồi xếp ca.</span>
-                                @if (Auth::user()->hasPermission('roster.approve'))
-                                    <button type="button" class="btn btn-sm btn-warning" data-off-remove data-confirm="Gỡ OFF ngày này để xếp ca cho nhân viên đi làm?">Gỡ OFF</button>
-                                @endif
-                            </div>
+                        <div class="roster-cell-locked d-none" id="roster-cell-locked-info">
+                            <x-core::icon name="ti ti-lock" /> <span id="roster-cell-locked-text">Ca đang khóa</span>
                         </div>
 
-                        <div class="alert alert-secondary d-none" id="roster-cell-requested-shift">
-                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-                                <span><x-core::icon name="ti ti-lock" /> Ca nhân viên xin – ô đang khóa, thuật toán không đổi và xóa lịch vẫn giữ.</span>
-                                @if (Auth::user()->hasPermission('roster.approve'))
-                                    <button type="button" class="btn btn-sm btn-warning" data-off-remove data-confirm="Gỡ ca nhân viên xin ngày này? Ô sẽ trống để xếp ca khác.">Gỡ ca</button>
-                                @endif
-                            </div>
-                        </div>
-
-                        <div class="alert alert-warning d-none" id="roster-cell-review">
-                            <div class="mb-2"><x-core::icon name="ti ti-alert-circle" /> <span id="roster-cell-review-text"></span></div>
+                        <div class="alert alert-warning py-2 d-none" id="roster-cell-review">
+                            <div class="mb-2"><span id="roster-cell-review-text"></span></div>
                             @if (Auth::user()->hasPermission('roster.approve'))
                                 <div class="d-flex gap-2">
                                     <button type="button" class="btn btn-sm" data-review="keep">Giữ ca, không cho OFF</button>
-                                    <button type="button" class="btn btn-sm btn-warning" data-review="off">Cho OFF (thay ca này)</button>
+                                    <button type="button" class="btn btn-sm btn-warning" data-review="off">Cho OFF</button>
                                 </div>
                             @endif
                         </div>
 
-                        <div class="alert alert-info d-none" id="roster-cell-ot">
+                        <div class="alert alert-info py-2 d-none" id="roster-cell-ot">
                             <div class="roster-ot-actions">
                                 <span>Tăng ca <strong id="roster-cell-ot-hours"></strong> – <span id="roster-cell-ot-status"></span></span>
                                 @if (Auth::user()->hasPermission('roster.approve'))
-                                    <button type="button" class="btn btn-sm btn-success" data-ot-status="approved">Duyệt tăng ca</button>
+                                    <button type="button" class="btn btn-sm btn-success" data-ot-status="approved">Duyệt</button>
                                     <button type="button" class="btn btn-sm" data-ot-status="rejected">Từ chối</button>
                                 @endif
                             </div>
                         </div>
 
-                        {{-- Gõ mã rồi Enter (con trỏ sẵn ở đây), hoặc bấm một nút bên dưới: lưu ngay. --}}
-                        <div class="input-group mb-3">
-                            <input type="text" class="form-control font-monospace" id="roster-cell-notation" maxlength="40" placeholder="Gõ mã hoặc nội dung tự do rồi Enter: M6, A2(L), M6(EL), OFF" aria-label="Gõ mã ca" autocomplete="off">
-                            <button type="button" class="btn btn-primary" data-assign="notation">Lưu</button>
-                        </div>
+                        <input type="text" class="form-control font-monospace mb-3" id="roster-cell-notation" maxlength="40" placeholder="Nhập mã ca hoặc nội dung tùy ý..." aria-label="Mã ca hoặc nội dung" autocomplete="off">
 
-                        @php($requestCodes = array_map('strtoupper', (array) config('plugins.restaurant-roster.general.scheduling.request_shift_codes', ['M6', 'A2'])))
-                        <div class="roster-quick">
-                            @forelse ($templates as $template)
-                                <button type="button" class="roster-quick__item roster-chip--{{ $template->color }}" data-assign="shift" data-template="{{ $template->id }}" data-code="{{ $template->code }}"
-                                    @if (in_array(strtoupper((string) $template->code), $requestCodes, true)) data-requestable="1" @endif title="{{ $template->name }} · {{ number_format($template->hours, 1) }}h">
-                                    <strong>{{ $template->code }}</strong>
-                                    <small class="font-monospace">{{ $template->time_range }}</small>
-                                </button>
-                            @empty
-                                <div class="text-muted">Chưa có mẫu ca. <a href="{{ route('roster.shift-templates.create') }}">Tạo mẫu ca</a></div>
-                            @endforelse
-                            <button type="button" class="roster-quick__item roster-chip--off" data-assign="off" data-code="OFF" data-requestable="1" title="Nghỉ tuần – thuật toán có thể đổi (bật “Nhân viên xin” để khóa)">
-                                <strong>OFF</strong>
-                                <small>Nghỉ tuần</small>
-                            </button>
-                            @foreach ($leaveTypes as $code => $label)
-                                <button type="button" class="roster-quick__item roster-chip--leave" data-assign="leave" data-leave="{{ $code }}" data-code="{{ $code }}" title="{{ $label }}">
-                                    <strong>{{ $code }}</strong>
-                                    <small>{{ $label }}</small>
-                                </button>
+                        <div class="roster-codes" id="roster-cell-codes">
+                            @foreach ($popupCodes as $code => $color)
+                                <button type="button" class="roster-code roster-chip--{{ $color }}" data-code="{{ $code }}">{{ $code }}</button>
                             @endforeach
                         </div>
-
-                        @if (Auth::user()->hasPermission('roster.approve'))
-                            <label class="form-check form-switch mt-3 mb-0" title="Nhân viên xin M6 / A2 / N / OFF (nhắn trong nhóm): ghi và khóa ô – thuật toán không đổi">
-                                <input class="form-check-input" type="checkbox" id="roster-cell-request">
-                                <span class="form-check-label"><x-core::icon name="ti ti-lock" /> Nhân viên xin (khóa ô) – bật rồi bấm {{ implode(' / ', [...$requestCodes, 'OFF']) }}</span>
-                            </label>
-                        @endif
-
-                        <details class="roster-cell-more mt-3" id="roster-cell-more">
-                            <summary>Tùy chọn thêm: ký hiệu phụ, tăng ca, ghi chú</summary>
-                            <div class="form-hint mt-2 mb-1">Chọn trước, rồi bấm ca ở trên.</div>
-                            <div class="roster-tag-picker mb-2">
-                                @foreach ($shiftTags as $code => $tag)
-                                    <label class="roster-tag-toggle" title="{{ $tag['description'] }}">
-                                        <input type="checkbox" class="roster-tag-input" value="{{ $code }}">
-                                        <span><strong class="font-monospace">{{ $code }}</strong> {{ $tag['label'] !== $code ? $tag['label'] : '' }}</span>
-                                    </label>
-                                @endforeach
-                            </div>
-                            <div class="d-flex flex-wrap gap-2">
-                                <div class="input-group input-group-sm roster-ot-input">
-                                    <span class="input-group-text">Tăng ca</span>
-                                    <input type="number" class="form-control" id="roster-cell-overtime" min="0" max="12" step="0.5" placeholder="0" aria-label="Tăng ca sau ca (giờ)">
-                                    <span class="input-group-text">giờ</span>
-                                </div>
-                                <input type="text" class="form-control form-control-sm flex-fill w-auto" id="roster-cell-note" maxlength="255" placeholder="Ghi chú (tùy chọn)" aria-label="Ghi chú">
-                            </div>
-                        </details>
                     </div>
                     <div class="modal-footer">
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-outline-danger" data-assign="clear">
-                                <x-core::icon name="ti ti-trash" /> Xóa ca
+                        <button type="button" class="btn btn-primary" id="roster-cell-save"><x-core::icon name="ti ti-lock" /> Lưu</button>
+                        <button type="button" class="btn d-none" id="roster-cell-unlock" title="Bỏ khóa, giữ nguyên ca">
+                            <x-core::icon name="ti ti-lock-open" /> Gỡ khóa
+                        </button>
+                        <button type="button" class="btn btn-outline-danger d-none" id="roster-cell-remove" data-confirm="Gỡ ca khỏi ô này? Ô sẽ trống.">
+                            <x-core::icon name="ti ti-trash" /> Gỡ ca
+                        </button>
+                        @if (Auth::user()->hasPermission('roster.approve'))
+                            <button type="button" class="btn btn-outline-danger d-none" id="roster-cell-request-remove" data-off-remove data-confirm="">
+                                <x-core::icon name="ti ti-trash" /> <span>Gỡ ca</span>
                             </button>
-                            <button type="button" class="btn" id="roster-cell-lock" title="Ô đã khóa được thuật toán giữ nguyên khi tạo lịch / tối ưu lại">
-                                <x-core::icon name="ti ti-lock" /> <span>Khóa ô</span>
-                            </button>
-                        </div>
+                        @endif
                     </div>
                 </div>
             </div>

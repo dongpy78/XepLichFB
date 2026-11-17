@@ -419,6 +419,32 @@ class CellLockHttpTest extends TestCase
         $this->assertContains('Training ngoài', $cells);
     }
 
+    /** Popup xếp ca: Lưu = lưu và khóa (ca có sẵn, OFF, nội dung tùy ý); Gỡ khóa giữ ca; Gỡ ca xóa ca; xếp tự động không ghi đè ô đã khóa. */
+    public function test_popup_save_locks_and_unlock_or_remove(): void
+    {
+        ShiftTemplate::query()->firstOrCreate(['code' => 'M6'], ['name' => 'Sáng', 'start_time' => '06:00:00', 'end_time' => '14:00:00', 'status' => 'published']);
+        $admin = $this->user([], true);
+        $at = fn (string $date) => ['employee_id' => $this->employee->getKey(), 'date' => $date, 'week' => '2030-01-07'];
+        $save = fn (string $text, string $date) => $this->actingAs($admin)->postJson(route('roster.assign'), [...$at($date), 'action' => 'notation', 'notation' => $text, 'lock' => 1])->assertJson(['error' => false]);
+        $cell = fn (string $date) => Shift::query()->with('template')->where('employee_id', $this->employee->getKey())->whereDate('date', $date)->first();
+
+        foreach (['2030-01-09' => 'M6', '2030-01-10' => 'OFF', '2030-01-11' => 'M6 TEST', '2030-01-12' => 'Họp đào tạo'] as $date => $text) {
+            $save($text, $date);
+            $this->assertSame([$text, true], [$cell($date)->notation, (bool) $cell($date)->is_locked], "{$text}: lưu đúng và đã khóa");
+        }
+
+        $this->actingAs($admin)->postJson(route('roster.auto.run'), ['from' => '2030-01-07', 'to' => '2030-01-13', 'type' => 'generate'])->assertJson(['error' => false]);
+        $this->actingAs($admin)->postJson(route('roster.auto.apply', \Botble\RestaurantRoster\Models\Run::query()->latest('id')->value('id')))->assertJson(['error' => false]);
+        $this->assertSame(['M6', 'OFF', 'M6 TEST', 'Họp đào tạo'], array_map(fn ($d) => $cell($d)->notation, ['2030-01-09', '2030-01-10', '2030-01-11', '2030-01-12']), 'Xếp tự động không ghi đè ô đã khóa');
+
+        $this->actingAs($admin)->postJson(route('roster.lock'), [...$at('2030-01-11'), 'locked' => 0])->assertJson(['error' => false]);
+        $this->assertSame(['M6 TEST', false], [$cell('2030-01-11')->notation, (bool) $cell('2030-01-11')->is_locked], 'Gỡ khóa giữ nguyên ca');
+
+        $this->actingAs($admin)->postJson(route('roster.lock'), [...$at('2030-01-12'), 'locked' => 0, 'remove' => 1])->assertJson(['error' => false]);
+        $this->assertNull($cell('2030-01-12'), 'Gỡ ca xóa ca khỏi ô');
+        $this->assertSame(1, \Botble\RestaurantRoster\Models\ChangeLog::query()->where('action', 'delete')->count(), 'Có nhật ký');
+    }
+
     /** P0-3: danh mục đang được dùng không xóa được; chưa dùng thì xóa bình thường. */
     public function test_catalog_in_use_cannot_be_deleted(): void
     {

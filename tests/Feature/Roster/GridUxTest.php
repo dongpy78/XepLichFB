@@ -131,15 +131,20 @@ class GridUxTest extends TestCase
 
         $this->assertStringContainsString('<div class="modal" id="roster-cell-modal"', $html, 'Không có hiệu ứng mờ dần khi mở / đóng');
 
-        foreach (['id="roster-cell-notation"', 'data-assign="notation"', 'data-assign="shift"', 'data-assign="off"', 'data-assign="leave"', 'data-assign="clear"',
-            'id="roster-cell-request"', 'data-requestable="1"', 'class="roster-tag-input"', 'id="roster-cell-overtime"', 'id="roster-cell-note"', 'id="roster-cell-lock"',
-            'id="roster-cell-requested-shift"', 'data-off-remove', 'data-review="keep"', 'data-review="off"', 'data-ot-status="approved"', 'data-ot-status="rejected"', 'id="roster-cell-warnings"'] as $control) {
-            $this->assertStringContainsString($control, str_replace('class="form-check-input roster-tag-input"', 'class="roster-tag-input"', $html), "Thiếu {$control}");
+        foreach (['id="roster-cell-notation"', 'placeholder="Nhập mã ca hoặc nội dung tùy ý..."', 'id="roster-cell-save"', 'id="roster-cell-unlock"', 'id="roster-cell-remove"',
+            'id="roster-cell-request-remove"', 'data-off-remove', 'data-review="keep"', 'data-review="off"', 'data-ot-status="approved"', 'data-ot-status="rejected"'] as $control) {
+            $this->assertStringContainsString($control, $html, "Thiếu {$control}");
+        }
+
+        foreach (['M6', 'A2', 'OH', 'M9', 'M9(EL)', 'M9(V)', 'OFF', 'N', 'M6(RS1)', 'M6(RS)', 'A2(RS)', 'M6(BQ)', 'A2(BQ)', 'OH(L)', 'M6(L)', 'A2(L)'] as $code) {
+            $this->assertStringContainsString('data-code="' . $code . '"', $html, "Thiếu nút {$code}");
         }
 
         $modal = substr($html, strpos($html, 'id="roster-cell-modal"'));
         $this->assertStringNotContainsString('data-off-quick', $modal);
         $this->assertStringNotContainsString('data-shift-request', $modal);
+        $this->assertStringNotContainsString('id="roster-cell-request"', $modal, 'Bỏ công tắc nhân viên xin, tùy chọn thêm');
+        $this->assertStringNotContainsString('roster-tag-input', $modal);
     }
 
     public function test_undo_last_edit_restores_previous_cell(): void

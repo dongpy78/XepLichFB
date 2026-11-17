@@ -230,7 +230,7 @@ class SchedulingRulesTest extends TestCase
 
         $next = $date->copy()->addDay()->toDateString();
         $type('M9', $next);
-        $this->assertSame('M9(L)', $cell($next)->notation, 'M9 gõ tay vẫn là M9(L) như trước');
+        $this->assertSame('M9', $cell($next)->notation, 'Gõ tay hiện đúng như gõ');
 
         $html = (string) $this->actingAs($admin)->getJson(route('roster.grid', ['week' => $week]))->json('data.html');
         $this->assertStringNotContainsString('(Cấu hình quy tắc xếp lịch)', $html, 'Ô nhập tay không bị cảnh báo');
