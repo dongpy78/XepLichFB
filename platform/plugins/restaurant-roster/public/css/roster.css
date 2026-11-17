@@ -873,3 +873,7 @@
 .roster-code:disabled.is-active { opacity: 1; }
 .roster-cell-locked { margin-bottom: 10px; padding: 6px 10px; border-radius: 6px; background: var(--c-slate-bg, #f1f5f9); font-weight: 600; font-size: 13px; }
 [data-bs-theme="dark"] .roster-code.is-active { border-color: var(--roster-gold); box-shadow: 0 0 0 2px rgba(224, 169, 109, .3); }
+
+/* Trang Thống kê nhân sự: khối theo ngày dùng chung kiểu của Bảng xếp ca */
+.roster-stats-board { width: 100%; }
+.roster-stats-board .roster-table__staff { min-width: 240px; }

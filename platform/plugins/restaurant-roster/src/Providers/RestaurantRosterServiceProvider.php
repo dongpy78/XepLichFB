@@ -55,7 +55,12 @@ class RestaurantRosterServiceProvider extends ServiceProvider
             $this->commands([BootstrapSchedulingCommand::class, LearnFromScheduleCommand::class]);
         }
 
-        $this->app['events']->listen(RouteMatched::class, function (): void {
+        $this->app['events']->listen(RouteMatched::class, function (RouteMatched $event): void {
+            // Botble đánh dấu menu "active" khi URL hiện tại CHỨA URL của mục và dừng ở mục khớp đầu tiên: "/admin/roster" (Bảng xếp ca)
+            // nằm trong mọi trang con "/admin/roster/..." nên các mục khác không bao giờ active. Ngoài trang Bảng xếp ca, thêm "#" vào link
+            // của mục này để nó không khớp (bấm vẫn mở đúng trang).
+            $gridUrl = $event->route->getName() === 'roster.index' ? null : route('roster.index') . '#';
+
             DashboardMenu::make()
                 ->registerItem([
                     'id' => 'cms-plugins-restaurant-roster',
@@ -70,7 +75,7 @@ class RestaurantRosterServiceProvider extends ServiceProvider
                     'parent_id' => 'cms-plugins-restaurant-roster',
                     'name' => 'Bảng xếp ca',
                     'icon' => 'ti ti-layout-grid',
-                    'route' => 'roster.index',
+                    ...($gridUrl ? ['url' => $gridUrl] : ['route' => 'roster.index']),
                     'permissions' => ['roster.index'],
                 ])
                 ->registerItem([

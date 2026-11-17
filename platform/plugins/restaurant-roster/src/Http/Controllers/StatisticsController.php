@@ -52,15 +52,54 @@ class StatisticsController extends BaseController
 
         $headcount[] = ['outlet' => null] + $this->statistics->summarize($employees);
 
+        // Thống kê theo ngày: cùng khối "Thống kê nhân sự" cuối Bảng xếp ca (RosterStatistics::board) – số liệu hai nơi luôn khớp.
+        $dates = array_map(fn ($d) => $week->copy()->addDays($d)->toDateString(), range(0, 6));
+        $shifts = \Botble\RestaurantRoster\Models\Shift::query()
+            ->whereBetween('date', [$dates[0], $dates[6]])
+            ->with(['employee:id,name,gender,position_id,outlet_id,is_trainee,status', 'template:id,code,start_time,support_station'])
+            ->get();
+        $onDuty = $this->statistics->onDuty($week->copy(), $outlets, $shifts);
+        $restaurantIds = $outlets->whereIn('code', (array) config('plugins.restaurant-roster.general.scheduling.transfer_outlets', ['GUSTO', 'VILLA']))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $closed = app(\Botble\RestaurantRoster\Services\ProblemBuilder::class)->closedRestaurantDays($restaurantIds, $dates);
+        $status = collect($restaurantIds)->mapWithKeys(fn ($id) => [$id => ['days' => collect($dates)->mapWithKeys(fn ($d) => [$d => ['closed' => isset($closed[$id][$d])]])->all()]])->all();
+
         return view('plugins/restaurant-roster::statistics.index', [
             'week' => $week,
             'outlets' => $outlets,
             'positions' => $positions,
             'headcount' => $headcount,
             'positionMatrix' => $this->positionMatrix($employees, $outlets, $positions),
-            'onDuty' => $this->statistics->onDuty($week, $outlets),
             'rules' => $this->statistics->rules(),
+            'grid' => [
+                'days' => array_map(fn ($d) => Carbon::parse($d), $dates),
+                'board' => $this->statistics->board($shifts, $outlets, $dates, $onDuty, $status),
+                'stats' => ['onDuty' => $onDuty],
+            ],
+            'groups' => $this->groups($employees),
         ]);
+    }
+
+    /**
+     * Số người theo 4 nhóm xếp lịch (Incharge, Hostess, Waiter nữ, Waiter nam) và quản lý cấp trên – cùng định nghĩa với thuật toán.
+     *
+     * @return array<string, int>
+     */
+    private function groups(Collection $employees): array
+    {
+        $rules = $this->statistics->rules();
+        $names = fn (string $key) => array_map(fn ($n) => mb_strtolower(trim((string) $n)), (array) config("plugins.restaurant-roster.general.scheduling.{$key}", []));
+        $hostess = $names('balance_positions');
+        $position = fn ($e) => mb_strtolower(trim((string) $e->position?->name));
+        $active = $employees->reject(fn ($e) => $e->is_trainee);
+
+        return [
+            'incharge' => $active->filter(fn ($e) => in_array((int) $e->position_id, $rules['inChargeIds'], true))->count(),
+            'managers' => $active->filter(fn ($e) => in_array((int) $e->position_id, $rules['leaderIds'], true) && ! in_array((int) $e->position_id, $rules['inChargeIds'], true))->count(),
+            'hostess' => $active->filter(fn ($e) => in_array($position($e), $hostess, true))->count(),
+            'waiter_female' => $active->filter(fn ($e) => $e->gender === 'female' && in_array((int) $e->position_id, $rules['femaleStaffIds'], true))->count(),
+            'waiter_male' => $active->filter(fn ($e) => $e->gender === 'male' && in_array((int) $e->position_id, $rules['maleStaffIds'], true))->count(),
+            'trainee' => $employees->filter(fn ($e) => $e->is_trainee)->count(),
+        ];
     }
 
     /**

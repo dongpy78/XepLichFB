@@ -1,183 +1,166 @@
 @extends(BaseHelper::getAdminMasterLayoutTemplate())
 
 @php
-    $weekdays = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
     $total = end($headcount);
     $code = fn ($outlet) => $outlet?->code ?: $outlet?->name;
+    $weekEnd = $week->copy()->addDays(6);
+    $isThisWeek = $week->isSameDay(\Carbon\Carbon::today()->startOfWeek(\Carbon\Carbon::MONDAY));
+    $issues = array_filter([
+        $total['no_gender'] ? $total['no_gender'] . ' người chưa khai giới tính' : null,
+        $total['no_residence'] ? $total['no_residence'] . ' người chưa khai khu vực sinh sống' : null,
+    ]);
 @endphp
 
 @section('content')
-    <div class="row row-cards mb-3">
-        @foreach ([
-            ['Tổng nhân viên', $total['total'], ''],
-            ['Nam', $total['male'], ''],
-            ['Nữ', $total['female'], ''],
-            ['Quản lý (Junior Captain trở lên)', $total['leaders'], ''],
-            ['Chưa khai giới tính', $total['no_gender'], $total['no_gender'] ? 'text-danger' : 'text-success'],
-            ['Chưa khai nơi ở', $total['no_residence'], $total['no_residence'] ? 'text-warning' : 'text-success'],
-        ] as [$label, $value, $class])
-            <div class="col-6 col-md-4 col-xl-2">
-                <div class="card card-sm"><div class="card-body">
-                    <div class="text-muted small">{{ $label }}</div>
-                    <div class="h2 mb-0 {{ $class }}">{{ $value }}</div>
-                </div></div>
+    <div class="roster-stats-page">
+        {{-- Thanh tuần --}}
+        <div class="card mb-3">
+            <div class="card-body d-flex flex-wrap align-items-center gap-2">
+                <div class="me-auto">
+                    <div class="text-muted small text-uppercase fw-semibold">Thống kê nhân sự</div>
+                    <div class="h3 mb-0">Tuần {{ $week->isoWeek() }} · {{ $week->format('d/m') }} – {{ $weekEnd->format('d/m/Y') }}
+                        @if ($isThisWeek)<span class="badge bg-primary-lt ms-1">Tuần này</span>@endif
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <a class="btn" href="{{ route('roster.statistics', ['week' => $week->copy()->subWeek()->toDateString()]) }}"><x-core::icon name="ti ti-chevron-left" /> Tuần trước</a>
+                    <a class="btn" href="{{ route('roster.statistics') }}">Tuần này</a>
+                    <a class="btn" href="{{ route('roster.statistics', ['week' => $week->copy()->addWeek()->toDateString()]) }}">Tuần sau <x-core::icon name="ti ti-chevron-right" /></a>
+                </div>
+                <a class="btn btn-primary" href="{{ route('roster.index', ['week' => $week->toDateString()]) }}"><x-core::icon name="ti ti-layout-grid" /> Mở Bảng xếp ca</a>
             </div>
-        @endforeach
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Nhân sự theo outlet</h3></div>
-        <div class="table-responsive">
-            <table class="table table-vcenter table-sm card-table roster-stats">
-                <thead>
-                    <tr>
-                        <th>Outlet</th>
-                        <th class="text-center">Tổng</th>
-                        <th class="text-center">Nam</th>
-                        <th class="text-center">Nữ</th>
-                        <th class="text-center" title="Junior Restaurant Captain trở lên">Quản lý</th>
-                        <th class="text-center">Nha Trang</th>
-                        <th class="text-center">Cam Ranh</th>
-                        <th class="text-center">Chưa khai nơi ở</th>
-                        <th>Ca cứng</th>
-                        <th>OFF / tuần</th>
-                        <th class="text-center" title="Không tham gia xếp lịch tự động">Xếp tay</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($headcount as $row)
-                        <tr @class(['fw-bold table-light' => ! $row['outlet']])>
-                            <td>{{ $row['outlet'] ? $row['outlet']->name : 'Tất cả' }}</td>
-                            <td class="text-center">{{ $row['total'] }}</td>
-                            <td class="text-center">{{ $row['male'] }}</td>
-                            <td class="text-center">{{ $row['female'] }}</td>
-                            <td class="text-center">{{ $row['leaders'] }} <span class="text-muted small">({{ $row['leaders_male'] }} nam)</span></td>
-                            <td class="text-center">{{ $row['nha_trang'] ?: '—' }}</td>
-                            <td class="text-center">{{ $row['cam_ranh'] ?: '—' }}</td>
-                            <td @class(['text-center', 'text-warning fw-semibold' => $row['no_residence']])>{{ $row['no_residence'] ?: '—' }}</td>
-                            <td>{{ collect($row['fixed'])->map(fn ($n, $c) => "{$c}: {$n}")->implode(' · ') ?: '—' }}</td>
-                            <td>{{ collect($row['days_off'])->map(fn ($n, $d) => "{$d} ngày: {$n}")->implode(' · ') }}</td>
-                            <td class="text-center">{{ $row['manual'] ?: '—' }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
         </div>
-    </div>
 
-    <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Vị trí theo outlet</h3><div class="card-subtitle ms-2 text-muted">số người (nam / nữ)</div></div>
-        <div class="table-responsive">
-            <table class="table table-vcenter table-sm card-table roster-stats">
-                <thead>
-                    <tr>
-                        <th>Vị trí</th>
-                        @foreach ($outlets as $outlet)
-                            <th class="text-center">{{ $code($outlet) }}</th>
-                        @endforeach
-                        <th class="text-center">Tổng</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($positions as $position)
-                        @continue(! isset($positionMatrix[$position->id]))
-                        <tr>
-                            <td @class(['fw-semibold' => in_array($position->id, $rules['leaderIds']) || in_array($position->id, $rules['hostessIds'])])>
-                                {{ $position->name }}
-                                @if (in_array($position->id, $rules['leaderIds']))<span class="badge bg-blue-lt ms-1">Quản lý</span>@endif
-                            </td>
-                            @foreach ([...$outlets->pluck('id')->all(), 'all'] as $key)
-                                @php
-                                    $cell = $positionMatrix[$position->id][$key];
-                                @endphp
-                                <td class="text-center {{ $key === 'all' ? 'fw-bold' : '' }}">
-                                    @if ($cell['total'])
-                                        {{ $cell['total'] }} <span class="text-muted small">({{ $cell['male'] }} / {{ $cell['female'] }})</span>
-                                    @else
-                                        <span class="text-muted">—</span>
-                                    @endif
-                                </td>
-                            @endforeach
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+        {{-- Tổng quan: 4 nhóm xếp lịch --}}
+        <div class="row row-cards mb-3">
+            @foreach ([
+                ['Tổng nhân viên', $total['total'], $total['male'] . ' nam · ' . $total['female'] . ' nữ', 'ti ti-users'],
+                ['Incharge', $groups['incharge'], 'Junior Captain → Senior Supervisor', 'ti ti-star'],
+                ['Hostess', $groups['hostess'], 'chia đều M6 / A2', 'ti ti-user-heart'],
+                ['Waiter nữ', $groups['waiter_female'], 'rải OFF riêng', 'ti ti-user'],
+                ['Waiter nam', $groups['waiter_male'], 'rải OFF riêng', 'ti ti-user'],
+                ['Quản lý · Thực tập', $groups['managers'] . ' · ' . $groups['trainee'], 'không tính rải OFF', 'ti ti-briefcase'],
+            ] as [$label, $value, $hint, $icon])
+                <div class="col-6 col-md-4 col-xl-2">
+                    <div class="card card-sm h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center gap-2 text-muted small"><x-core::icon :name="$icon" /> {{ $label }}</div>
+                            <div class="h1 mb-0 mt-1">{{ $value }}</div>
+                            <div class="text-muted small">{{ $hint }}</div>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
         </div>
-    </div>
 
-    <div class="card">
-        <div class="card-header d-flex flex-wrap gap-2 align-items-center">
-            <h3 class="card-title me-auto">
-                Đi làm theo ca · tuần {{ $week->format('d/m') }} – {{ $week->copy()->addDays(6)->format('d/m/Y') }}
-            </h3>
-            <a class="btn btn-sm" href="{{ route('roster.statistics', ['week' => $week->copy()->subWeek()->toDateString()]) }}">← Tuần trước</a>
-            <a class="btn btn-sm" href="{{ route('roster.statistics') }}">Tuần này</a>
-            <a class="btn btn-sm" href="{{ route('roster.statistics', ['week' => $week->copy()->addWeek()->toDateString()]) }}">Tuần sau →</a>
-        </div>
-        @if ($onDuty['empty'])
-            <div class="card-body text-muted">Tuần này chưa có lịch.</div>
-        @else
-            <div class="card-body pb-0 small text-muted">
-                Mỗi ô: <strong>số người làm tại outlet</strong> (nam / nữ) · QL = quản lý · H = Hostess · +L = người của ca đi hỗ trợ Lobby (không tính vào nhà hàng).
-                Ô đỏ: thiếu nam, Hostess hoặc quản lý theo quy định.
+        @if ($issues)
+            <div class="alert alert-warning py-2"><x-core::icon name="ti ti-alert-triangle" /> Dữ liệu hồ sơ cần bổ sung: {{ implode(' · ', $issues) }}.</div>
+        @endif
+
+        {{-- Theo ngày: đúng khối thống kê cuối Bảng xếp ca --}}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Nhân sự đi làm theo ngày</h3>
+                <div class="card-subtitle ms-2 text-muted">số người theo ca · ô vàng: lệch M6 / A2 · ô đỏ: cần xem</div>
             </div>
-            <div class="table-responsive">
-                <table class="table table-vcenter table-sm card-table roster-stats">
-                    <thead>
-                        <tr>
-                            <th>Ngày</th>
-                            @foreach ($onDuty['outlets'] as $outlet)
-                                <th colspan="{{ count($onDuty['codes'][$outlet->id] ?? []) + 1 }}" class="text-center border-start">{{ $code($outlet) }}</th>
-                            @endforeach
-                        </tr>
-                        <tr>
-                            <th></th>
-                            @foreach ($onDuty['outlets'] as $outlet)
-                                @foreach ($onDuty['codes'][$outlet->id] ?? [] as $shiftCode)
-                                    <th @class(['text-center', 'border-start' => $loop->first])>{{ $shiftCode }}</th>
+            @if (! $grid['board']['has_shifts'])
+                <div class="card-body text-muted">Tuần này chưa có lịch.</div>
+            @else
+                <div class="table-responsive roster-scroll">
+                    <table class="roster-table roster-table--compact roster-stats-board">
+                        <tbody>
+                            @include('plugins/restaurant-roster::roster.partials.staff-board')
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+
+        <div class="row row-cards">
+            {{-- Cơ cấu theo outlet --}}
+            <div class="col-xl-7">
+                <div class="card h-100">
+                    <div class="card-header"><h3 class="card-title">Cơ cấu nhân sự theo outlet</h3></div>
+                    <div class="table-responsive">
+                        <table class="table table-vcenter table-sm card-table">
+                            <thead>
+                                <tr>
+                                    <th>Outlet</th>
+                                    <th class="text-end">Tổng</th>
+                                    <th class="text-end">Nam</th>
+                                    <th class="text-end">Nữ</th>
+                                    <th class="text-end" title="Cấp quản lý (gồm Assistant / Restaurant Manager)">Quản lý</th>
+                                    <th class="text-end">Nha Trang</th>
+                                    <th class="text-end">Cam Ranh</th>
+                                    <th>OFF / tuần</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($headcount as $row)
+                                    <tr @class(['fw-bold bg-body-tertiary' => ! $row['outlet']])>
+                                        <td>{{ $row['outlet'] ? $code($row['outlet']) : 'Tất cả' }}</td>
+                                        <td class="text-end">{{ $row['total'] }}</td>
+                                        <td class="text-end">{{ $row['male'] }}</td>
+                                        <td class="text-end">{{ $row['female'] }}</td>
+                                        <td class="text-end">{{ $row['leaders'] ?: '—' }}</td>
+                                        <td class="text-end">{{ $row['nha_trang'] ?: '—' }}</td>
+                                        <td class="text-end">{{ $row['cam_ranh'] ?: '—' }}</td>
+                                        <td class="text-muted small">{{ collect($row['days_off'])->map(fn ($n, $d) => "{$d} ngày: {$n}")->implode(' · ') }}</td>
+                                    </tr>
                                 @endforeach
-                                <th class="text-center text-muted">OFF / nghỉ</th>
-                            @endforeach
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($onDuty['days'] as $date => $day)
-                            <tr>
-                                <td class="text-nowrap fw-semibold">{{ $weekdays[$day->dayOfWeekIso] }} {{ $day->format('d/m') }}</td>
-                                @foreach ($onDuty['outlets'] as $outlet)
-                                    @foreach ($onDuty['codes'][$outlet->id] ?? [] as $shiftCode)
-                                        @php
-                                            $cell = $onDuty['cells'][$date][$outlet->id][$shiftCode] ?? null;
-                                            $checked = isset($rules['checks'][$outlet->code . '|' . $shiftCode]);
-                                            $problems = $onDuty['problems'][$date][$outlet->id][$shiftCode] ?? [];
-                                        @endphp
-                                        <td @class(['text-center text-nowrap', 'border-start' => $loop->first, 'bg-red-lt' => $problems]) title="{{ implode(', ', $problems) }}">
-                                            @if ($cell && ($cell['total'] || $cell['lobby']))
-                                                <strong>{{ $cell['total'] }}</strong>
-                                                <span class="text-muted small">({{ $cell['male'] }}/{{ $cell['female'] }})</span>
-                                                @if ($checked)
-                                                    <div class="small text-muted">QL {{ $cell['leaders'] }} · H {{ $cell['hostess'] }}</div>
-                                                @endif
-                                                @if ($cell['lobby'])
-                                                    <div class="small text-primary">+{{ $cell['lobby'] }} L</div>
-                                                @endif
-                                            @else
-                                                <span class="text-muted">—</span>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Vị trí × outlet --}}
+            <div class="col-xl-5">
+                <div class="card h-100">
+                    <div class="card-header"><h3 class="card-title">Vị trí theo outlet</h3><div class="card-subtitle ms-2 text-muted">nam / nữ</div></div>
+                    <div class="table-responsive">
+                        <table class="table table-vcenter table-sm card-table">
+                            <thead>
+                                <tr>
+                                    <th>Vị trí</th>
+                                    @foreach ($outlets as $outlet)
+                                        @continue(! collect($positionMatrix)->contains(fn ($row) => ($row[$outlet->id]['total'] ?? 0) > 0))
+                                        <th class="text-end">{{ $code($outlet) }}</th>
+                                    @endforeach
+                                    <th class="text-end">Tổng</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($positions as $position)
+                                    @continue(! isset($positionMatrix[$position->id]))
+                                    <tr>
+                                        <td>
+                                            {{ $position->name }}
+                                            @if (in_array($position->id, $rules['inChargeIds'] ?? []))
+                                                <span class="badge bg-blue-lt ms-1">Incharge</span>
+                                            @elseif (in_array($position->id, $rules['leaderIds']))
+                                                <span class="badge bg-secondary-lt ms-1">Quản lý</span>
                                             @endif
                                         </td>
-                                    @endforeach
-                                    @php
-                                        $absent = $onDuty['absent'][$date][$outlet->id] ?? [];
-                                    @endphp
-                                    <td class="text-center text-muted small">
-                                        {{ $absent['off'] ?? 0 }}@if (! empty($absent['leave'])) · nghỉ {{ $absent['leave'] }}@endif
-                                    </td>
+                                        @foreach ($outlets as $outlet)
+                                            @continue(! collect($positionMatrix)->contains(fn ($row) => ($row[$outlet->id]['total'] ?? 0) > 0))
+                                            @php($cell = $positionMatrix[$position->id][$outlet->id])
+                                            <td class="text-end">
+                                                @if ($cell['total'])
+                                                    {{ $cell['total'] }} <span class="text-muted small">{{ $cell['male'] }}/{{ $cell['female'] }}</span>
+                                                @else
+                                                    <span class="text-muted">—</span>
+                                                @endif
+                                            </td>
+                                        @endforeach
+                                        <td class="text-end fw-semibold">{{ $positionMatrix[$position->id]['all']['total'] }}</td>
+                                    </tr>
                                 @endforeach
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-        @endif
+        </div>
     </div>
 @endsection

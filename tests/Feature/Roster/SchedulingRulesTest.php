@@ -386,6 +386,22 @@ class SchedulingRulesTest extends TestCase
         $this->assertStringNotContainsString('A2 → OH', $html);
     }
 
+    /** Trang Thống kê nhân sự: thanh tuần, 4 nhóm, cùng khối thống kê như Bảng xếp ca; menu Bảng xếp ca không "chiếm" active của trang khác. */
+    public function test_statistics_page_uses_staff_board_and_menu_active(): void
+    {
+        $admin = $this->admin();
+        Shift::query()->create(['employee_id' => $this->people['GCF1']->getKey(), 'date' => self::WEEK, 'kind' => Shift::KIND_SHIFT, 'shift_template_id' => $this->templates['M6']->getKey(),
+            'outlet_id' => $this->outlets['GUSTO']->getKey(), 'status' => 'draft', 'start_at' => self::WEEK . ' 06:00:00', 'end_at' => self::WEEK . ' 14:00:00', 'hours' => 8]);
+
+        $page = $this->actingAs($admin)->get(route('roster.statistics', ['week' => self::WEEK]))->assertOk();
+        $page->assertSee('id="roster-board"', false)->assertSee('Nhân sự đi làm theo ngày')->assertSee('Waiter nữ')->assertSee('Incharge');
+        $page->assertSee('href="' . route('roster.index') . '#"', false);
+        $page->assertSee('href="' . route('roster.statistics') . '"', false);
+
+        $grid = $this->actingAs($admin)->get(route('roster.index', ['week' => self::WEEK]))->assertOk();
+        $grid->assertSee('href="' . route('roster.index') . '"', false);
+    }
+
     private function admin(): User
     {
         return $this->user([], true);
