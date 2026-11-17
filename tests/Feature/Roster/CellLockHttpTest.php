@@ -94,51 +94,13 @@ class CellLockHttpTest extends TestCase
         $this->assertSame(2, \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->count());
     }
 
-    /** Kỳ lịch: tổng hợp OFF có cảnh báo; chưa xác nhận nhập xong OFF thì không chạy xếp tự động, xác nhận rồi thì chạy được. */
-    public function test_period_summary_and_off_confirmation_gate(): void
-    {
-        // Bước "Kỳ lịch & OFF" đã bỏ mặc định (xếp theo tuần) – vẫn giữ được khi bật lại cấu hình.
-        config(['plugins.restaurant-roster.general.scheduling.require_off_confirmation' => true]);
-        config(['plugins.restaurant-roster.general.scheduling.staffing_mode' => 'requirements']);
-        $outlet = Outlet::query()->firstOrFail();
-        $m6 = ShiftTemplate::query()->firstOrFail();
-        \Botble\RestaurantRoster\Models\EmployeeSkill::query()->create(['employee_id' => $this->employee->getKey(), 'outlet_id' => $outlet->getKey(), 'level' => 'primary']);
-        \Botble\RestaurantRoster\Models\StaffingRequirement::query()->create(['outlet_id' => $outlet->getKey(), 'shift_template_id' => $m6->getKey(),
-            'min_staff' => 1, 'target_staff' => 1, 'is_confirmed' => true]);
-        config(['plugins.restaurant-roster.general.scheduling.time_limit_seconds' => 2]);
-        $manager = $this->user([], true);
-
-        $this->actingAs($manager)->post(route('roster.periods.store'), ['name' => 'Tuần thử', 'start_date' => '2030-01-07', 'end_date' => '2030-01-13']);
-        $period = \Botble\RestaurantRoster\Models\Period::query()->firstOrFail();
-
-        // Người đủ năng lực duy nhất đã OFF ngày 08/01 → cảnh báo không còn người đủ năng lực.
-        $this->actingAs($manager)->get(route('roster.periods.show', $period->id))->assertOk()->assertSee('chỉ còn 0 người đủ năng lực', false);
-
-        $run = fn () => $this->actingAs($manager)->postJson(route('roster.auto.run'), ['from' => '2030-01-07', 'to' => '2030-01-13', 'type' => 'generate']);
-        $run()->assertJson(['error' => true]);
-        $this->assertSame(0, \Botble\RestaurantRoster\Models\Run::query()->count(), 'Chưa xác nhận OFF thì không chạy thuật toán');
-
-        $this->actingAs($manager)->post(route('roster.periods.confirm-off', $period->id));
-        $this->assertNotNull($period->refresh()->off_confirmed_at);
-
-        $run()->assertJson(['error' => false]);
-        $this->assertSame(1, \Botble\RestaurantRoster\Models\Run::query()->count());
-
-        // Xóa kỳ lịch: chỉ xóa kỳ, lịch làm việc và OFF đã ghi giữ nguyên.
-        $cells = Shift::query()->count();
-        $this->actingAs($manager)->delete(route('roster.periods.destroy', $period->id));
-        $this->assertNull(\Botble\RestaurantRoster\Models\Period::query()->find($period->id));
-        $this->assertSame($cells, Shift::query()->count());
-        $this->actingAs($manager)->get(route('roster.periods.index'))->assertOk();
-    }
-
     /** Các trang quản lý mở được (không lỗi khi render). */
     public function test_manager_pages_render(): void
     {
         $manager = $this->user([], true);
         $request = \Botble\RestaurantRoster\Models\AvailabilityRequest::query()->firstOrFail();
 
-        foreach ([route('roster.periods.index'), route('roster.availability.index'), route('roster.auto.index'),
+        foreach ([route('roster.availability.index'), route('roster.auto.index'),
             route('roster.index', ['week' => '2030-01-07']), route('roster.availability.edit', $request->id), route('roster.positions.create')] as $url) {
             $this->actingAs($manager)->get($url)->assertOk();
         }

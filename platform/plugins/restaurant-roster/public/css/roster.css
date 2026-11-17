@@ -236,27 +236,8 @@
 .roster-table--editable .roster-cell:hover .roster-slot:not(.roster-slot--empty) { filter: brightness(.97); outline: 2px solid var(--roster-navy); outline-offset: -2px; }
 
 /* Picker (modal) */
-.roster-picker { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.roster-picker--inline { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 
-.roster-picker__item {
-    display: flex;
-    align-items: center;
-    gap: .6rem;
-    width: 100%;
-    padding: .5rem .6rem;
-    border: 1px solid var(--roster-line);
-    border-radius: 6px;
-    background: var(--roster-cell-bg);
-    color: inherit;
-    text-align: left;
-    font-size: 13px;
-}
 
-.roster-picker__item:hover { border-color: var(--roster-navy); background: rgba(224, 169, 109, .12); }
-.roster-picker__item.is-current { border-color: var(--roster-navy); box-shadow: inset 0 0 0 1px var(--roster-navy); }
-.roster-picker__name { font-weight: 600; }
-.roster-picker__time { margin-left: auto; font-size: 12px; color: var(--bs-secondary-color, #64748b); }
 
 #roster-grid.is-loading { opacity: .5; pointer-events: none; transition: opacity .15s; }
 
@@ -312,26 +293,10 @@
 
 .roster-slot--navy .roster-ot { background: #fbbf24; color: #0a2540; }
 
-.roster-tag-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.roster-tag-toggle {
-    display: inline-flex;
-    align-items: center;
-    margin: 0;
-    cursor: pointer;
-}
 
-.roster-tag-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 
-.roster-tag-toggle span {
-    padding: .25rem .55rem;
-    border: 1px solid var(--roster-line);
-    border-radius: 999px;
-    font-size: 12px;
-}
 
-.roster-tag-toggle input:checked + span { background: var(--roster-navy); border-color: var(--roster-navy); color: #fff; }
-.roster-tag-toggle input:focus-visible + span { outline: 2px solid var(--roster-gold); }
 
 .roster-ot-input { max-width: 260px; }
 
@@ -788,30 +753,6 @@
     .roster-staff__meta { display: none; }
 }
 
-/* Hộp xếp ca tối giản (06/11/2026): một lưới nút – bấm là lưu */
-.roster-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
-.roster-quick__item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    min-height: 58px;
-    padding: 8px 6px;
-    border: 2px solid transparent;
-    border-radius: 8px;
-    font-size: 15px;
-    line-height: 1.2;
-    cursor: pointer;
-    transition: transform .08s ease, box-shadow .12s ease;
-}
-.roster-quick__item small { font-size: 11px; opacity: .85; text-align: center; overflow-wrap: anywhere; }
-.roster-quick__item:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(15, 23, 42, .18); }
-.roster-quick__item:focus-visible { outline: 2px solid var(--roster-gold); outline-offset: 1px; }
-.roster-quick__item.is-current { border-color: var(--roster-navy); box-shadow: inset 0 0 0 1px var(--roster-navy); }
-.roster-quick__item:disabled { opacity: .3; cursor: not-allowed; }
-.roster-cell-more > summary { cursor: pointer; font-size: 13px; color: var(--r-muted, #64748b); }
-.roster-cell-more .roster-ot-input { width: 170px; }
-[data-bs-theme="dark"] .roster-quick__item.is-current { border-color: var(--roster-gold); box-shadow: inset 0 0 0 1px var(--roster-gold); }
 
 /* Thống kê nhân sự cuối bảng xếp ca */
 .roster-table--compact .roster-board-title td {

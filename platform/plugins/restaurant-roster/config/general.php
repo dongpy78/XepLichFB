@@ -66,7 +66,6 @@ return [
         ],
         // Hỗ trợ Lobby (L) và Kid Deline (K) chỉ dành cho nhân viên nữ.
         'support_gender' => 'female',
-        'female_only_tags' => ['L', 'K'],
         // Mỗi outlet góp tối đa bấy nhiêu người cho Lobby trong một khung giờ (quản lý 22/10/2026: 1 người / outlet, Gusto + Villa = 2).
         // Người đi hỗ trợ Lobby KHÔNG được tính vào định biên nhà hàng của ca đó.
         'max_support_per_outlet' => 1,
@@ -141,9 +140,6 @@ return [
         // Công bằng Lobby (OH(L), M9(L), M6(L), A2(L)) theo lịch sử các tuần trước (quản lý 28/10/2026: bỏ – chỉ xét tuần đang xếp).
         // Lịch sử vẫn dùng cho Night, Kid-Deline (K) và cân bằng sáng / chiều. true = như trước.
         'lobby_history_fairness' => false,
-        // Xếp lịch theo tuần (quản lý 25/10/2026): bỏ bước "Kỳ lịch & OFF" – OFF và ca nhân viên xin ghi thẳng trên Bảng xếp ca rồi chạy xếp tự động.
-        // true = như trước: chỉ chạy khi kỳ lịch bao trọn phạm vi đã xác nhận "đã nhập xong OFF".
-        'require_off_confirmation' => false,
         // Ca nhân viên xin (nhắn trong nhóm): quản lý ghi trên Bảng xếp ca và khóa giống OFF xin.
         'request_shift_codes' => ['M6', 'A2', 'N'],
         // Nút chọn nhanh trong popup xếp ca (quản lý 17/11/2026). Quản lý vẫn gõ được bất kỳ nội dung nào ở ô nhập phía trên.

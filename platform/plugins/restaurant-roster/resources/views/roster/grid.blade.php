@@ -1,6 +1,5 @@
 @php
     $dayNames = [1 => 'T2', 2 => 'T3', 3 => 'T4', 4 => 'T5', 5 => 'T6', 6 => 'T7', 7 => 'CN'];
-    $summary = $grid['summary'];
     $today = now()->toDateString();
     $fmt = fn ($value) => rtrim(rtrim(number_format((float) $value, 1, '.', ''), '0'), '.');
     // Biểu tượng dùng chung (tối ưu 01/11/2026): mỗi ô trống / nút xóa từng chèn nguyên một SVG ~400 byte. Vẽ mỗi biểu tượng
@@ -191,33 +190,6 @@
         </div>
     </div>
 @endif
-
-<div class="row row-cards mb-3 roster-kpis">
-    <div class="col-6 col-lg-3">
-        <div class="card card-sm"><div class="card-body">
-            <div class="text-muted small">Ca đã xếp trong tuần</div>
-            <div class="h2 mb-0 font-monospace">{{ $summary['shifts'] }}</div>
-        </div></div>
-    </div>
-    <div class="col-6 col-lg-3">
-        <div class="card card-sm"><div class="card-body">
-            <div class="text-muted small">Ca nháp chưa công bố</div>
-            <div class="h2 mb-0 font-monospace {{ $summary['drafts'] ? 'text-warning' : '' }}">{{ $summary['drafts'] }}</div>
-        </div></div>
-    </div>
-    <div class="col-6 col-lg-3">
-        <div class="card card-sm"><div class="card-body">
-            <div class="text-muted small">Cảnh báo xung đột</div>
-            <div class="h2 mb-0 font-monospace {{ $summary['conflicts'] ? 'text-danger' : 'text-success' }}">{{ $summary['conflicts'] }}</div>
-        </div></div>
-    </div>
-    <div class="col-6 col-lg-3">
-        <div class="card card-sm"><div class="card-body">
-            <div class="text-muted small">Nhân viên tăng ca</div>
-            <div class="h2 mb-0 font-monospace {{ $summary['overtime'] ? 'text-warning' : '' }}">{{ $summary['overtime'] }}</div>
-        </div></div>
-    </div>
-</div>
 
 @if ($alerts)
     @php

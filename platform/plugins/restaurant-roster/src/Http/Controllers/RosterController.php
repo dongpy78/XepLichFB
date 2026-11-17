@@ -556,20 +556,6 @@ class RosterController extends BaseController
         return 'roster-clear-undo:' . ($request->user()?->getKey() ?? 0);
     }
 
-    public function clearWeek(Request $request)
-    {
-        [$weekStart, $weekEnd] = $this->weekRange($request);
-
-        $count = Shift::query()
-            ->whereIn('employee_id', $this->employeeQuery($request)->pluck('id'))
-            ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()])
-            ->where('status', Shift::STATUS_DRAFT)
-            ->where('is_locked', false)
-            ->delete();
-
-        return $this->gridResponse($request, "Đã xóa {$count} ca nháp (giữ ô đã khóa).");
-    }
-
     /**
      * Khóa / mở khóa ô: ô khóa được thuật toán giữ nguyên khi tạo lịch và tối ưu lại.
      * Khóa một ô trống tạo ô OFF đã khóa (giữ ngày nghỉ).
@@ -1030,7 +1016,6 @@ class RosterController extends BaseController
             ->map(fn ($rows) => $rows->groupBy(fn (Shift $s) => $s->date->format('Y-m'))
                 ->map(fn ($month, $ym) => (object) ['ym' => $ym, 'total' => $month->sum('overtime_hours')])
                 ->values());
-        $summary = ['shifts' => 0, 'drafts' => 0, 'conflicts' => 0, 'overtime' => 0];
 
         foreach ($employees as $employee) {
             $employeeShifts = $shifts->get($employee->getKey(), collect());
@@ -1061,16 +1046,8 @@ class RosterController extends BaseController
 
                     $dayTotals[$key]['staff']++;
                     $dayTotals[$key]['hours'] += $shift->hours;
-                    $summary['shifts']++;
-                }
-
-                if ($shift->status === Shift::STATUS_DRAFT) {
-                    $summary['drafts']++;
                 }
             }
-
-            $summary['conflicts'] += count($check['cells']);
-            $summary['overtime'] += $check['overtime'] > 0 ? 1 : 0;
 
             $rows[] = [
                 'employee' => $employee,
@@ -1114,7 +1091,6 @@ class RosterController extends BaseController
             'days' => $days,
             'rows' => $rows,
             'dayTotals' => $dayTotals,
-            'summary' => $summary,
             'outletId' => $outletId,
             'leaveTypes' => config('plugins.restaurant-roster.general.leave_types', []),
             'shiftTags' => $this->assigner->tagDefinitions(),

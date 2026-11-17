@@ -8,7 +8,6 @@
         data-assign-undo-url="{{ route('roster.assign-undo') }}"
         data-copy-url="{{ route('roster.copy-previous-week') }}"
         data-publish-url="{{ route('roster.publish') }}"
-        data-clear-url="{{ route('roster.clear-week') }}"
         data-clear-cells-url="{{ route('roster.clear-cells') }}"
         data-clear-undo-url="{{ route('roster.clear-undo') }}"
         data-lock-url="{{ route('roster.lock') }}"
@@ -155,8 +154,9 @@
             {!! $gridHtml !!}
         </div>
 
-        <div class="card mt-3">
-            <div class="card-body roster-legend">
+        <details class="card mt-3 roster-legend-box">
+            <summary class="card-body py-2 text-muted"><x-core::icon name="ti ti-info-circle" /> Chú giải mã ca, ký hiệu phụ và màu trạng thái</summary>
+            <div class="card-body pt-0 roster-legend">
                 <strong class="me-2">Chú giải ca:</strong>
                 @forelse ($templates as $template)
                     <span class="roster-legend__item">
@@ -185,7 +185,7 @@
                 <span class="roster-legend__item"><span class="roster-mini roster-mini--sky is-locked roster-legend__sample"><span class="roster-mini__code">M6</span></span> Ca đã xác nhận / ca nhân viên xin (khóa)</span>
                 <span class="roster-legend__item"><span class="roster-mini roster-mini--sand needs-review roster-legend__sample"><span class="roster-mini__code">A2</span></span> Cần xem xét</span>
             </div>
-        </div>
+        </details>
     </div>
 
     @if ($canManage)

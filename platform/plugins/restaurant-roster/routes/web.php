@@ -35,7 +35,6 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 Route::post('copy-previous-week', 'RosterController@copyPreviousWeek')->name('copy-previous-week');
                 Route::post('publish', 'RosterController@publish')->name('publish');
                 Route::get('publish-preview', 'RosterController@publishPreview')->name('publish-preview');
-                Route::post('clear-week', 'RosterController@clearWeek')->name('clear-week');
                 Route::post('clear-cells', 'RosterController@clearCells')->name('clear-cells');
                 Route::post('clear-undo', 'RosterController@undoClear')->name('clear-undo');
                 Route::post('grid-merge', 'RosterController@gridMerge')->name('grid-merge');
@@ -53,19 +52,6 @@ Route::group(['namespace' => 'Botble\RestaurantRoster\Http\Controllers'], functi
                 'uses' => 'RosterController@overtime',
                 'permission' => 'roster.approve',
             ]);
-
-            // Kỳ lịch: tổng hợp OFF, xác nhận "đã nhập xong OFF" trước khi xếp tự động.
-            Route::group(['prefix' => 'periods', 'as' => 'periods.'], function (): void {
-                Route::get('/', ['as' => 'index', 'uses' => 'PeriodController@index', 'permission' => 'roster.index']);
-                Route::get('{id}', ['as' => 'show', 'uses' => 'PeriodController@show', 'permission' => 'roster.index'])->wherePrimaryKey('id');
-
-                Route::group(['permission' => 'roster.approve'], function (): void {
-                    Route::post('/', 'PeriodController@store')->name('store');
-                    Route::post('{id}/confirm-off', 'PeriodController@confirmOff')->name('confirm-off')->wherePrimaryKey('id');
-                    Route::post('{id}/reopen-off', 'PeriodController@reopenOff')->name('reopen-off')->wherePrimaryKey('id');
-                    Route::delete('{id}', 'PeriodController@destroy')->name('destroy')->wherePrimaryKey('id');
-                });
-            });
 
             // Thuật toán xếp lịch tự động.
             Route::group(['prefix' => 'auto', 'as' => 'auto.', 'permission' => 'roster.auto'], function (): void {

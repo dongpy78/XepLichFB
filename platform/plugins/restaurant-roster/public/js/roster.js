@@ -320,7 +320,7 @@ $(() => {
         }
 
         const action = $button.data('roster-action')
-        const url = { copy: urls.copyUrl, publish: urls.publishUrl, clear: urls.clearUrl, swap: urls.swapUrl, merge: urls.gridMergeUrl, status: urls.outletStatusUrl }[action]
+        const url = { copy: urls.copyUrl, publish: urls.publishUrl, swap: urls.swapUrl, merge: urls.gridMergeUrl, status: urls.outletStatusUrl }[action]
         // Hiển thị chung Villa + Gusto: outlet khu hiển thị chung (trống = hiển thị riêng).
         // Mở / đóng cửa nhà hàng: outlet, các ngày (cách nhau dấu phẩy), đóng (1) / mở (0).
         const payload = {

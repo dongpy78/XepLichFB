@@ -12,8 +12,6 @@ use Botble\RestaurantRoster\Models\Run;
 use Botble\RestaurantRoster\Models\Shift;
 use Botble\RestaurantRoster\Models\ShiftTemplate;
 use Botble\RestaurantRoster\Models\StaffingRequirement;
-use Botble\RestaurantRoster\Models\Period;
-use Botble\RestaurantRoster\Services\OffReadinessService;
 use Botble\RestaurantRoster\Services\RosterScheduler;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -75,15 +73,6 @@ class AutoScheduleController extends BaseController
 
         if ($from->diffInDays($to) > 62) {
             return $this->httpResponse()->setError()->setMessage('Phạm vi tối đa 2 tháng mỗi lần chạy.');
-        }
-
-        // Quy trình: chỉ xếp tự động khi quản lý đã xác nhận nhập xong OFF cho kỳ lịch bao trọn phạm vi.
-        if ($data['type'] !== 'validate' && config('plugins.restaurant-roster.general.scheduling.require_off_confirmation', true)
-            && ! app(OffReadinessService::class)->confirmedPeriod($from, $to)) {
-            return $this->httpResponse()->setError()->setMessage(sprintf(
-                'Chưa xác nhận "đã nhập xong OFF" cho %s – %s. Vào Kỳ lịch & OFF, tạo kỳ bao trọn phạm vi này, kiểm tra OFF rồi bấm xác nhận.',
-                $from->format('d/m'), $to->format('d/m/Y')
-            ));
         }
 
         $startedAt = microtime(true);
