@@ -57,10 +57,17 @@ class RosterConflictChecker
 
             $restHours = $previous->finishAt()->diffInMinutes($shift->start_at, false) / 60;
 
+            $hardRest = (float) config('plugins.restaurant-roster.general.scheduling.hard_min_rest_hours', 8);
+            $pair = [strtoupper((string) $previous->template?->code), strtoupper((string) $shift->template?->code)];
+
             if ($restHours < 0) {
                 $flag($shift, 'Trùng giờ với ca trước đó');
-            } elseif ($restHours < $this->rules['min_rest_hours']) {
-                $flag($shift, sprintf('Chỉ nghỉ %sh giữa 2 ca (tối thiểu %sh)', $this->num($restHours), $this->rules['min_rest_hours']));
+            } elseif ($restHours < $hardRest) {
+                $flag($shift, sprintf('Chỉ nghỉ %sh giữa 2 ca (tối thiểu %sh)', $this->num($restHours), $this->num($hardRest)));
+            } elseif ($previous->date->copy()->addDay()->isSameDay($shift->date)
+                && in_array($pair, array_map(fn ($p) => array_map('strtoupper', (array) $p), (array) config('plugins.restaurant-roster.general.scheduling.jump_pairs', [['A2', 'M6'], ['N', 'M6']])), true)) {
+                // Nhảy ca (quản lý 17/11/2026): chỉ A2 → M6, N → M6.
+                $flag($shift, sprintf('Nhảy ca %s → %s (nghỉ %sh)', $pair[0], $pair[1], $this->num($restHours)));
             }
         }
 

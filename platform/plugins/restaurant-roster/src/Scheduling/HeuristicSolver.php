@@ -2612,6 +2612,48 @@ final class HeuristicSolver implements SolverInterface
                         }
                     }
 
+                    // (1b) Đổi ngày OFF (quản lý 17/11/2026): người A OFF vào một trong hai ngày nhảy ca, đi làm lại một ngày OFF cũ của mình.
+                    //      Trước hết đổi với đồng nghiệp C cùng nhà hàng (cùng phạm vi rải OFF – gộp khi một nhà hàng đóng cả tuần): C nhận ô của A,
+                    //      A nhận ô của C ngày C chuyển sang OFF – số người mỗi ô giữ nguyên. Không đổi chéo Villa ↔ Gusto khi hai nhà hàng cùng mở.
+                    //      Không đụng ô cố định / OFF đã duyệt; chỉ nhận khi điểm tổng giảm (gồm nhảy ca mới của người khác, rải OFF, OFF liền nhau).
+                    $employee = $state->problem->employees[$a];
+                    $scopeOf = fn (EmployeeSpec $e) => $e->offScopeOutletId ?? $e->homeOutletId;
+                    $offDays = array_values(array_filter($scope, fn ($k) => ! isset($state->plan[$a][$k]) && ! $state->isFixed($a, $k)
+                        && ! isset($state->problem->hardUnavailable[$a][$state->dates[$k]])));
+
+                    foreach ([$i + 1, $i] as $d) {
+                        $slotA = $state->plan[$a][$d] ?? null;
+
+                        if ($slotA === null || $state->isFixed($a, $d) || ! in_array($d, $scope, true)) {
+                            continue;
+                        }
+
+                        foreach ($offDays as $k) {
+                            foreach ($employeeIds as $c) {
+                                $colleague = $state->problem->employees[$c];
+                                $slotC = $state->plan[$c][$k] ?? null;
+
+                                if ($c === $a || $slotC === null || isset($state->plan[$c][$d]) || $scopeOf($colleague) !== $scopeOf($employee)
+                                    || $state->isFixed($c, $k) || $state->isFixed($c, $d) || isset($state->problem->hardUnavailable[$c][$state->dates[$d]])) {
+                                    continue;
+                                }
+
+                                if ($attempt([[$a, $d, null], [$c, $d, $slotA], [$c, $k, null], [$a, $k, $slotC]])) {
+                                    $changed = true;
+
+                                    continue 4;
+                                }
+                            }
+
+                            // Không có đồng nghiệp phù hợp: A tự dời OFF (đi làm ngày k đúng ca đang làm ngày d).
+                            if ($attempt([[$a, $d, null], [$a, $k, $slotA]])) {
+                                $changed = true;
+
+                                continue 3;
+                            }
+                        }
+                    }
+
                     // (2) Đổi cả đoạn ngày với người khác: đoạn kết thúc ở ngày i, hoặc bắt đầu từ ngày i + 1.
                     $segments = [];
 

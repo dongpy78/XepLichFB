@@ -98,6 +98,12 @@ class ProblemBuilder
 
         $childStaff = $this->childOutletStaffRules($outlets);
 
+        // Rải OFF (quản lý 17/11/2026): phạm vi là nhà hàng gốc; nhà hàng nào đóng cả kỳ thì nhân viên của nó tính chung với nhà hàng còn mở.
+        $closedAll = $this->closedRestaurantDays($transferOutletIds, $days);
+        $fullyClosed = array_values(array_filter($transferOutletIds, fn ($o) => count($closedAll[$o] ?? []) >= count($days)));
+        $openRestaurants = array_values(array_diff($transferOutletIds, $fullyClosed));
+        $offScope = fn (?int $home) => $home !== null && in_array($home, $fullyClosed, true) && count($openRestaurants) === 1 ? $openRestaurants[0] : $home;
+
         // Cấu hình quy tắc xếp lịch (database): Snack nhà hàng nào, ca hỗ trợ Lobby nào được tự xếp.
         $ruleService = app(SchedulingRules::class);
         $rules = $ruleService->get();
@@ -346,6 +352,8 @@ class ProblemBuilder
                 closedHomeOutletIds: $closedHomeOutletIds,
                 isTrainee: $isTrainee,
                 isRoomFixed: (bool) $employee->room_service_fixed && $roomOutletId && ! $isTrainee && ! $isNightCore,
+                offRole: $this->offRole($employee, $isTrainee, $isManagerLevel, $transferOutletIds, $positionNames, $balancedPositions, $femaleStaffPositions, $maleStaffPositions, $topManagerPositions),
+                offScopeOutletId: $offScope($employee->outlet_id ? (int) $employee->outlet_id : null),
             );
 
             if ($employee->auto_schedule && ! $freezeCurrent && in_array((int) $employee->outlet_id, $targetOutletIds, true)) {
@@ -433,6 +441,23 @@ class ProblemBuilder
                 ->mapWithKeys(fn ($o) => [(int) $o->id => collect(SchedulingRules::snackOptions())->firstWhere('code', $o->code)['tag']])->all(),
             flexOverflowOutletId: $outlets->firstWhere('code', config('plugins.restaurant-roster.general.scheduling.flex_overflow_outlet', 'GUSTO'))?->getKey(),
         );
+    }
+
+    /**
+     * Nhóm rải OFF (quản lý 17/11/2026): chỉ 4 nhóm ở hai nhà hàng – Incharge, Hostess, Waiter (nam / nữ tính riêng theo giới).
+     * Restaurant Manager, Assistant Manager (ca cứng riêng), thực tập sinh, người thuộc Night / Room Service / Lobby và vị trí khác: không tính.
+     */
+    private function offRole(Employee $employee, bool $isTrainee, bool $isManagerLevel, array $restaurantIds, array $positionNames, array $hostess, array $femaleWaiter, array $maleWaiter, array $topManagers): string
+    {
+        $position = $positionNames[(int) $employee->position_id] ?? '';
+
+        return match (true) {
+            $isTrainee || ! in_array((int) $employee->outlet_id, $restaurantIds, true) => 'none',
+            $isManagerLevel => in_array($position, $topManagers, true) ? 'none' : 'incharge',
+            in_array($position, $hostess, true) => 'hostess',
+            $employee->gender === 'female' && in_array($position, $femaleWaiter, true), $employee->gender === 'male' && in_array($position, $maleWaiter, true) => 'waiter',
+            default => 'none',
+        };
     }
 
     /**

@@ -318,6 +318,52 @@ class SchedulingRulesTest extends TestCase
         $this->assertSame([], app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6))->offPairs);
     }
 
+    /** Nhóm rải OFF lấy từ hồ sơ: Waiter nam / nữ, Hostess, Incharge; Restaurant Manager không tính; Villa đóng cả tuần → tính chung với Gusto. */
+    public function test_off_groups_come_from_profile_and_merge_when_closed(): void
+    {
+        $manager = Position::query()->create(['name' => 'Restaurant Manager', 'is_manager' => true, 'status' => 'published']);
+        $captain = Position::query()->create(['name' => 'Junior Restaurant Captain', 'is_manager' => true, 'status' => 'published']);
+        $make = fn (string $code, $position) => Employee::query()->create(['code' => $code, 'name' => "Synthetic {$code}", 'gender' => 'female',
+            'outlet_id' => $this->outlets['VILLA']->getKey(), 'position_id' => $position->getKey(), 'weekly_hours' => 48, 'days_off_per_week' => 2, 'status' => 'published']);
+        $rm = $make('RM1', $manager);
+        $cap = $make('JC1', $captain);
+        $from = Carbon::parse(self::WEEK);
+        $build = fn () => app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6))->employees;
+
+        $specs = $build();
+        $roles = fn (array $specs, string $code) => [$specs[$this->people[$code]->getKey()]->offRole, $specs[$this->people[$code]->getKey()]->offScopeOutletId];
+        $this->assertSame(['waiter', $this->outlets['VILLA']->getKey()], $roles($specs, 'VCF1'));
+        $this->assertSame(['waiter', $this->outlets['GUSTO']->getKey()], $roles($specs, 'GCM1'));
+        $this->assertSame(['hostess', $this->outlets['VILLA']->getKey()], $roles($specs, 'VHF1'));
+        $this->assertSame(['none', 'incharge'], [$specs[$rm->getKey()]->offRole, $specs[$cap->getKey()]->offRole], 'Restaurant Manager không tính; Junior Captain là Incharge');
+
+        foreach (range(0, 6) as $d) {
+            \Botble\RestaurantRoster\Models\OutletDay::query()->create(['outlet_id' => $this->outlets['VILLA']->getKey(), 'date' => $from->copy()->addDays($d)->toDateString(), 'is_closed' => true]);
+        }
+
+        $merged = $build();
+        $this->assertSame(['waiter', $this->outlets['GUSTO']->getKey()], $roles($merged, 'VCF1'), 'Villa đóng cả tuần: rải OFF chung với Gusto');
+        $this->assertSame($this->outlets['GUSTO']->getKey(), $merged[$cap->getKey()]->offScopeOutletId);
+    }
+
+    /** Bảng xếp ca chỉ báo nhảy ca A2 → M6 (không báo A2 → OH như trước). */
+    public function test_grid_flags_only_the_two_jumps(): void
+    {
+        $employee = $this->people['GNF1'];
+        $make = fn (string $date, string $code, string $start, string $end) => Shift::query()->create(['employee_id' => $employee->getKey(), 'date' => $date, 'kind' => Shift::KIND_SHIFT,
+            'shift_template_id' => $this->templates[$code]->getKey(), 'outlet_id' => $this->outlets['GUSTO']->getKey(), 'status' => 'draft',
+            'start_at' => $start, 'end_at' => $end, 'hours' => 8]);
+        $make('2030-03-04', 'A2', '2030-03-04 14:00:00', '2030-03-04 22:00:00');
+        $make('2030-03-05', 'OH', '2030-03-05 08:45:00', '2030-03-05 16:45:00');
+        $make('2030-03-06', 'A2', '2030-03-06 14:00:00', '2030-03-06 22:00:00');
+        $make('2030-03-07', 'M6', '2030-03-07 06:00:00', '2030-03-07 14:00:00');
+
+        $html = (string) $this->actingAs($this->admin())->getJson(route('roster.grid', ['week' => self::WEEK]))->json('data.html');
+        $this->assertStringContainsString('Nhảy ca A2 → M6 (nghỉ 8h)', $html);
+        $this->assertStringNotContainsString('Chỉ nghỉ', $html, 'A2 → OH không bị báo');
+        $this->assertStringNotContainsString('A2 → OH', $html);
+    }
+
     private function admin(): User
     {
         return $this->user([], true);

@@ -47,6 +47,10 @@ final class EmployeeSpec
         public readonly bool $isTopManager = false,
         // Thuộc vị trí chia đều M6 / A2 (Hostess).
         public readonly bool $isPositionBalanced = false,
+        // Rải OFF đều (quản lý 17/11/2026): nhóm incharge / hostess / waiter; 'none' = không tính; null = cách cũ (mọi người không phải quản lý).
+        public readonly ?string $offRole = null,
+        // Phạm vi rải OFF: nhà hàng gốc, hoặc nhà hàng còn mở khi nhà hàng kia đóng cả tuần (gộp). null = outlet chính.
+        public readonly ?int $offScopeOutletId = null,
     ) {
     }
 

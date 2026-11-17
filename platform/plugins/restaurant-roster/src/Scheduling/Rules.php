@@ -38,7 +38,8 @@ final class Rules
         'busy_day_off' => 4000,
         'off_split' => 3000,
         'shift_mix' => 2500,
-        'heavy_transitions' => 2000,
+        // Nhảy ca A2 → M6, N → M6 (jump_pairs): tránh tối đa – trên mọi tiêu chí cân bằng / thiếu mục tiêu, dưới thiếu tối thiểu và ràng buộc cứng.
+        'heavy_transitions' => 2400,
         'lobby_mix' => 1500,
         // Lobby: ưu tiên OH(L) (Nha Trang) + M9(L) (Cam Ranh) phủ trọn 09:00–16:45; M6(L) / A2(L) chỉ phủ một phần khung
         // là phương án thay thế – mỗi lượt bị phạt, nên chỉ dùng khi bù được thiếu người.
@@ -116,6 +117,8 @@ final class Rules
         public readonly float $maxDailyHours = 12,
         public readonly int $maxConsecutiveDays = 6,
         public readonly array $transitions = [],
+        /** @var array<int, array{0: string, 1: string}> nhảy ca bị tính: [mã ca hôm trước, mã ca hôm sau] */
+        public readonly array $jumpPairs = [['A2', 'M6'], ['N', 'M6']],
         public readonly float $timeLimitSeconds = 8,
         public readonly int $maxIterations = 200000,
         public readonly int $seed = 20261012,
@@ -185,6 +188,7 @@ final class Rules
             maxDailyHours: (float) ($config['max_daily_hours'] ?? 12),
             maxConsecutiveDays: (int) ($config['max_consecutive_days'] ?? 6),
             transitions: $transitions,
+            jumpPairs: array_map(fn ($pair) => array_map(fn ($code) => strtoupper((string) $code), array_values((array) $pair)), (array) ($config['jump_pairs'] ?? [['A2', 'M6'], ['N', 'M6']])),
             timeLimitSeconds: (float) ($config['time_limit_seconds'] ?? 8),
             maxIterations: (int) ($config['max_iterations'] ?? 200000),
             seed: (int) ($config['seed'] ?? 20261012),

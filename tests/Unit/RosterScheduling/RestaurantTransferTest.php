@@ -252,7 +252,7 @@ class RestaurantTransferTest extends TestCase
             }
         }
 
-        $problem = $this->problem($people, $this->open($this->days()), ['restaurants' => [self::VILLA, self::GUSTO], 'busy_weekdays' => [], 'time_limit' => 60, 'max_iterations' => 120000, 'flex_overflow' => self::GUSTO, ...$options]);
+        $problem = $this->problem($people, $this->open($this->days()), ['restaurants' => [self::VILLA, self::GUSTO], 'busy_weekdays' => [], 'time_limit' => 60, 'max_iterations' => 200000, 'flex_overflow' => self::GUSTO, ...$options]);
 
         return [$problem, $this->solve($problem), $people];
     }

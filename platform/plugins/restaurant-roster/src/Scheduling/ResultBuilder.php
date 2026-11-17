@@ -47,7 +47,7 @@ final class ResultBuilder
             ...$balance['warnings'],
             ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
         $pairMisses = $this->offPairWarnings($state);
-        $warnings = [...$warnings, ...$pairMisses];
+        $warnings = [...$warnings, ...$this->jumpWarnings($state), ...$pairMisses];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
         if ($problem->offPairs) {
@@ -1445,6 +1445,32 @@ final class ResultBuilder
                 'message' => sprintf('%s %s: quản lý ca sáng %d / ca chiều %d – %s.', $problem->outletName($outletId),
                     date('d/m', strtotime($date)), $row['morning'], $row['afternoon'], $reason),
             ];
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * Nhảy ca còn lại sau khi tối ưu (A2 → M6, N → M6): người, ngày, và có ô cố định / OFF đã duyệt cản việc đổi hay không.
+     */
+    private function jumpWarnings(ScheduleState $state): array
+    {
+        $warnings = [];
+        $scope = $state->scopeIndexes();
+
+        foreach ($state->problem->employees as $id => $employee) {
+            foreach ($scope as $i) {
+                if (! $state->isHeavyAt($id, $i)) {
+                    continue;
+                }
+
+                [$from, $to] = [$state->shiftAt($id, $i), $state->shiftAt($id, $i + 1)];
+                $fixed = $state->isFixed($id, $i) || $state->isFixed($id, $i + 1);
+                $warnings[] = ['code' => 'jump', 'date' => $state->dates[$i + 1], 'outlet_id' => null, 'outlet_name' => '',
+                    'message' => sprintf('%s nhảy ca %s %s → %s %s. %s', $employee->name,
+                        $state->problem->shifts[$from[1]]->code, date('d/m', strtotime($state->dates[$i])), $state->problem->shifts[$to[1]]->code, date('d/m', strtotime($state->dates[$i + 1])),
+                        $fixed ? 'Có ô đã khóa / xếp tay – không tự đổi.' : 'Không đổi được ca / OFF với người cùng nhà hàng mà không thiếu người hoặc lệch quy tắc khác – quản lý xem lại.')];
+            }
         }
 
         return $warnings;

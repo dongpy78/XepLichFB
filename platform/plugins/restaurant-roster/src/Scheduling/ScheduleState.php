@@ -1694,17 +1694,22 @@ final class ScheduleState
         return $a && $b && $this->heavyBetween($a, $b);
     }
 
+    /** Nhảy ca: chỉ các cặp mã ca trong jump_pairs (A2 → M6, N → M6), ca hôm trước → ca hôm sau. */
     private function heavyBetween(array $a, array $b): bool
     {
-        $rule = $this->problem->rules->transitions["{$a[1]}:{$b[1]}"] ?? null;
+        return $this->isJump($a[1], $b[1]);
+    }
 
-        if ($rule !== null && $rule !== 'forbidden') {
-            return $rule === 'heavy';
-        }
+    /** @var array<string, bool> "fromShiftId:toShiftId" => là nhảy ca */
+    private array $jumpCache = [];
 
-        $rest = 1440 + $this->problem->shifts[$b[1]]->start() - $this->problem->shifts[$a[1]]->end() - (int) round($a[2] * 60);
-
-        return $rest < $this->problem->rules->softMinRestHours * 60;
+    public function isJump(int $fromShiftId, int $toShiftId): bool
+    {
+        return $this->jumpCache["{$fromShiftId}:{$toShiftId}"] ??= in_array(
+            [strtoupper($this->problem->shifts[$fromShiftId]->code), strtoupper($this->problem->shifts[$toShiftId]->code)],
+            $this->problem->rules->jumpPairs,
+            true
+        );
     }
 
     public function restMinutes(int $employeeId, int $i): ?int
@@ -1730,17 +1735,7 @@ final class ScheduleState
             return false;
         }
 
-        $rule = $this->problem->rules->transitions["{$a[1]}:{$b[1]}"] ?? null;
-
-        if ($rule === 'heavy') {
-            return true;
-        }
-
-        if ($rule === 'allowed') {
-            return false;
-        }
-
-        return $this->restMinutes($employeeId, $i) < $this->problem->rules->softMinRestHours * 60;
+        return $j === $i + 1 && $this->isJump($a[1], $b[1]);
     }
 
     public function canEverWork(EmployeeSpec $employee, int $shiftId): bool
@@ -2159,7 +2154,7 @@ final class ScheduleState
 
             foreach ($this->problem->employees as $employee) {
                 if ($employee->countsAsInCharge()) {
-                    $home = (int) $employee->homeOutletId;
+                    $home = (int) ($employee->offScopeOutletId ?? $employee->homeOutletId);
                     $this->managerTotals[$home] = ($this->managerTotals[$home] ?? 0) + 1;
                 }
             }
@@ -2247,6 +2242,11 @@ final class ScheduleState
     /** Nhóm chia OFF: outlet chính × vị trí × giới tính (nữ Waiter và nam Waiter rải OFF riêng – không để nữ OFF dồn một ngày). */
     public static function offGroup(EmployeeSpec $employee): string
     {
+        // Nhóm theo cấu hình (quản lý 17/11/2026): Waiter nam / Waiter nữ / Hostess, theo phạm vi nhà hàng (gộp khi một nhà hàng đóng cả tuần).
+        if ($employee->offRole === 'waiter' || $employee->offRole === 'hostess') {
+            return ($employee->offScopeOutletId ?? $employee->homeOutletId) . '|' . ($employee->positionId ?? 0) . '|' . ($employee->offRole === 'waiter' ? ($employee->gender ?? '') : '');
+        }
+
         return $employee->homeOutletId . '|' . ($employee->positionId ?? 0) . '|' . ($employee->gender ?? '');
     }
 
@@ -2265,6 +2265,11 @@ final class ScheduleState
      */
     public function countsForOffSpread(EmployeeSpec $employee): bool
     {
+        // Có nhóm theo cấu hình: chỉ Waiter (nam / nữ riêng) và Hostess; Incharge rải riêng (managerOffSpread); người khác không tính.
+        if ($employee->offRole !== null) {
+            return in_array($employee->offRole, ['waiter', 'hostess'], true) && ! $employee->isNightCore();
+        }
+
         return ! $employee->isManager && $employee->homeOutletId !== null && ! $employee->isNightCore()
             && $employee->nightRole !== EmployeeSpec::NIGHT_ROTATION;
     }
@@ -2425,7 +2430,7 @@ final class ScheduleState
 
         if ($this->problem->employees[$employeeId]?->isManager ?? false) {
             if ($this->problem->employees[$employeeId]->countsAsInCharge()) {
-                $home = (int) $this->problem->employees[$employeeId]->homeOutletId;
+                $home = (int) ($this->problem->employees[$employeeId]->offScopeOutletId ?? $this->problem->employees[$employeeId]->homeOutletId);
                 $this->managerWorking[$home][$i] = ($this->managerWorking[$home][$i] ?? 0) + $delta;
             }
         } elseif (($spec = $this->problem->employees[$employeeId] ?? null) && $this->countsForOffSpread($spec)) {
