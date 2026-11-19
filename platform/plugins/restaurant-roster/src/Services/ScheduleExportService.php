@@ -130,69 +130,20 @@ class ScheduleExportService
 
     // ------------------------------------------------------------------ PNG
 
-    /** Số người tối đa trong một ảnh gửi Zalo (khu vực đông hơn thì chia thành nhiều ảnh). */
-    public const PNG_PART_ROWS = 26;
-
-    /** Cạnh dài nhất của ảnh gửi Zalo (điểm ảnh): vừa mức ảnh HD của Zalo nên ảnh gần như không bị thu nhỏ lại. */
-    public const PNG_ZALO_MAX_EDGE = 2560;
-
     /**
-     * Các ảnh gửi Zalo (quản lý 19/11/2026): mỗi khu vực một ảnh (khu vực đông thì chia nhiều ảnh), số thứ tự liên tục như ảnh cả tuần.
-     *
-     * @return array<int, array{label: string, sections: array, start: int, rows: int}> đánh số từ 1
+     * Ảnh PNG cả tuần một tấm, đúng tỉ lệ 1 : 2 để kín màn hình điện thoại (quản lý 19/11/2026). Cùng font Inter và màu ca theo Mẫu ca,
+     * OFF đỏ nhạt; chữ to, đậm, tương phản cao để vẫn rõ khi Zalo nén ảnh. Ít người: hàng giãn cao ra cho kín; nhiều người: ảnh rộng
+     * thêm (cột ngày rộng ra) để giữ đúng 1 : 2.
      */
-    public function pngParts(array $snapshot): array
+    public function png(array $snapshot): string
     {
-        $parts = [];
-        $start = 0;
+        $sections = array_values(array_filter($snapshot['sections'], fn ($s) => $s['rows']));
 
-        foreach ($snapshot['sections'] as $section) {
-            if (! $section['rows']) {
-                continue;
-            }
-
-            $chunks = array_chunk($section['rows'], self::PNG_PART_ROWS);
-
-            foreach ($chunks as $k => $rows) {
-                $parts[count($parts) + 1] = [
-                    'label' => mb_strtoupper($section['label']) . (count($chunks) > 1 ? ' (' . ($k + 1) . '/' . count($chunks) . ')' : ''),
-                    'sections' => [[...$section, 'rows' => $rows]],
-                    'start' => $start,
-                    'rows' => count($rows),
-                ];
-                $start += count($rows);
-            }
-        }
-
-        return $parts;
-    }
-
-    /**
-     * Ảnh PNG lịch tuần: bố cục ngang như Bảng xếp ca (quản lý 19/11/2026 – bỏ khổ dọc 1 : 2), cùng font Inter và màu ca theo Mẫu ca,
-     * OFF đỏ nhạt. Chữ to, đậm, tương phản cao để vẫn rõ khi Zalo nén ảnh. $part = null: cả tuần một ảnh; $part = n: ảnh thứ n của
-     * pngParts() (một khu vực), cạnh dài nhất tối đa PNG_ZALO_MAX_EDGE điểm ảnh để Zalo không phải thu nhỏ.
-     */
-    public function png(array $snapshot, ?int $part = null): string
-    {
-        $parts = $this->pngParts($snapshot);
-
-        if (! $parts) {
+        if (! $sections) {
             throw new RuntimeException('Tuần này chưa có nhân viên nào trên bảng xếp ca.');
         }
 
-        if ($part !== null) {
-            if (! isset($parts[$part])) {
-                throw new RuntimeException('Không có ảnh khu vực này – tải lại trang lịch tuần.');
-            }
-
-            $sections = $parts[$part]['sections'];
-            $n = $parts[$part]['start'];
-            $areaLabel = $parts[$part]['label'];
-        } else {
-            $sections = array_values(array_filter($snapshot['sections'], fn ($s) => $s['rows']));
-            $n = 0;
-            $areaLabel = null;
-        }
+        $n = 0;
 
         $f = $this->fonts();
         $days = $snapshot['days'];
@@ -218,14 +169,16 @@ class ScheduleExportService
             return false;
         };
 
-        // Bố cục ngang như Bảng xếp ca: rộng cố định, cao theo số người.
+        // Tỉ lệ 1 : 2 (rộng : cao): hàng cao 62–96 để lấp kín chiều cao 2 × rộng; vẫn dư thì để trắng phía dưới; đông người quá thì rộng thêm.
         $pad = 24;
         $headerH = 150;
         $headH = 68;
         $sectionH = 48;
         $footerH = 100;
-        $rowH = 62;
         $width = 1600;
+        $fixedH = $headerH + $headH + $sectionH * count($sections) + $footerH;
+        $rowH = max(62, min(96, (int) floor(($width * 2 - $fixedH) / count($rows))));
+        $width = max($width, (int) ceil(($fixedH + $rowH * count($rows)) / 2));
         $colNo = 52;
         $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['bold'], 21, $r['name'])
             + (! empty($r['birthday']) ? $this->textWidth($f['bold'], 17, '(' . $r['birthday'] . ')') + 30 : 0), $rows));
@@ -234,16 +187,12 @@ class ScheduleExportService
         $colName = $width - $pad * 2 - $colNo - $colDay * count($days);
         $tableTop = $headerH;
         $tableH = $headH + $sectionH * count($sections) + $rowH * count($rows);
-        $height = $tableTop + $tableH + $footerH;
+        $height = $width * 2;
 
-        // Độ phân giải: ảnh cả tuần vẽ gấp đôi (in / gửi dạng file); ảnh gửi Zalo giới hạn cạnh dài nhất để Zalo không thu nhỏ thêm.
+        // Vẽ ở độ phân giải gấp đôi cho nét khi phóng to trên điện thoại; thiếu bộ nhớ thì tự hạ tỉ lệ thay vì lỗi.
         $this->scale = $this->affordableScale($width, $height);
 
-        if ($part !== null) {
-            $this->scale = min($this->scale, self::PNG_ZALO_MAX_EDGE / max($width, $height));
-        }
-
-        $img = imagecreatetruecolor((int) ceil($width * $this->scale), (int) ceil($height * $this->scale));
+        $img = imagecreatetruecolor($pixelW = (int) ceil($width * $this->scale), $pixelW * 2);
         imagesetthickness($img, (int) max(1, round($this->scale)));
         $c = fn (string $hex) => imagecolorallocate($img, hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2)));
         // Màu đậm hơn trước: chữ xám nhạt / đường kẻ mảnh dễ mất khi Zalo nén JPEG.
@@ -257,20 +206,13 @@ class ScheduleExportService
         $weekend = $c('F8FAFC');
         $navy = $c('0A2540');
         $gold = $c('E0A96D');
-        $this->drawRect($img, 0, 0, $width, $height, $white);
+        $this->drawRect($img, 0, 0, $width + 2, $height + 2, $white);
 
         // Tiêu đề: "LỊCH LÀM VIỆC TUẦN" + ngày áp dụng (vạch vàng bên trái như thương hiệu); ảnh khu vực có nhãn khu vực bên phải.
         $this->drawRect($img, $pad, 36, $pad + 6, 116, $gold);
         $this->drawText($img, 34, 0, $pad + 24, 76, $navy, $f['bold'], 'LỊCH LÀM VIỆC TUẦN');
         $this->drawText($img, 21, 0, $pad + 26, 114, $muted, $f['semibold'], 'Ngày ' . $this->snapshots->period($snapshot));
         $right = $width - $pad;
-
-        if ($areaLabel !== null) {
-            $tagW = $this->textWidth($f['bold'], 24, $areaLabel) + 44;
-            $this->roundRect($img, $right - $tagW, 44, $right, 100, 12, $navy);
-            $this->drawText($img, 24, 0, $right - $tagW + 22, 82, $white, $f['bold'], $areaLabel);
-            $right -= $tagW + 14;
-        }
 
         if ($draft) {
             $tagW = $this->textWidth($f['bold'], 18, 'BẢN NHÁP') + 40;
@@ -347,7 +289,8 @@ class ScheduleExportService
                     }
 
                     [$fill, $fg] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
-                    $this->roundRect($img, $dayX($k) + 8, $y + 9, $dayX($k) + $colDay - 8, $y + $rowH - 9, 9, $c($fill));
+                    $pillGap = max(9, (int) floor(($rowH - 50) / 2));
+                    $this->roundRect($img, $dayX($k) + 8, $y + $pillGap, $dayX($k) + $colDay - 8, $y + $rowH - $pillGap, 9, $c($fill));
                     $this->cellText($img, $f['bold'], mb_strlen($cell) > 6 ? 17 : 22, $c($fg), $dayX($k), $colDay, $y, $rowH, $cell, true);
                 }
 

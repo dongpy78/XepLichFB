@@ -213,38 +213,26 @@ class SchedulePublicationTest extends TestCase
         $this->assertSame(['Gusto', 'Night'], array_column(\Botble\RestaurantRoster\Services\ScheduleSnapshotService::withShortLabels($snapshot)['sections'], 'label'));
     }
 
-    /**
-     * Quản lý 19/11/2026: ảnh rộng ngang như Bảng xếp ca (không ép khổ dọc 1 : 2). Ảnh gửi Zalo: mỗi khu vực một ảnh, khu đông chia
-     * nhiều ảnh (tối đa PNG_PART_ROWS người), cạnh dài nhất ≤ PNG_ZALO_MAX_EDGE để Zalo không thu nhỏ; số thứ tự nối tiếp.
-     */
-    public function test_png_is_wide_like_grid_and_split_per_area_for_zalo(): void
+    /** Quản lý 19/11/2026: ảnh cả tuần đúng tỉ lệ 1 : 2 (kín màn hình điện thoại) – ít người giãn hàng, đông người rộng thêm. */
+    public function test_png_is_one_to_two_for_phone_screens(): void
     {
-        $this->staff(60, 'VILLA');
-        $this->staff(5, 'GUSTO');
-        $this->publish()->assertJson(['error' => false]);
-        $service = app(\Botble\RestaurantRoster\Services\ScheduleExportService::class);
+        $this->staff();
+        $this->publish();
         $snapshot = ScheduleVersion::query()->firstOrFail()->snapshot;
+        $row = $snapshot['sections'][0]['rows'][0];
+        $service = app(\Botble\RestaurantRoster\Services\ScheduleExportService::class);
 
-        $parts = $service->pngParts($snapshot);
-        $this->assertSame([26, 26, 8, 5], array_values(array_column($parts, 'rows')));
-        $this->assertSame(['VILLA (1/3)', 'VILLA (2/3)', 'VILLA (3/3)', 'GUSTO'], array_values(array_column($parts, 'label')));
-        $this->assertSame([0, 26, 52, 60], array_values(array_column($parts, 'start')), 'Số thứ tự nối tiếp giữa các ảnh');
+        foreach ([3 => 3200, 30 => 3200, 80 => null] as $count => $expectedWidth) {
+            $snapshot['sections'] = [['label' => 'Gusto', 'rows' => array_fill(0, $count, $row)]];
+            [$width, $height] = getimagesizefromstring($service->png($snapshot));
+            $this->assertSame($width * 2, $height, "{$count} người: đúng 1 : 2");
 
-        foreach (array_keys($parts) as $no) {
-            $png = $this->export('png', ['part' => $no])->assertOk()->assertHeader('Content-Type', 'image/png');
-            $this->assertStringContainsString("-v1-phan-{$no}.png", (string) $png->headers->get('Content-Disposition'));
-            [$width, $height] = getimagesizefromstring($png->getContent());
-            $this->assertLessThanOrEqual(\Botble\RestaurantRoster\Services\ScheduleExportService::PNG_ZALO_MAX_EDGE, max($width, $height), "Ảnh {$no} vừa khung Zalo");
-            $this->assertGreaterThanOrEqual(1800, $width, "Ảnh {$no} vẫn đủ nét (không thu quá nhỏ)");
+            if ($expectedWidth) {
+                $this->assertSame($expectedWidth, $width, "{$count} người: không phải rộng thêm");
+            } else {
+                $this->assertGreaterThan(3200, $width, 'Đông người: ảnh rộng thêm để giữ 1 : 2');
+            }
         }
-
-        [$width, $height] = getimagesizefromstring($service->png(['sections' => [$snapshot['sections'][1]]] + $snapshot));
-        $this->assertSame(3200, $width, 'Ảnh cả tuần: bố cục ngang 1600, vẽ gấp đôi');
-        $this->assertGreaterThan($width, $height * 3, 'Khu ít người: ảnh ngang / gần vuông như bảng xếp ca, không còn kéo dài khổ dọc');
-
-        $this->export('png', ['part' => 9])->assertRedirect(); // ảnh không có: quay lại trang lịch kèm thông báo
-        $this->actingAs($this->user())->get(route('roster.schedule.index', ['week' => self::WEEK]))->assertOk()
-            ->assertSee('Ảnh gửi Zalo – từng khu vực')->assertSee('Tải tất cả (4 ảnh)')->assertSee('Tải ảnh VILLA (2/3)')->assertSee('HD');
     }
 
     /** PNG, Excel, PDF tải được từ cùng một phiên bản; tiếng Việt, tên file có tuần + phiên bản. */
@@ -322,7 +310,7 @@ class SchedulePublicationTest extends TestCase
         $this->assertGreaterThan(65 * 60, $height, 'Đủ chỗ cho 65 dòng nhân viên + 2 khu trong một ảnh');
 
         $this->actingAs($this->user())->get(route('roster.schedule.index', ['week' => self::WEEK]))->assertOk()
-            ->assertSee('Ảnh cả tuần (một tấm)')->assertDontSee('Phần 1/');
+            ->assertSee('Ảnh PNG để gửi Zalo')->assertDontSee('Phần 1/');
     }
 
     /** Phân quyền ở backend: chỉ xem → không công bố, không tải bản nháp; vẫn tải được lịch đã công bố. */

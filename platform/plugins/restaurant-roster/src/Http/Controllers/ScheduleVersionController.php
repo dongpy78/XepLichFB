@@ -45,15 +45,12 @@ class ScheduleVersionController extends RosterController
             'statusLabels' => ScheduleSnapshotService::STATUS_LABELS,
             'canDraft' => $canDraft,
             'snapshots' => app(ScheduleSnapshotService::class),
-            // Ảnh gửi Zalo: mỗi khu vực một ảnh vừa khung (quản lý 19/11/2026).
-            'pngParts' => $snapshot ? app(ScheduleExportService::class)->pngParts($snapshot) : [],
         ]);
     }
 
     public function export(Request $request)
     {
-        $request->validate(['format' => ['required', 'in:png,xlsx,pdf'], 'part' => ['nullable', 'integer', 'min:1']]);
-        $part = $request->filled('part') ? (int) $request->input('part') : null;
+        $request->validate(['format' => ['required', 'in:png,xlsx,pdf']]);
 
         try {
             [$snapshot] = $this->resolve($request);
@@ -63,7 +60,7 @@ class ScheduleVersionController extends RosterController
             [$content, $mime, $name] = match ($request->input('format')) {
                 'xlsx' => [$exporter->xlsx($snapshot), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', $snapshots->filename($snapshot, 'xlsx')],
                 'pdf' => [$exporter->pdf($snapshot), 'application/pdf', $snapshots->filename($snapshot, 'pdf')],
-                'png' => [$exporter->png($snapshot, $part), 'image/png', $snapshots->filename($snapshot, 'png', $part)],
+                'png' => [$exporter->png($snapshot), 'image/png', $snapshots->filename($snapshot, 'png')],
             };
         } catch (RuntimeException $e) {
             return $this->httpResponse()->setError()->setMessage($e->getMessage())->setNextUrl(route('roster.schedule.index', $request->only('week', 'outlet_id')));
