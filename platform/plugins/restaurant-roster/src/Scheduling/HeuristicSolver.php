@@ -133,6 +133,8 @@ final class HeuristicSolver implements SolverInterface
             $stats['day_repaired'] = $this->repairDays($state, microtime(true) + 3);
             // Sửa riêng ca nặng còn lại (vd A2 nối M6): đổi ca trong tuần của một người, hoặc đổi cả đoạn ngày giữa hai người.
             $stats['heavy_repaired'] = $this->repairHeavy($state, microtime(true) + 3);
+            // Bước chốt: ai còn làm ít ngày hơn hồ sơ (vd OFF 1 ngày mà đang OFF 2) thì xếp ca vào ngày OFF thừa (quản lý 19/11/2026).
+            $stats['under_norm_filled'] = $this->fillUnderNorm($state, microtime(true) + 3);
         }
 
         return ['state' => $state, 'constructed' => $constructed, 'cost' => $constructed ? $state->cost() : null, 'stats' => $stats, 'after_construction' => $afterConstruction];
@@ -2392,6 +2394,82 @@ final class HeuristicSolver implements SolverInterface
         }
 
         return $aligned;
+    }
+
+    /**
+     * Lấp ngày làm còn thiếu so với hồ sơ: với từng ngày OFF thừa (thuật toán để trống, không phải ô khóa / nghỉ đã duyệt),
+     * thử xếp ca phù hợp nhất; nếu ca đó vướng ngày kề (vd A2 → M6) thì thử đổi luôn ca chưa khóa của ngày kề. Chỉ nhận khi lịch tốt hơn.
+     */
+    private function fillUnderNorm(ScheduleState $state, float $deadline): int
+    {
+        $filled = 0;
+
+        foreach (array_keys($state->problem->employees) as $e) {
+            foreach ($state->underNormWeeks($e) as $week) {
+                $missing = $week['expected'] - $week['worked'];
+
+                foreach ($week['free'] as $d) {
+                    if ($missing <= 0 || microtime(true) >= $deadline) {
+                        break;
+                    }
+
+                    if ($state->isOccupied($e, $d)) {
+                        continue;
+                    }
+
+                    $before = $state->cost();
+                    $journal = [];
+                    $slot = $this->bestSlotFor($state, $e, $d);
+
+                    if ($slot !== null && $this->journalPut($state, $journal, $e, $d, $slot) && $state->cost() < $before - 1e-6) {
+                        $filled++;
+                        $missing--;
+
+                        continue;
+                    }
+
+                    $this->rollback($state, $journal);
+
+                    // Ngày kề đang chặn (nhảy ca / giờ nghỉ): thử đổi ca chưa khóa của ngày kề rồi xếp lại ngày này.
+                    foreach ([$d - 1, $d + 1] as $n) {
+                        $old = $state->plan[$e][$n] ?? null;
+
+                        if ($old === null || $state->isFixed($e, $n)) {
+                            continue;
+                        }
+
+                        foreach ($state->requirements[$n] ?? [] as $requirement) {
+                            $alt = ScheduleState::slotKey($requirement->outletId, $requirement->shiftId);
+
+                            if ($alt === $old) {
+                                continue;
+                            }
+
+                            $journal = [];
+
+                            if (! $this->journalPut($state, $journal, $e, $n, null) || ! $this->journalPut($state, $journal, $e, $n, $alt)) {
+                                $this->rollback($state, $journal);
+
+                                continue;
+                            }
+
+                            $slot = $this->bestSlotFor($state, $e, $d);
+
+                            if ($slot !== null && $this->journalPut($state, $journal, $e, $d, $slot) && $state->cost() < $before - 1e-6) {
+                                $filled++;
+                                $missing--;
+
+                                continue 3;
+                            }
+
+                            $this->rollback($state, $journal);
+                        }
+                    }
+                }
+            }
+        }
+
+        return $filled;
     }
 
     private function relocateOffs(ScheduleState $state, float $deadline): int

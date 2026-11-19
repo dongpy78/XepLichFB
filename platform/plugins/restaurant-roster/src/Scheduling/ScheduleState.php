@@ -606,6 +606,52 @@ final class ScheduleState
         return $approved > 0 ? max(0, 7 - $approved) : $this->problem->employees[$employeeId]->maxWorkDaysPerWeek();
     }
 
+    /**
+     * Tuần (trọn trong phạm vi) người này làm ít ngày hơn định mức hồ sơ (quản lý 19/11/2026: hồ sơ OFF 1 ngày mà lịch OFF 2 ngày).
+     * Ngày "còn trống" = OFF do thuật toán để (không phải ô cố định / khóa, không phải nghỉ đã duyệt / sinh nhật).
+     *
+     * @return array<int, array{week: string, worked: int, expected: int, free: int[]}>
+     */
+    public function underNormWeeks(int $employeeId): array
+    {
+        $rows = [];
+        $hardRow = $this->problem->hardUnavailable[$employeeId] ?? [];
+
+        foreach ($this->weekDays as $week => $days) {
+            if (count(array_filter($days, fn ($k) => $this->inScope[$k])) !== 7) {
+                continue;
+            }
+
+            $worked = 0;
+            $available = 0;
+            $free = [];
+
+            foreach ($days as $k) {
+                $fixed = $this->fixed[$employeeId][$k] ?? null;
+
+                if ($this->shiftAt($employeeId, $k)) {
+                    $worked++;
+                }
+
+                if (! isset($hardRow[$this->dates[$k]]) && ! ($fixed && ! $fixed->isWorking())) {
+                    $available++;
+
+                    if (! $fixed && ! isset($this->plan[$employeeId][$k])) {
+                        $free[] = $k;
+                    }
+                }
+            }
+
+            $expected = min($this->weekMaxWork($employeeId, $days[0]), $available);
+
+            if ($worked < $expected) {
+                $rows[] = ['week' => (string) $week, 'worked' => $worked, 'expected' => $expected, 'free' => $free];
+            }
+        }
+
+        return $rows;
+    }
+
     public function isOccupied(int $employeeId, int $i): bool
     {
         return isset($this->fixed[$employeeId][$i]) || isset($this->plan[$employeeId][$i]);

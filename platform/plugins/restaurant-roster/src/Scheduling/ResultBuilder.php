@@ -48,7 +48,7 @@ final class ResultBuilder
             ...array_map(fn ($b) => ['code' => 'borrow', 'date' => $b['date'], 'outlet_id' => $b['outlet_id'], 'outlet_name' => $b['outlet_name'], 'message' => $b['message']], $borrows)];
         $pairMisses = $this->offPairWarnings($state);
         $jumps = $this->jumpWarnings($state);
-        $warnings = [...$warnings, ...$jumps, ...$pairMisses];
+        $warnings = [...$warnings, ...$jumps, ...$pairMisses, ...$this->underNormWarnings($state)];
         $explanation = $this->explain($state, $status, $hardViolations, $unfilled, $metadata);
 
         $explanation[] = $jumps
@@ -862,6 +862,52 @@ final class ResultBuilder
         usort($reasons['overtime_possible'], fn ($a, $b) => [$a['hours'], $a['worked_days']] <=> [$b['hours'], $b['worked_days']]);
 
         return ['eligible_total' => $eligible, 'possible' => $possible, 'reasons' => $reasons];
+    }
+
+    /**
+     * Người làm ít ngày hơn hồ sơ (vd hồ sơ OFF 1 ngày mà lịch OFF 2): nêu từng ngày OFF thừa và lý do không xếp được ca (quản lý 19/11/2026).
+     */
+    private function underNormWarnings(ScheduleState $state): array
+    {
+        $warnings = [];
+        $weekdays = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+        foreach ($state->problem->employees as $e => $employee) {
+            foreach ($state->underNormWeeks($e) as $week) {
+                $why = [];
+
+                foreach ($week['free'] as $d) {
+                    $reasons = [];
+                    $full = false;
+
+                    foreach ($state->requirements[$d] ?? [] as $requirement) {
+                        $violation = $state->violation($e, $d, $requirement->outletId, $requirement->shiftId);
+
+                        if (! $violation) {
+                            $full = $full || $state->count($d, $requirement->outletId, $requirement->shiftId) >= $requirement->capacity();
+
+                            continue;
+                        }
+
+                        if (! in_array($violation[0], ['not_eligible', 'not_allowed', 'gender', 'support', 'support_cap', 'residence', 'position'], true)) {
+                            $reasons[$violation[1]] = true;
+                        }
+                    }
+
+                    $date = $state->dates[$d];
+                    $why[] = $weekdays[(int) date('N', strtotime($date))] . ' ' . date('d/m', strtotime($date)) . ': '
+                        . ($reasons ? implode('; ', array_slice(array_keys($reasons), 0, 2)) : ($full ? 'ca phù hợp đã đủ người' : 'không có ca phù hợp (năng lực / giới tính / khu vực)'));
+                }
+
+                $first = $week['free'][0] ?? null;
+                $warnings[] = ['code' => 'under_norm', 'date' => $first !== null ? $state->dates[$first] : (string) reset($state->dates),
+                    'outlet_id' => $employee->homeOutletId, 'outlet_name' => $employee->homeOutletId ? $state->problem->outletName($employee->homeOutletId) : '',
+                    'message' => sprintf('%s làm %d / %d ngày (hồ sơ OFF %d ngày / tuần) – OFF thừa: %s.', $employee->name, $week['worked'], $week['expected'],
+                        $employee->daysOffPerWeek, $why ? implode(' | ', $why) : 'ô cố định / khóa')];
+            }
+        }
+
+        return $warnings;
     }
 
     private function proposals(ScheduleState $state, Requirement $requirement, string $level, int $have, array $analysis): array

@@ -437,6 +437,52 @@ class SchedulingRulesTest extends TestCase
         }
     }
 
+    /**
+     * Hồ sơ OFF 1 ngày / tuần (quản lý 19/11/2026): lịch A2 A2 A2 OFF OFF M6 M6 là thiếu 1 ngày làm – trang kết quả báo rõ người, ngày OFF thừa;
+     * bước chốt fillUnderNorm xếp thêm ca (không tạo A2 → M6) để còn đúng 1 OFF. Chạy tự động trọn tuần: ai cũng làm đủ 6 ngày.
+     */
+    public function test_one_off_profile_never_gets_two_offs(): void
+    {
+        Employee::query()->update(['days_off_per_week' => 1]);
+        $from = Carbon::parse(self::WEEK);
+        $problem = app(ProblemBuilder::class)->build($from, $from->copy()->addDays(6), null, ['time_limit_seconds' => 4, 'search_min_seconds' => null]);
+        $state = new \Botble\RestaurantRoster\Scheduling\ScheduleState($problem);
+        $e = $this->people['GCM1']->getKey();
+        $gusto = $this->outlets['GUSTO']->getKey();
+
+        foreach ([0 => 'A2', 1 => 'A2', 2 => 'A2', 5 => 'M6', 6 => 'M6'] as $d => $code) {
+            $state->place($e, $d, $gusto, $this->templates[$code]->getKey());
+        }
+
+        $this->assertSame([['week' => $state->weekKey(0), 'worked' => 5, 'expected' => 6, 'free' => [3, 4]]], $state->underNormWeeks($e));
+
+        $warning = collect((new \Botble\RestaurantRoster\Scheduling\ResultBuilder())->build($state, true, [])->warnings)
+            ->first(fn ($w) => $w['code'] === 'under_norm' && str_contains($w['message'], 'Synthetic GCM1'));
+        $this->assertNotNull($warning, 'Trang kết quả báo người làm thiếu ngày so với hồ sơ');
+        $this->assertStringContainsString('làm 5 / 6 ngày (hồ sơ OFF 1 ngày / tuần)', $warning['message']);
+        $this->assertStringContainsString('T5 07/03', $warning['message']);
+
+        $filled = \Closure::bind(fn () => $this->fillUnderNorm($state, microtime(true) + 3), new HeuristicSolver(), HeuristicSolver::class)();
+        $this->assertGreaterThanOrEqual(1, $filled, "Lịch thử chỉ có GCM1 – người khác còn trống cũng được lấp");
+        $this->assertSame([], $state->underNormWeeks($e), 'Đủ 6 ngày làm, chỉ còn 1 OFF');
+
+        $codes = array_map(fn ($d) => isset($state->plan[$e][$d]) ? $problem->shifts[\Botble\RestaurantRoster\Scheduling\ScheduleState::parseSlot($state->plan[$e][$d])[1]]->code : 'OFF', range(0, 6));
+        $this->assertSame(1, count(array_keys($codes, 'OFF')));
+
+        foreach (range(0, 5) as $d) {
+            $this->assertFalse($codes[$d] === 'A2' && $codes[$d + 1] === 'M6', 'Không nhảy ca A2 → M6: ' . implode(' ', $codes));
+        }
+
+        $result = $this->solve();
+
+        foreach ($this->people as $code => $person) {
+            $off = array_filter($result->assignments, fn ($r) => (int) $r['employee_id'] === $person->getKey() && $r['kind'] !== 'shift');
+            $this->assertCount(1, $off, "{$code}: hồ sơ OFF 1 ngày – đúng 1 OFF");
+        }
+
+        $this->assertEmpty(array_filter($result->warnings, fn ($w) => $w['code'] === 'under_norm'));
+    }
+
     private function admin(): User
     {
         return $this->user([], true);
