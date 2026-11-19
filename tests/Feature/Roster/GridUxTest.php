@@ -136,7 +136,7 @@ class GridUxTest extends TestCase
             $this->assertStringContainsString($control, $html, "Thiếu {$control}");
         }
 
-        foreach (['M6', 'A2', 'OH', 'M9', 'M9(EL)', 'M9(V)', 'OFF', 'N', 'M6(RS1)', 'M6(RS)', 'A2(RS)', 'M6(BQ)', 'A2(BQ)', 'OH(L)', 'M6(L)', 'A2(L)'] as $code) {
+        foreach (['M6', 'A2', 'OH', 'M9', 'M9(L)', 'M9(EL)', 'M9(V)', 'OFF', 'N', 'M6(RS1)', 'M6(RS)', 'A2(RS)', 'M6(BQ)', 'A2(BQ)', 'OH(L)', 'M6(L)', 'A2(L)'] as $code) {
             $this->assertStringContainsString('data-code="' . $code . '"', $html, "Thiếu nút {$code}");
         }
 
