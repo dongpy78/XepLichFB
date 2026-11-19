@@ -130,17 +130,68 @@ class ScheduleExportService
 
     // ------------------------------------------------------------------ PNG
 
-    /**
-     * Ảnh PNG một tấm cho cả tuần (quản lý 30/10/2026): cùng font (Inter) và bảng màu với Bảng xếp ca – màu ca theo Mẫu ca
-     * (sky, sand, amber, violet…), OFF đỏ nhạt, nghỉ phép hồng. Bảng giãn đủ chiều rộng ảnh; tiêu đề chỉ "LỊCH LÀM VIỆC TUẦN"
-     * và ngày áp dụng; ngày sinh nhân viên sau tên. Bản nháp có nhãn BẢN NHÁP đỏ.
-     */
-    public function png(array $snapshot): string
-    {
-        $sections = array_values(array_filter($snapshot['sections'], fn ($s) => $s['rows']));
+    /** Số người tối đa trong một ảnh gửi Zalo (khu vực đông hơn thì chia thành nhiều ảnh). */
+    public const PNG_PART_ROWS = 26;
 
-        if (! $sections) {
+    /** Cạnh dài nhất của ảnh gửi Zalo (điểm ảnh): vừa mức ảnh HD của Zalo nên ảnh gần như không bị thu nhỏ lại. */
+    public const PNG_ZALO_MAX_EDGE = 2560;
+
+    /**
+     * Các ảnh gửi Zalo (quản lý 19/11/2026): mỗi khu vực một ảnh (khu vực đông thì chia nhiều ảnh), số thứ tự liên tục như ảnh cả tuần.
+     *
+     * @return array<int, array{label: string, sections: array, start: int, rows: int}> đánh số từ 1
+     */
+    public function pngParts(array $snapshot): array
+    {
+        $parts = [];
+        $start = 0;
+
+        foreach ($snapshot['sections'] as $section) {
+            if (! $section['rows']) {
+                continue;
+            }
+
+            $chunks = array_chunk($section['rows'], self::PNG_PART_ROWS);
+
+            foreach ($chunks as $k => $rows) {
+                $parts[count($parts) + 1] = [
+                    'label' => mb_strtoupper($section['label']) . (count($chunks) > 1 ? ' (' . ($k + 1) . '/' . count($chunks) . ')' : ''),
+                    'sections' => [[...$section, 'rows' => $rows]],
+                    'start' => $start,
+                    'rows' => count($rows),
+                ];
+                $start += count($rows);
+            }
+        }
+
+        return $parts;
+    }
+
+    /**
+     * Ảnh PNG lịch tuần: bố cục ngang như Bảng xếp ca (quản lý 19/11/2026 – bỏ khổ dọc 1 : 2), cùng font Inter và màu ca theo Mẫu ca,
+     * OFF đỏ nhạt. Chữ to, đậm, tương phản cao để vẫn rõ khi Zalo nén ảnh. $part = null: cả tuần một ảnh; $part = n: ảnh thứ n của
+     * pngParts() (một khu vực), cạnh dài nhất tối đa PNG_ZALO_MAX_EDGE điểm ảnh để Zalo không phải thu nhỏ.
+     */
+    public function png(array $snapshot, ?int $part = null): string
+    {
+        $parts = $this->pngParts($snapshot);
+
+        if (! $parts) {
             throw new RuntimeException('Tuần này chưa có nhân viên nào trên bảng xếp ca.');
+        }
+
+        if ($part !== null) {
+            if (! isset($parts[$part])) {
+                throw new RuntimeException('Không có ảnh khu vực này – tải lại trang lịch tuần.');
+            }
+
+            $sections = $parts[$part]['sections'];
+            $n = $parts[$part]['start'];
+            $areaLabel = $parts[$part]['label'];
+        } else {
+            $sections = array_values(array_filter($snapshot['sections'], fn ($s) => $s['rows']));
+            $n = 0;
+            $areaLabel = null;
         }
 
         $f = $this->fonts();
@@ -148,9 +199,7 @@ class ScheduleExportService
         $draft = ! isset($snapshot['version']);
         $rows = array_merge(...array_map(fn ($s) => $s['rows'], $sections));
 
-        // Sinh nhật rơi vào tháng của tuần lịch → tô nổi bật như Bảng xếp ca.
-        // Như Bảng xếp ca, lấy ngày đầu tuần làm "hôm nay": sinh nhật từ đầu tuần đến hết tháng đó (hoặc hết tuần nếu tuần sang tháng
-        // mới) thì tô nổi; đã qua rồi hoặc ở tháng sau thì không. Vd tuần 26/10 – 01/11: 26/10 … 01/11 tô, 03/11 không.
+        // Sinh nhật rơi vào tháng của tuần lịch → tô nổi bật như Bảng xếp ca (lấy ngày đầu tuần làm "hôm nay").
         $from = $days[0]['date'];
         $to = max(end($days)['date'], date('Y-m-t', strtotime($from)));
         $birthdayThisMonth = function (array $r) use ($from, $to): bool {
@@ -168,54 +217,65 @@ class ScheduleExportService
 
             return false;
         };
-        $pad = 20;
-        $headerH = 164;
+
+        // Bố cục ngang như Bảng xếp ca: rộng cố định, cao theo số người.
+        $pad = 24;
+        $headerH = 150;
         $headH = 68;
-        $sectionH = 46;
-        $footerH = 110;
-        // Xem trên điện thoại: ảnh hẹp hơn màn hình thì hai bên dư đen. Giữ rộng / cao từ 1 : 2 (màn hình điện thoại 9 : 18 trở lên phủ kín chiều ngang):
-        // trước hết giảm chiều cao hàng (66 → 62, giữ khoảng thoáng dễ đọc), đông người quá nữa thì rộng ảnh thêm (cột ngày rộng ra).
-        $width = 1800;
-        $fixedH = $headerH + $headH + $sectionH * count($sections) + $footerH;
-        $rowH = max(62, min(66, (int) floor(($width * 2 - $fixedH) / count($rows))));
-        $width = max($width, min(2800, (int) ceil(($fixedH + $rowH * count($rows)) / 2)));
-        $colNo = 56;
-        $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['semibold'], 19, $r['name'])
-            + (! empty($r['birthday']) ? $this->textWidth($f['bold'], 16, '(' . $r['birthday'] . ')') + 30 : 0), $rows));
-        $colName = max(360, min(560, $nameNeed + 36));
+        $sectionH = 48;
+        $footerH = 100;
+        $rowH = 62;
+        $width = 1600;
+        $colNo = 52;
+        $nameNeed = max(array_map(fn ($r) => $this->textWidth($f['bold'], 21, $r['name'])
+            + (! empty($r['birthday']) ? $this->textWidth($f['bold'], 17, '(' . $r['birthday'] . ')') + 30 : 0), $rows));
+        $colName = max(340, min(520, $nameNeed + 36));
         $colDay = (int) floor(($width - $pad * 2 - $colNo - $colName) / max(1, count($days)));
         $colName = $width - $pad * 2 - $colNo - $colDay * count($days);
         $tableTop = $headerH;
         $tableH = $headH + $sectionH * count($sections) + $rowH * count($rows);
         $height = $tableTop + $tableH + $footerH;
 
-        // Vẽ ở độ phân giải cao (quản lý 02/11/2026: ảnh gửi nhân viên bị mờ khi phóng to trên điện thoại): tọa độ logic vẫn rộng 1800,
-        // ảnh thật gấp đôi. Thiếu bộ nhớ thì tự hạ tỉ lệ thay vì lỗi.
+        // Độ phân giải: ảnh cả tuần vẽ gấp đôi (in / gửi dạng file); ảnh gửi Zalo giới hạn cạnh dài nhất để Zalo không thu nhỏ thêm.
         $this->scale = $this->affordableScale($width, $height);
+
+        if ($part !== null) {
+            $this->scale = min($this->scale, self::PNG_ZALO_MAX_EDGE / max($width, $height));
+        }
+
         $img = imagecreatetruecolor((int) ceil($width * $this->scale), (int) ceil($height * $this->scale));
         imagesetthickness($img, (int) max(1, round($this->scale)));
         $c = fn (string $hex) => imagecolorallocate($img, hexdec(substr($hex, 0, 2)), hexdec(substr($hex, 2, 2)), hexdec(substr($hex, 4, 2)));
+        // Màu đậm hơn trước: chữ xám nhạt / đường kẻ mảnh dễ mất khi Zalo nén JPEG.
         $white = $c('FFFFFF');
         $text = $c('0F172A');
-        $muted = $c('475569');
-        $faint = $c('94A3B8');
-        $line = $c('E5E9F0');
-        $headBg = $c('F8FAFC');
-        $sectionBg = $c('F1F5F9');
-        $weekend = $c('FBFCFD');
+        $muted = $c('334155');
+        $faint = $c('64748B');
+        $line = $c('CBD5E1');
+        $headBg = $c('EEF2F7');
+        $sectionBg = $c('E2E8F0');
+        $weekend = $c('F8FAFC');
         $navy = $c('0A2540');
         $gold = $c('E0A96D');
         $this->drawRect($img, 0, 0, $width, $height, $white);
 
-        // Tiêu đề: "LỊCH LÀM VIỆC TUẦN" + ngày áp dụng (vạch vàng bên trái như thương hiệu).
-        $this->drawRect($img, $pad, 40, $pad + 6, 124, $gold);
-        $this->drawText($img, 36, 0, $pad + 24, 82, $navy, $f['bold'], 'LỊCH LÀM VIỆC TUẦN');
-        $this->drawText($img, 20, 0, $pad + 26, 122, $muted, $f['medium'], 'Ngày ' . $this->snapshots->period($snapshot));
+        // Tiêu đề: "LỊCH LÀM VIỆC TUẦN" + ngày áp dụng (vạch vàng bên trái như thương hiệu); ảnh khu vực có nhãn khu vực bên phải.
+        $this->drawRect($img, $pad, 36, $pad + 6, 116, $gold);
+        $this->drawText($img, 34, 0, $pad + 24, 76, $navy, $f['bold'], 'LỊCH LÀM VIỆC TUẦN');
+        $this->drawText($img, 21, 0, $pad + 26, 114, $muted, $f['semibold'], 'Ngày ' . $this->snapshots->period($snapshot));
+        $right = $width - $pad;
+
+        if ($areaLabel !== null) {
+            $tagW = $this->textWidth($f['bold'], 24, $areaLabel) + 44;
+            $this->roundRect($img, $right - $tagW, 44, $right, 100, 12, $navy);
+            $this->drawText($img, 24, 0, $right - $tagW + 22, 82, $white, $f['bold'], $areaLabel);
+            $right -= $tagW + 14;
+        }
 
         if ($draft) {
-            $tagW = $this->textWidth($f['bold'], 17, 'BẢN NHÁP') + 40;
-            $this->roundRect($img, $width - $pad - $tagW, 52, $width - $pad, 94, 8, $c('FEE2E2'));
-            $this->drawText($img, 17, 0, $width - $pad - $tagW + 20, 80, $c('DC2626'), $f['bold'], 'BẢN NHÁP');
+            $tagW = $this->textWidth($f['bold'], 18, 'BẢN NHÁP') + 40;
+            $this->roundRect($img, $right - $tagW, 50, $right, 94, 8, $c('FEE2E2'));
+            $this->drawText($img, 18, 0, $right - $tagW + 20, 79, $c('DC2626'), $f['bold'], 'BẢN NHÁP');
         }
 
         $x0 = $pad;
@@ -224,10 +284,9 @@ class ScheduleExportService
         $isWeekend = fn (array $day) => in_array(explode(' ', $day['label'])[0], ['T7', 'CN'], true);
 
         // Thẻ bảng: viền + bo góc.
-        $this->roundRect($img, $x0 - 1, $tableTop - 1, $x1 + 1, $tableTop + $tableH + 1, 12, $line);
+        $this->roundRect($img, $x0 - 2, $tableTop - 2, $x1 + 2, $tableTop + $tableH + 2, 12, $line);
         $this->roundRect($img, $x0, $tableTop, $x1, $tableTop + $tableH, 12, $white);
 
-        // Nền cột cuối tuần (nhạt như bảng xếp ca).
         foreach ($days as $k => $day) {
             if ($isWeekend($day)) {
                 $this->drawRect($img, $dayX($k), $tableTop + $headH, $dayX($k) + $colDay - ($k === count($days) - 1 ? 1 : 0), $tableTop + $tableH - 12, $weekend);
@@ -238,50 +297,49 @@ class ScheduleExportService
         $y = $tableTop;
         $this->roundRect($img, $x0, $y, $x1, $y + $headH, 12, $headBg);
         $this->drawRect($img, $x0, $y + 12, $x1, $y + $headH, $headBg);
-        $this->cellText($img, $f['semibold'], 14, $faint, $x0, $colNo, $y, $headH, '#', true);
-        $this->cellText($img, $f['semibold'], 14, $muted, $x0 + $colNo, $colName, $y, $headH, 'NHÂN VIÊN');
+        $this->cellText($img, $f['bold'], 15, $faint, $x0, $colNo, $y, $headH, '#', true);
+        $this->cellText($img, $f['bold'], 15, $muted, $x0 + $colNo, $colName, $y, $headH, 'NHÂN VIÊN');
 
         foreach ($days as $k => $day) {
             [$dow, $date] = array_pad(explode(' ', $day['label'], 2), 2, '');
-            $this->cellText($img, $f['semibold'], 18, $text, $dayX($k), $colDay, $y - 11, $headH, $this->dayName($dow), true);
-            $this->cellText($img, $f['regular'], 14, $muted, $dayX($k), $colDay, $y + 14, $headH, $date, true);
+            $this->cellText($img, $f['bold'], 19, $text, $dayX($k), $colDay, $y - 11, $headH, $this->dayName($dow), true);
+            $this->cellText($img, $f['semibold'], 15, $muted, $dayX($k), $colDay, $y + 15, $headH, $date, true);
         }
 
         $this->drawLine($img, $x0, $y + $headH, $x1, $y + $headH, $line);
         $y += $headH;
-        $n = 0;
 
         foreach ($sections as $section) {
             $this->drawRect($img, $x0, $y, $x1, $y + $sectionH, $sectionBg);
             $label = mb_strtoupper($section['label']);
-            $this->drawText($img, 15, 0, $x0 + 18, (int) ($y + $sectionH / 2 + 6), $c('334155'), $f['bold'], $label);
-            $this->drawText($img, 14, 0, $x0 + 30 + $this->textWidth($f['bold'], 15, $label), (int) ($y + $sectionH / 2 + 6), $faint, $f['medium'], count($section['rows']) . ' người');
+            $this->drawText($img, 17, 0, $x0 + 18, (int) ($y + $sectionH / 2 + 7), $navy, $f['bold'], $label);
+            $this->drawText($img, 15, 0, $x0 + 32 + $this->textWidth($f['bold'], 17, $label), (int) ($y + $sectionH / 2 + 7), $faint, $f['semibold'], count($section['rows']) . ' người');
             $this->drawLine($img, $x0, $y + $sectionH, $x1, $y + $sectionH, $line);
             $y += $sectionH;
 
             foreach ($section['rows'] as $row) {
-                $this->cellText($img, $f['medium'], 15, $faint, $x0, $colNo, $y, $rowH, (string) ++$n, true);
+                $this->cellText($img, $f['semibold'], 16, $faint, $x0, $colNo, $y, $rowH, (string) ++$n, true);
 
-                // Tên + ngày sinh "(13/12)" như Bảng xếp ca: chữ xám nhạt; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
+                // Tên + ngày sinh "(13/12)" như Bảng xếp ca; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
                 $nx = $x0 + $colNo + 8;
-                $name = $this->fit($f['semibold'], 19, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 100 : 0));
-                $nameY = $y + (int) floor($rowH / 2) - 2;
-                $this->drawText($img, 19, 0, $nx, $nameY, $text, $f['semibold'], $name);
+                $name = $this->fit($f['bold'], 21, $row['name'], $colName - 24 - (! empty($row['birthday']) ? 110 : 0));
+                $nameY = $y + (int) floor($rowH / 2) - 3;
+                $this->drawText($img, 21, 0, $nx, $nameY, $text, $f['bold'], $name);
 
                 if (! empty($row['birthday'])) {
                     $label = '(' . $row['birthday'] . ')';
-                    $bx = $nx + $this->textWidth($f['semibold'], 19, $name) + 8;
+                    $bx = $nx + $this->textWidth($f['bold'], 21, $name) + 8;
 
                     if ($birthdayThisMonth($row)) {
-                        $bw = $this->textWidth($f['bold'], 16, $label) + 18;
-                        $this->roundRect($img, $bx, $nameY - 20, $bx + $bw, $nameY + 6, 13, $c('FEE2E2'));
-                        $this->drawText($img, 16, 0, $bx + 9, $nameY - 1, $c('DC2626'), $f['bold'], $label);
+                        $bw = $this->textWidth($f['bold'], 17, $label) + 18;
+                        $this->roundRect($img, $bx, $nameY - 21, $bx + $bw, $nameY + 6, 13, $c('FEE2E2'));
+                        $this->drawText($img, 17, 0, $bx + 9, $nameY - 1, $c('DC2626'), $f['bold'], $label);
                     } else {
-                        $this->drawText($img, 16, 0, $bx, $nameY - 1, $faint, $f['regular'], $label);
+                        $this->drawText($img, 17, 0, $bx, $nameY - 1, $faint, $f['semibold'], $label);
                     }
                 }
 
-                $this->drawText($img, 14, 0, $nx, $nameY + 21, $muted, $f['regular'], $this->fit($f['regular'], 14, $row['position'], $colName - 24));
+                $this->drawText($img, 15, 0, $nx, $nameY + 24, $muted, $f['medium'], $this->fit($f['medium'], 15, $row['position'], $colName - 24));
 
                 foreach ($row['cells'] as $k => $cell) {
                     if ($cell === '') {
@@ -289,9 +347,8 @@ class ScheduleExportService
                     }
 
                     [$fill, $fg] = $this->shiftColors($snapshot, $cell, ! empty($row['offs'][$k]));
-                    $cellGap = max(10, $rowH - 52);
-                    $this->roundRect($img, $dayX($k) + 10, $y + $cellGap, $dayX($k) + $colDay - 10, $y + $rowH - $cellGap, 8, $c($fill));
-                    $this->cellText($img, $f['semibold'], mb_strlen($cell) > 6 ? 14 : 17, $c($fg), $dayX($k), $colDay, $y, $rowH, $cell, true);
+                    $this->roundRect($img, $dayX($k) + 8, $y + 9, $dayX($k) + $colDay - 8, $y + $rowH - 9, 9, $c($fill));
+                    $this->cellText($img, $f['bold'], mb_strlen($cell) > 6 ? 17 : 22, $c($fg), $dayX($k), $colDay, $y, $rowH, $cell, true);
                 }
 
                 $y += $rowH;
@@ -306,26 +363,26 @@ class ScheduleExportService
 
         // Chú thích màu ca.
         $lx = $pad;
-        $ly = $tableTop + $tableH + 34;
-        $this->drawText($img, 15, 0, $lx, $ly + 21, $muted, $f['semibold'], 'Chú thích');
-        $lx += $this->textWidth($f['semibold'], 15, 'Chú thích') + 22;
+        $ly = $tableTop + $tableH + 28;
+        $this->drawText($img, 16, 0, $lx, $ly + 22, $muted, $f['bold'], 'Chú thích');
+        $lx += $this->textWidth($f['bold'], 16, 'Chú thích') + 22;
 
         foreach ([...$snapshot['legend'], 'OFF' => 'nghỉ'] as $code => $time) {
             [$fill, $fg] = $this->shiftColors($snapshot, (string) $code, $code === 'OFF');
-            $chipW = $this->textWidth($f['semibold'], 15, (string) $code) + 26;
-            $tw = $this->textWidth($f['regular'], 14, (string) $time);
+            $chipW = $this->textWidth($f['bold'], 16, (string) $code) + 26;
+            $tw = $this->textWidth($f['medium'], 15, (string) $time);
 
             if ($lx + $chipW + $tw + 30 > $width - $pad) {
                 break;
             }
 
-            $this->roundRect($img, $lx, $ly, $lx + $chipW, $ly + 30, 7, $c($fill));
-            $this->drawText($img, 15, 0, $lx + 13, $ly + 21, $c($fg), $f['semibold'], (string) $code);
-            $this->drawText($img, 14, 0, $lx + $chipW + 9, $ly + 21, $muted, $f['regular'], (string) $time);
+            $this->roundRect($img, $lx, $ly, $lx + $chipW, $ly + 32, 7, $c($fill));
+            $this->drawText($img, 16, 0, $lx + 13, $ly + 22, $c($fg), $f['bold'], (string) $code);
+            $this->drawText($img, 15, 0, $lx + $chipW + 9, $ly + 22, $muted, $f['medium'], (string) $time);
             $lx += $chipW + $tw + 30;
         }
 
-        $this->drawText($img, 13, 0, $pad, $ly + 64, $faint, $f['regular'], 'Selectum Noa · F&B · Xếp lịch nhà hàng');
+        $this->drawText($img, 14, 0, $pad, $ly + 62, $faint, $f['medium'], 'Selectum Noa · F&B · Xếp lịch nhà hàng');
 
         ob_start();
         imagepng($img, null, 6);

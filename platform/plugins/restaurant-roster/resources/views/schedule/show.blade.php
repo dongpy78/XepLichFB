@@ -103,10 +103,45 @@
                     </div>
                 </div>
 
-                <div class="card" id="png">
+                <div class="card mb-3" id="png">
+                    <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                        <div>
+                            <h3 class="card-title mb-0">Ảnh gửi Zalo – từng khu vực</h3>
+                            <div class="small text-muted">Mỗi khu vực một ảnh vừa khung nên Zalo không thu nhỏ – chữ vẫn rõ trên điện thoại.</div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-primary" data-download-all><x-core::icon name="ti ti-download" /> Tải tất cả ({{ count($pngParts) }} ảnh)</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info py-2 small mb-3">
+                            <strong>Gửi Zalo cho rõ nét:</strong> chọn ảnh rồi bật <strong>HD</strong> (gửi ảnh chất lượng cao) trước khi gửi;
+                            hoặc gửi ảnh dưới dạng <strong>File</strong> – nhân viên nhận đúng ảnh gốc, không bị nén.
+                        </div>
+                        <div class="row g-3">
+                            @foreach ($pngParts as $no => $part)
+                                <div class="col-md-6">
+                                    <div class="border rounded p-2 h-100 d-flex flex-column gap-2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <strong>{{ $part['label'] }}</strong>
+                                            <span class="small text-muted">{{ $part['rows'] }} người</span>
+                                        </div>
+                                        <a href="{{ $exportUrl('png', ['part' => $no, 'inline' => 1]) }}" target="_blank" rel="noopener">
+                                            <img src="{{ $exportUrl('png', ['part' => $no, 'inline' => 1]) }}" alt="Lịch {{ $part['label'] }}" class="img-fluid border rounded" loading="lazy">
+                                        </a>
+                                        <a class="btn btn-sm mt-auto" href="{{ $exportUrl('png', ['part' => $no]) }}" data-download data-part-download><x-core::icon name="ti ti-download" /> Tải ảnh {{ $part['label'] }}</a>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="png-full">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h3 class="card-title">Ảnh PNG để gửi Zalo</h3>
-                        <a class="btn btn-sm btn-primary" href="{{ $exportUrl('png') }}" data-download><x-core::icon name="ti ti-download" /> Tải ảnh</a>
+                        <div>
+                            <h3 class="card-title mb-0">Ảnh cả tuần (một tấm)</h3>
+                            <div class="small text-muted">Dùng để in hoặc gửi dạng File; gửi ảnh thường qua Zalo nên dùng ảnh từng khu vực ở trên.</div>
+                        </div>
+                        <a class="btn btn-sm" href="{{ $exportUrl('png') }}" data-download><x-core::icon name="ti ti-download" /> Tải ảnh</a>
                     </div>
                     <div class="card-body text-center">
                         <img src="{{ $exportUrl('png', ['inline' => 1]) }}" alt="Lịch làm việc tuần" class="img-fluid border rounded" loading="lazy">
@@ -117,6 +152,21 @@
     </div>
 
     <script>
+        // Tải tất cả ảnh khu vực: lần lượt từng ảnh (cách nhau một chút để trình duyệt không chặn).
+        document.querySelectorAll('[data-download-all]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                document.querySelectorAll('[data-part-download]').forEach(function (link, i) {
+                    setTimeout(function () {
+                        var a = document.createElement('a');
+                        a.href = link.href;
+                        a.download = '';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                    }, i * 900);
+                });
+            });
+        });
         // Đang tạo file: khóa nút vài giây, tránh bấm liên tục.
         document.querySelectorAll('[data-download]').forEach(function (link) {
             link.addEventListener('click', function () {
