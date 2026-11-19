@@ -255,7 +255,11 @@ trait SyntheticRoster
 
                 $week = CarbonImmutable::parse($date)->format('o-W');
                 $weekDays[$week] = ($weekDays[$week] ?? 0) + 1;
-                $this->assertLessThanOrEqual($employee->maxWorkDaysPerWeek(), $weekDays[$week], "#{$employeeId} ít hơn {$employee->daysOffPerWeek} ngày OFF trong tuần {$week}");
+                // Tuần có OFF quản lý duyệt / khóa (không tính sinh nhật): đó là OFF của tuần – làm được 7 trừ số ngày OFF đó (quản lý 19/11/2026).
+                $approved = count(array_filter($problem->fixed, fn ($f) => $f->employeeId === $employeeId && $f->source === 'locked'
+                    && $f->kind === \Botble\RestaurantRoster\Scheduling\FixedAssignment::KIND_OFF && ! isset($problem->regularOff[$employeeId][$f->date])
+                    && CarbonImmutable::parse($f->date)->format('o-W') === $week));
+                $this->assertLessThanOrEqual($approved > 0 ? 7 - $approved : $employee->maxWorkDaysPerWeek(), $weekDays[$week], "#{$employeeId} ít hơn {$employee->daysOffPerWeek} ngày OFF trong tuần {$week}");
             }
         }
     }

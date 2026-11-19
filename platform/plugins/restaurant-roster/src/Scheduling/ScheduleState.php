@@ -573,7 +573,37 @@ final class ScheduleState
 
     public function wouldExceedWeeklyNorm(int $employeeId, int $i): bool
     {
-        return $this->workedInWeek($employeeId, $i) + 1 > $this->problem->employees[$employeeId]->maxWorkDaysPerWeek();
+        return $this->workedInWeek($employeeId, $i) + 1 > $this->weekMaxWork($employeeId, $i);
+    }
+
+    /** @var array<string, int> "nhân viên|tuần" => số ngày OFF quản lý duyệt / khóa trong tuần */
+    private array $approvedOffCache = [];
+
+    /**
+     * Số ngày OFF quản lý đã duyệt / khóa trong tuần chứa ngày $i (quản lý 19/11/2026): ô OFF đã khóa – OFF nhân viên xin, OFF quản lý ghi.
+     * Không tính nghỉ phép (AL / SL… không thay ngày nghỉ tuần), sinh nhật (quy tắc riêng), OFF thuật toán tự xếp, tuần khác.
+     */
+    public function approvedOffInWeek(int $employeeId, int $i): int
+    {
+        $week = $this->weekOf[$i];
+
+        return $this->approvedOffCache["{$employeeId}|{$week}"] ??= count(array_filter($this->weekDays[$week] ?? [], function (int $k) use ($employeeId): bool {
+            $fixed = $this->fixed[$employeeId][$k] ?? null;
+
+            return $fixed !== null && $fixed->source === 'locked' && $fixed->kind === FixedAssignment::KIND_OFF
+                && ! isset($this->problem->regularOff[$employeeId][$this->dates[$k]]);
+        }));
+    }
+
+    /**
+     * Số ngày được làm tối đa trong tuần chứa ngày $i: tuần đã có OFF quản lý duyệt / khóa thì đó là OFF của tuần – làm tất cả ngày còn lại,
+     * không tự xếp thêm OFF (quản lý 19/11/2026). Không có thì theo số ngày OFF / tuần trong hồ sơ.
+     */
+    public function weekMaxWork(int $employeeId, int $i): int
+    {
+        $approved = $this->approvedOffInWeek($employeeId, $i);
+
+        return $approved > 0 ? max(0, 7 - $approved) : $this->problem->employees[$employeeId]->maxWorkDaysPerWeek();
     }
 
     public function isOccupied(int $employeeId, int $i): bool
@@ -902,8 +932,8 @@ final class ScheduleState
                     return ['days_off_quota', sprintf('Đã đủ %d ngày làm trong 2 tuần liền (cần %d ngày OFF / 2 tuần)', 2 * $employee->maxWorkDaysPerWeek(), 2 * $employee->daysOffPerWeek)];
                 }
             }
-        } elseif ($days > $employee->maxWorkDaysPerWeek()) {
-            return ['days_off_quota', sprintf('Đã đủ %d ngày làm trong tuần (cần %d ngày OFF)', $employee->maxWorkDaysPerWeek(), $employee->daysOffPerWeek)];
+        } elseif ($days > ($weekMax = $this->weekMaxWork($employeeId, $i))) {
+            return ['days_off_quota', sprintf('Đã đủ %d ngày làm trong tuần (cần %d ngày OFF)', $weekMax, 7 - $weekMax)];
         }
 
         if ($weekHours > $employee->weeklyHours + 1e-6) {
@@ -1643,7 +1673,6 @@ final class ScheduleState
         }
 
         // Ngày làm từng tuần (kể cả ô cố định ngoài phạm vi).
-        $maxWork = $employee->maxWorkDaysPerWeek();
         $hardRow = $this->problem->hardUnavailable[$employeeId] ?? [];
         $expected = 0;
         $worked = 0;
@@ -1652,6 +1681,8 @@ final class ScheduleState
             $inWeek = 0;
             $scopeDays = 0;
             $available = 0;
+            // Tuần có OFF quản lý duyệt / khóa: đó là OFF của tuần, phải làm đủ các ngày còn lại (weekMaxWork).
+            $maxWork = $days ? $this->weekMaxWork($employeeId, $days[0]) : $employee->maxWorkDaysPerWeek();
 
             foreach ($days as $k) {
                 if ($work[$k]) {

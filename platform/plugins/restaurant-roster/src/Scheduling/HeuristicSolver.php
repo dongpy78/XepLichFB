@@ -237,7 +237,8 @@ final class HeuristicSolver implements SolverInterface
                 $known = array_values(array_filter($days, fn ($i) => $state->isOffDay($employeeId, $i) && ! isset($state->plan[$employeeId][$i])
                     && ($state->isFixed($employeeId, $i) || isset($state->problem->hardUnavailable[$employeeId][$state->dates[$i]]))));
 
-                if (count($known) >= 2) {
+                // Tuần đã có OFF quản lý duyệt / khóa (không tính sinh nhật): đó là OFF của tuần, không lên thêm OFF ghép cạnh (quản lý 19/11/2026).
+                if (count($known) >= 2 || $state->approvedOffInWeek($employeeId, $days[0]) > 0) {
                     continue;
                 }
 

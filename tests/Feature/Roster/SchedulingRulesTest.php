@@ -402,6 +402,41 @@ class SchedulingRulesTest extends TestCase
         $grid->assertSee('href="' . route('roster.index') . '"', false);
     }
 
+    /**
+     * OFF quản lý duyệt / khóa là OFF của tuần (quản lý 19/11/2026): người OFF 2 ngày / tuần trong hồ sơ nhưng đã có OFF duyệt thứ Hai / thứ Tư /
+     * Chủ nhật thì không tự xếp thêm OFF, các ngày còn lại vẫn đi làm; người không có OFF duyệt vẫn OFF theo hồ sơ. Chạy + áp dụng 2 lần vẫn vậy.
+     */
+    public function test_approved_off_is_the_weeks_only_off(): void
+    {
+        $admin = $this->admin();
+        $offs = ['GCF1' => 0, 'VCF1' => 2, 'GCF2' => 6];
+        $week = Carbon::parse(self::WEEK);
+
+        foreach ($offs as $code => $day) {
+            $this->assertSame(2, (int) $this->people[$code]->days_off_per_week, 'Hồ sơ: OFF 2 ngày / tuần');
+            app(\Botble\RestaurantRoster\Services\OffRequestService::class)->record([$this->people[$code]->getKey()],
+                ['date_from' => $week->copy()->addDays($day)->toDateString(), 'date_to' => $week->copy()->addDays($day)->toDateString(), 'type' => 'off_request'], 1);
+        }
+
+        foreach ([1, 2] as $round) {
+            $this->actingAs($admin)->postJson(route('roster.auto.run'), ['from' => self::WEEK, 'to' => $week->copy()->addDays(6)->toDateString(), 'type' => 'generate'])
+                ->assertJson(['error' => false]);
+            $this->actingAs($admin)->postJson(route('roster.auto.apply', \Botble\RestaurantRoster\Models\Run::query()->latest('id')->value('id')))->assertJson(['error' => false]);
+
+            foreach ($offs as $code => $day) {
+                $cells = Shift::query()->where('employee_id', $this->people[$code]->getKey())->whereDate('date', '>=', self::WEEK)->whereDate('date', '<=', $week->copy()->addDays(6)->toDateString())->get();
+                $off = $cells->filter(fn (Shift $c) => ! $c->isWorking())->map(fn (Shift $c) => $c->date->toDateString())->values()->all();
+
+                $this->assertSame([$week->copy()->addDays($day)->toDateString()], $off, "Lần {$round} – {$code}: chỉ OFF đã duyệt");
+                $this->assertSame(6, $cells->filter(fn (Shift $c) => $c->isWorking())->count(), "Lần {$round} – {$code}: 6 ngày còn lại đi làm");
+                $this->assertTrue($cells->first(fn (Shift $c) => ! $c->isWorking())->isRecordedOff(), 'OFF đã duyệt giữ nguyên, vẫn khóa');
+            }
+
+            $free = Shift::query()->where('employee_id', $this->people['VCF2']->getKey())->whereDate('date', '>=', self::WEEK)->whereDate('date', '<=', $week->copy()->addDays(6)->toDateString())->get();
+            $this->assertSame(2, $free->filter(fn (Shift $c) => ! $c->isWorking())->count(), "Lần {$round}: người không có OFF duyệt vẫn OFF 2 ngày theo hồ sơ");
+        }
+    }
+
     private function admin(): User
     {
         return $this->user([], true);
