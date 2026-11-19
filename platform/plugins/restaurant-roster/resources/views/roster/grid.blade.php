@@ -53,7 +53,7 @@
 @endphp
 
 <svg style="position: absolute; width: 0; height: 0; overflow: hidden" aria-hidden="true">
-    @foreach (['plus' => 'ti ti-plus', 'eraser' => 'ti ti-eraser', 'alert' => 'ti ti-alert-circle'] as $iconId => $iconName)
+    @foreach (['plus' => 'ti ti-plus', 'alert' => 'ti ti-alert-circle'] as $iconId => $iconName)
         <symbol id="roster-i-{{ $iconId }}" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{!! $iconBody($iconName) !!}</g></symbol>
     @endforeach
 </svg>
@@ -225,6 +225,9 @@
     </details>
 @endif
 
+{{-- Bộ lọc / tìm kiếm (#roster-filters ở trang chính) được roster.js đặt vào đây – ngay trên bảng. --}}
+<div id="roster-filters-slot"></div>
+
 <div class="card">
     @if (! count($grid['rows']))
         <div class="card-body text-center py-5">
@@ -272,15 +275,6 @@
                                 </td>
                                 @foreach ($grid['days'] as $day)
                                     <td class="roster-section__day">
-                                        @if ($canManage && $currentStatOutlet)
-                                            <button type="button" class="roster-clear-btn"
-                                                data-roster-clear="column"
-                                                data-outlet="{{ $currentStatOutlet }}"
-                                                data-date="{{ $day->toDateString() }}"
-                                                title="Xóa lịch nhân viên outlet {{ $row['section']['label'] }} ngày {{ $dayNames[$day->dayOfWeekIso] }} {{ $day->format('d/m') }} để xếp lại">
-                                                {!! $icon('eraser') !!} <span>Xóa cột</span>
-                                            </button>
-                                        @endif
                                     </td>
                                 @endforeach
                             </tr>
@@ -308,14 +302,6 @@
                             <td class="roster-table__staff" @if ($check['messages']) title="{{ implode(' · ', $check['messages']) }}" @endif>
                                 <div class="roster-staff__name">
                                     {{ $employee->name }}@if ($employee->birthday)<span @class(['roster-staff__birthday', 'is-upcoming' => $employee->hasUpcomingBirthdayThisMonth()]) @if ($employee->hasUpcomingBirthdayThisMonth()) title="Sinh nhật ngày {{ $employee->birthday }} (tháng này)" @endif>({{ $employee->birthday }})</span>@endif
-                                    @if ($canManage)
-                                        <button type="button" class="roster-clear-btn roster-clear-btn--row"
-                                            data-roster-clear="row"
-                                            data-employee="{{ $employee->id }}"
-                                            title="Xóa lịch cả tuần của {{ $employee->name }} để xếp lại">
-                                            {!! $icon('eraser') !!}
-                                        </button>
-                                    @endif
                                     @if ($check['level'] !== 'ok' && $check['messages'])
                                         <span class="roster-row-flag roster-row-flag--{{ $check['level'] }}">{!! $icon('alert') !!}</span>
                                     @endif

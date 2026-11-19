@@ -636,29 +636,9 @@
 [data-bs-theme="dark"] .roster-table--compact tbody tr.roster-stat-row:hover td { background: rgba(148, 163, 184, .06); }
 
 /* Xóa lịch theo hàng / cột để xếp lại */
-.roster-clear-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 1px 6px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--r-faint, #94a3b8);
-    cursor: pointer;
-}
-.roster-clear-btn svg { width: 14px; height: 14px; }
-.roster-clear-btn:hover { border-color: #fca5a5; background: #fef2f2; color: #dc2626; }
-.roster-clear-btn--row { padding: 0 3px; margin-left: 2px; visibility: hidden; vertical-align: -2px; }
-.roster-table--compact tbody tr:hover .roster-clear-btn--row { visibility: visible; }
 .roster-table--compact .roster-section td.roster-section__day { text-align: center; padding: 6px 4px !important; }
-.roster-section__day .roster-clear-btn { opacity: .55; }
-.roster-section__day .roster-clear-btn:hover { opacity: 1; }
 .roster-section__stats { margin-top: 4px; }
 .roster-section__stats .roster-section__count:first-child { margin-left: 0; }
-[data-bs-theme="dark"] .roster-clear-btn:hover { background: rgba(248, 113, 113, .14); border-color: rgba(248, 113, 113, .4); color: #fca5a5; }
 .roster-section__count { white-space: nowrap; display: inline-block; margin-bottom: 2px; }
 
 /* Trạng thái ô: OFF quản lý đã cho (khóa), ca đã xác nhận (khóa), cần xem xét. */
@@ -703,8 +683,111 @@
 [data-bs-theme="dark"] .roster-off-bar { background: #1e293b; border-color: #475569; }
 
 /* Bộ lọc trên bảng (01/11/2026) */
-.roster-filters .form-select { width: auto; max-width: 220px; }
-.roster-filters__search { width: 240px; max-width: 100%; }
+.roster-filters {
+    --rf-line: var(--bs-border-color, #e2e8f0);
+    --rf-bg: var(--bs-body-bg, #fff);
+    --rf-soft: #f8fafc;
+    --rf-accent: #c2410c;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem .75rem;
+    margin-bottom: .75rem;
+    padding: .625rem .75rem;
+    border: 1px solid var(--rf-line);
+    border-radius: 12px;
+    background: var(--rf-bg);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+.roster-filters.is-pending { display: none; }
+.roster-filters__search {
+    position: relative;
+    flex: 1 1 260px;
+    max-width: 340px;
+}
+.roster-filters__search-icon {
+    position: absolute;
+    left: .75rem;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    pointer-events: none;
+}
+.roster-filters__search input {
+    width: 100%;
+    height: 36px;
+    padding: 0 2.25rem 0 2.25rem;
+    border: 1px solid var(--rf-line);
+    border-radius: 999px;
+    background: var(--rf-soft);
+    font-size: 14px;
+    color: inherit;
+    transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+.roster-filters__search input::placeholder { color: #94a3b8; }
+.roster-filters__search input:focus {
+    outline: 0;
+    border-color: var(--rf-accent);
+    background: var(--rf-bg);
+    box-shadow: 0 0 0 3px rgba(194, 65, 12, .15);
+}
+.roster-filters__search input:focus ~ .roster-filters__kbd,
+.roster-filters__search input:not(:placeholder-shown) ~ .roster-filters__kbd { display: none; }
+.roster-filters__kbd {
+    position: absolute;
+    right: .6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0 .4rem;
+    border: 1px solid var(--rf-line);
+    border-radius: 6px;
+    background: var(--rf-bg);
+    font-size: 11px;
+    line-height: 18px;
+    color: #94a3b8;
+    box-shadow: none;
+}
+.roster-filters__selects { display: flex; flex-wrap: wrap; gap: .5rem; }
+.roster-filters__selects .form-select {
+    width: auto;
+    min-width: 120px;
+    max-width: 200px;
+    height: 36px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 999px;
+    border-color: var(--rf-line);
+    font-size: 13px;
+}
+.roster-filters__selects .form-select:focus { border-color: var(--rf-accent); box-shadow: 0 0 0 3px rgba(194, 65, 12, .15); }
+.roster-filters__toggles { display: flex; flex-wrap: wrap; gap: .375rem; }
+.roster-filter-chip { position: relative; margin: 0; cursor: pointer; user-select: none; }
+.roster-filter-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.roster-filter-chip span {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    height: 32px;
+    padding: 0 .75rem;
+    border: 1px solid var(--rf-line);
+    border-radius: 999px;
+    background: var(--rf-bg);
+    font-size: 13px;
+    color: #475569;
+    transition: all .15s;
+}
+.roster-filter-chip span svg { width: 15px; height: 15px; }
+.roster-filter-chip:hover span { border-color: #cbd5e1; background: var(--rf-soft); }
+.roster-filter-chip input:checked + span { border-color: var(--rf-accent); background: rgba(194, 65, 12, .1); color: var(--rf-accent); font-weight: 600; }
+.roster-filter-chip input:focus-visible + span { box-shadow: 0 0 0 3px rgba(194, 65, 12, .2); }
+.roster-filters__meta { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
+.roster-filters__count { font-size: 13px; color: #64748b; white-space: nowrap; }
+.roster-filters__count:empty { display: none; }
+[data-bs-theme="dark"] .roster-filters { --rf-soft: rgba(255, 255, 255, .04); --rf-accent: #fb923c; box-shadow: none; }
+[data-bs-theme="dark"] .roster-filter-chip span { color: #cbd5e1; }
+[data-bs-theme="dark"] .roster-filter-chip input:checked + span { background: rgba(251, 146, 60, .15); }
 .roster-cell.is-dimmed .roster-mini { opacity: .25; }
 
 /* Ô đang lưu / vừa lưu / được chọn từ bảng cảnh báo */
@@ -745,7 +828,9 @@
 /* Màn hình hẹp (máy tính bảng / điện thoại): bảng cuộn trong khung riêng để hàng tiêu đề ngày và cột tên luôn dính khi cuộn. */
 @media (max-width: 1199.98px) {
     .roster-scroll.table-responsive { max-height: calc(100vh - 140px); overflow: auto; }
-    .roster-filters .form-select, .roster-filters__search { max-width: none; flex: 1 1 140px; }
+    .roster-filters__search { max-width: none; flex-basis: 100%; }
+    .roster-filters__selects .form-select { max-width: none; flex: 1 1 120px; }
+    .roster-filters__meta { margin-left: 0; }
 }
 
 @media (max-width: 575.98px) {

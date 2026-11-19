@@ -121,6 +121,24 @@ class GridUxTest extends TestCase
         $this->assertMatchesRegularExpression('/roster\.js\?v=\w+/', $page->getContent(), 'JS có số phiên bản – không cần Ctrl+F5 sau khi cập nhật');
     }
 
+    /** Quản lý 19/11/2026: bỏ xóa hàng / xóa cột (chỉ còn Xóa lịch tuần); ô tìm kiếm đặt ngay trên bảng xếp ca. */
+    public function test_no_row_column_clear_and_search_sits_above_grid(): void
+    {
+        $this->employee('G1', 'GUSTO', 'male');
+
+        $html = $this->actingAs($this->user)->get(route('roster.index', ['week' => self::WEEK]))->assertOk()->getContent();
+        $this->assertStringNotContainsString('data-roster-clear="', $html);
+        $this->assertStringNotContainsString('Xóa cột', $html);
+        $this->assertStringContainsString('data-roster-clear-week', $html, 'Vẫn còn Xóa lịch tuần');
+
+        $grid = substr($html, strpos($html, 'id="roster-grid"'));
+        $this->assertLessThan(strpos($grid, 'roster-table'), strpos($grid, 'id="roster-filters-slot"'), 'Chỗ đặt ô tìm kiếm nằm ngay trên bảng');
+
+        foreach (['row' => ['employee_id' => 1], 'column' => ['outlet_id_clear' => 1, 'date' => self::WEEK]] as $mode => $extra) {
+            $this->actingAs($this->user)->postJson(route('roster.clear-cells'), ['week' => self::WEEK, 'mode' => $mode, ...$extra])->assertStatus(422);
+        }
+    }
+
     /** Hộp xếp ca tối giản: vẫn đủ mọi chức năng, các nút bấm một lần là lưu. */
     public function test_cell_popup_is_compact_but_keeps_every_action(): void
     {

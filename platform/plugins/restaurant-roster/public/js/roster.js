@@ -6,6 +6,19 @@ $(() => {
     }
 
     const $grid = $('#roster-grid')
+    // Khối tìm / lọc: luôn nằm ngay trên bảng xếp ca (chỗ #roster-filters-slot trong bảng), giữ nguyên ô nhập khi bảng vẽ lại.
+    const $filterBox = $('#roster-filters')
+    const placeFilters = () => {
+        const $slot = $grid.find('#roster-filters-slot')
+
+        if ($filterBox.length && $slot.length) {
+            $slot.replaceWith($filterBox)
+        } else if ($filterBox.length) {
+            $grid.before($filterBox)
+        }
+
+        $filterBox.removeClass('is-pending')
+    }
     const $modal = $('#roster-cell-modal')
     const urls = $app.data()
     const csrf = $('meta[name="csrf-token"]').attr('content')
@@ -59,7 +72,9 @@ $(() => {
         // Giữ vị trí cuộn ngang của bảng (màn hình hẹp) khi vẽ lại.
         const scrollLeft = $grid.find('.roster-scroll').scrollLeft() || 0
 
+        $filterBox.detach()
         $grid.html(data.html)
+        placeFilters()
         $grid.find('.roster-scroll').scrollLeft(scrollLeft)
         state.week = data.week
         $('#roster-week-label').contents().last().replaceWith(` ${data.week_label}`)
@@ -75,7 +90,7 @@ $(() => {
         }
     }
 
-    // Thanh hoàn tác: lần xóa lịch (clear) hoặc lần sửa ô gần nhất (edit).
+    // Thanh hoàn tác: lần xóa lịch tuần (clear) hoặc lần sửa ô gần nhất (edit).
     const $undo = $('#roster-undo')
     let undoKind = null
 
@@ -155,7 +170,8 @@ $(() => {
     })
 
     // ---------------------------------------------------------------- Bộ lọc trên bảng (chạy trên trình duyệt, không gọi máy chủ)
-    const $filters = $('#roster-filters')
+    const $filters = $filterBox
+    placeFilters()
     const filter = { search: '', position: '', gender: '', code: '', transfer: false, warn: false, unscheduled: false }
     // Bỏ dấu tiếng Việt: gõ "phien" vẫn tìm ra "Phiên".
     const plain = (text) => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
@@ -258,6 +274,12 @@ $(() => {
         applyFilters()
     })
     $('#rf-reset').on('click', resetFilters)
+    $(document).on('keydown', (event) => {
+        if (event.key === '/' && !$(event.target).is('input, textarea, select, [contenteditable]') && !$('.modal.show').length) {
+            event.preventDefault()
+            $('#rf-search').trigger('focus')
+        }
+    })
     applyFilters()
 
     // Bảng cảnh báo: bấm một dòng → cuộn tới đúng ô (hoặc hàng nhân viên) và nháy sáng; bỏ lọc nếu ô đang bị ẩn.
@@ -392,14 +414,6 @@ $(() => {
     // Nút "Xóa lịch tuần" trên thanh công cụ: xóa cả tuần đang xem (cả ca đã công bố), có xem trước, hỏi giữ ô khóa, hoàn tác.
     $app.on('click', '[data-roster-clear-week]', () => clearCells({ mode: 'week' }))
 
-    $grid.on('click', '[data-roster-clear]', (event) => {
-        event.stopPropagation()
-        const $button = $(event.currentTarget)
-
-        clearCells($button.data('roster-clear') === 'row'
-            ? { mode: 'row', employee_id: $button.data('employee') }
-            : { mode: 'column', outlet_id_clear: $button.data('outlet'), date: $button.data('date') })
-    })
 
     const undo = () => {
         if (undoKind === 'edit') {

@@ -404,35 +404,18 @@ class RosterController extends BaseController
     public function clearCells(Request $request)
     {
         $data = $request->validate([
-            'mode' => ['required', Rule::in(['row', 'column', 'week'])],
-            'employee_id' => ['required_if:mode,row', 'nullable', 'integer'],
-            'outlet_id_clear' => ['required_if:mode,column', 'nullable', 'integer'],
-            'date' => ['required_if:mode,column', 'nullable', 'date_format:Y-m-d'],
+            // Chỉ còn "Xóa lịch tuần" (quản lý 19/11/2026 bỏ xóa hàng / xóa cột).
+            'mode' => ['required', Rule::in(['week'])],
             'include_locked' => ['nullable', 'boolean'],
             'preview' => ['nullable', 'boolean'],
         ]);
 
         [$weekStart, $weekEnd] = $this->weekRange($request);
 
-        if ($data['mode'] === 'week') {
-            // Cả tuần đang xem (theo bộ lọc outlet / hiển thị chung): xóa cả ca nháp lẫn ca đã công bố để xếp lại từ đầu.
-            $label = 'lịch tuần ' . $weekStart->format('d/m') . ' – ' . $weekEnd->format('d/m/Y');
-            $query = Shift::query()->whereIn('employee_id', $this->employeeQuery($request)->pluck('id'))
-                ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()]);
-        } elseif ($data['mode'] === 'row') {
-            $employee = Employee::query()->findOrFail($data['employee_id']);
-            $label = $employee->name . ' (cả tuần ' . $weekStart->format('d/m') . ' – ' . $weekEnd->format('d/m') . ')';
-            $query = Shift::query()->where('employee_id', $employee->getKey())
-                ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()]);
-        } else {
-            $outlet = Outlet::query()->findOrFail($data['outlet_id_clear']);
-            $date = Carbon::parse($data['date']);
-            $label = ($outlet->code ?: $outlet->name) . ' ngày ' . $date->format('d/m/Y');
-            // Cột tính theo outlet chính của nhân viên.
-            $query = Shift::query()->whereDate('date', $date->toDateString())
-                ->whereIn('employee_id', Employee::query()->where('outlet_id', $outlet->getKey())
-                    ->where('status', BaseStatusEnum::PUBLISHED)->pluck('id'));
-        }
+        // Cả tuần đang xem (theo bộ lọc outlet / hiển thị chung): xóa cả ca nháp lẫn ca đã công bố để xếp lại từ đầu.
+        $label = 'lịch tuần ' . $weekStart->format('d/m') . ' – ' . $weekEnd->format('d/m/Y');
+        $query = Shift::query()->whereIn('employee_id', $this->employeeQuery($request)->pluck('id'))
+            ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()]);
 
         $shifts = $query->with('template:id,code')->get();
         // Ô nhân viên xin (M6 / A2 / OFF) luôn được giữ: chỉ gỡ từng ô bằng "Gỡ ca" / "Gỡ OFF" (có kiểm tra quyền), không xóa hàng loạt.
@@ -443,10 +426,8 @@ class RosterController extends BaseController
         $targets = $request->boolean('include_locked') ? $erasable : $erasable->reject($isKept);
 
         // Xóa lịch tuần: xóa luôn các bản đã công bố của tuần (ảnh / Excel / PDF) – tuần trở về "Bản nháp" như mới (quản lý 30/10/2026).
-        $versions = $data['mode'] === 'week'
-            ? \Botble\RestaurantRoster\Models\ScheduleVersion::query()->whereDate('week_start', $weekStart->toDateString())
-                ->where('scope_outlet_id', $this->scopeOutletId($request))->get()
-            : collect();
+        $versions = \Botble\RestaurantRoster\Models\ScheduleVersion::query()->whereDate('week_start', $weekStart->toDateString())
+            ->where('scope_outlet_id', $this->scopeOutletId($request))->get();
 
         if ($request->boolean('preview')) {
             return $this->httpResponse()->setData([
@@ -463,13 +444,13 @@ class RosterController extends BaseController
             return $this->gridResponse($request, "Không có ô nào để xóa ở {$label}.");
         }
 
-        DB::transaction(function () use ($request, $targets, $data, $versions): void {
+        DB::transaction(function () use ($request, $targets, $versions): void {
             $logs = $targets->map(fn (Shift $shift) => [
                 'employee_id' => $shift->employee_id,
                 'date' => $shift->date->toDateString(),
                 'before' => json_encode($this->snapshot($shift), JSON_UNESCAPED_UNICODE),
                 'after' => null,
-                'action' => ['row' => 'clear_row', 'column' => 'clear_column', 'week' => 'clear_week'][$data['mode']],
+                'action' => 'clear_week',
                 'user_id' => $request->user()?->getKey(),
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -500,7 +481,7 @@ class RosterController extends BaseController
     }
 
     /**
-     * Hoàn tác lần xóa hàng / cột gần nhất: khôi phục các ô chưa bị xếp lại (ô đã xếp ca mới thì giữ ca mới).
+     * Hoàn tác lần xóa lịch tuần gần nhất: khôi phục các ô chưa bị xếp lại (ô đã xếp ca mới thì giữ ca mới).
      */
     public function undoClear(Request $request)
     {

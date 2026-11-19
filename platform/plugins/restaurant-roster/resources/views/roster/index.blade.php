@@ -106,7 +106,7 @@
             </div>
         @endif
 
-        {{-- Hoàn tác: lần xóa lịch (hàng / cột / tuần) hoặc lần sửa ô gần nhất – roster.js điền nội dung. --}}
+        {{-- Hoàn tác: lần xóa lịch tuần hoặc lần sửa ô gần nhất – roster.js điền nội dung. --}}
         <div id="roster-undo" class="alert alert-warning d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
             <div>
                 <x-core::icon name="ti ti-arrow-back-up" />
@@ -118,35 +118,40 @@
             </div>
         </div>
 
-        {{-- Lọc / tìm trên bảng ngay trên trình duyệt (không tải lại trang); giữ nguyên khi bảng được vẽ lại sau khi sửa ô / đổi tuần. --}}
-        <div class="card mb-3 roster-filters" id="roster-filters">
-            <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
-                <div class="input-icon roster-filters__search">
-                    <span class="input-icon-addon"><x-core::icon name="ti ti-search" /></span>
-                    <input type="search" class="form-control form-control-sm" id="rf-search" placeholder="Tìm nhân viên…" autocomplete="off" aria-label="Tìm nhân viên">
-                </div>
-                <select class="form-select form-select-sm" id="rf-position" aria-label="Lọc theo vị trí">
+        {{-- Tìm / lọc trên bảng ngay trên trình duyệt (không tải lại trang); roster.js đặt khối này ngay trên bảng xếp ca và giữ nguyên khi bảng vẽ lại. --}}
+        <div class="roster-filters is-pending" id="roster-filters">
+            <div class="roster-filters__search">
+                <x-core::icon name="ti ti-search" class="roster-filters__search-icon" />
+                <input type="search" id="rf-search" placeholder="Tìm nhân viên theo tên…" autocomplete="off" aria-label="Tìm nhân viên">
+                <kbd class="roster-filters__kbd" title="Bấm / để tìm nhanh">/</kbd>
+            </div>
+            <div class="roster-filters__selects">
+                <select class="form-select" id="rf-position" aria-label="Lọc theo vị trí">
                     <option value="">Mọi vị trí</option>
                 </select>
-                <select class="form-select form-select-sm" id="rf-gender" aria-label="Lọc theo giới tính">
+                <select class="form-select" id="rf-gender" aria-label="Lọc theo giới tính">
                     <option value="">Nam &amp; nữ</option>
                     <option value="female">Nữ</option>
                     <option value="male">Nam</option>
                 </select>
-                <select class="form-select form-select-sm" id="rf-code" aria-label="Lọc theo ca" title="Hiện người có ca này trong tuần và làm mờ các ô khác">
+                <select class="form-select" id="rf-code" aria-label="Lọc theo ca" title="Hiện người có ca này trong tuần và làm mờ các ô khác">
                     <option value="">Mọi ca</option>
                 </select>
-                <label class="form-check form-check-inline mb-0" title="Có ngày làm ở nhà hàng khác outlet chính (Villa ↔ Gusto)">
-                    <input class="form-check-input" type="checkbox" id="rf-transfer"> <span class="form-check-label">Điều chuyển</span>
+            </div>
+            <div class="roster-filters__toggles">
+                <label class="roster-filter-chip" title="Có ngày làm ở nhà hàng khác outlet chính (Villa ↔ Gusto)">
+                    <input type="checkbox" id="rf-transfer"> <span><x-core::icon name="ti ti-arrows-exchange" /> Điều chuyển</span>
                 </label>
-                <label class="form-check form-check-inline mb-0">
-                    <input class="form-check-input" type="checkbox" id="rf-warn"> <span class="form-check-label">Có cảnh báo</span>
+                <label class="roster-filter-chip">
+                    <input type="checkbox" id="rf-warn"> <span><x-core::icon name="ti ti-alert-triangle" /> Có cảnh báo</span>
                 </label>
-                <label class="form-check form-check-inline mb-0">
-                    <input class="form-check-input" type="checkbox" id="rf-unscheduled"> <span class="form-check-label">Chưa xếp lịch</span>
+                <label class="roster-filter-chip">
+                    <input type="checkbox" id="rf-unscheduled"> <span><x-core::icon name="ti ti-calendar" /> Chưa xếp lịch</span>
                 </label>
-                <span class="small text-muted ms-auto" id="rf-count"></span>
-                <button type="button" class="btn btn-sm btn-link d-none" id="rf-reset">Bỏ lọc</button>
+            </div>
+            <div class="roster-filters__meta">
+                <span class="roster-filters__count" id="rf-count"></span>
+                <button type="button" class="btn btn-sm btn-ghost-secondary d-none" id="rf-reset"><x-core::icon name="ti ti-x" /> Bỏ lọc</button>
             </div>
         </div>
 
