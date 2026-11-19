@@ -204,9 +204,8 @@ class ScheduleExportService
         $headBg = $c('EEF2F7');
         $sectionBg = $c('E2E8F0');
         $weekend = $c('F8FAFC');
-        // Hàng xen kẽ + đường kẻ dày, đậm (quản lý 19/11/2026): Zalo thu nhỏ ảnh thì đường mảnh nhạt biến mất, mất ranh giới giữa 2 người.
-        $stripe = $c('EEF2F7');
-        $rowLine = $c('94A3B8');
+        // Ranh giới giữa 2 người bằng nền hàng xen kẽ đậm / nhạt, không kẻ ngang (quản lý 19/11/2026): đủ đậm để còn thấy khi Zalo nén ảnh, nhạt nhất có thể.
+        $stripe = $c('E9EEF4');
         $navy = $c('0A2540');
         $gold = $c('E0A96D');
         $this->drawRect($img, 0, 0, $width + 2, $height + 2, $white);
@@ -302,7 +301,6 @@ class ScheduleExportService
                 }
 
                 $y += $rowH;
-                $this->drawRect($img, $x0, $y - 1, $x1, $y + 1, $rowLine);
             }
         }
 
