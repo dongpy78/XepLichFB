@@ -204,6 +204,9 @@ class ScheduleExportService
         $headBg = $c('EEF2F7');
         $sectionBg = $c('E2E8F0');
         $weekend = $c('F8FAFC');
+        // Hàng xen kẽ + đường kẻ dày, đậm (quản lý 19/11/2026): Zalo thu nhỏ ảnh thì đường mảnh nhạt biến mất, mất ranh giới giữa 2 người.
+        $stripe = $c('EEF2F7');
+        $rowLine = $c('94A3B8');
         $navy = $c('0A2540');
         $gold = $c('E0A96D');
         $this->drawRect($img, 0, 0, $width + 2, $height + 2, $white);
@@ -260,6 +263,10 @@ class ScheduleExportService
             $y += $sectionH;
 
             foreach ($section['rows'] as $row) {
+                if ($n % 2 === 1) {
+                    $this->drawRect($img, $x0, $y, $x1, $y + $rowH, $stripe);
+                }
+
                 $this->cellText($img, $f['semibold'], 16, $faint, $x0, $colNo, $y, $rowH, (string) ++$n, true);
 
                 // Tên + ngày sinh "(13/12)" như Bảng xếp ca; sinh nhật trong tháng → nhãn đỏ nổi bật. Chức vụ bên dưới.
@@ -295,13 +302,13 @@ class ScheduleExportService
                 }
 
                 $y += $rowH;
-                $this->drawLine($img, $x0, $y, $x1, $y, $line);
+                $this->drawRect($img, $x0, $y - 1, $x1, $y + 1, $rowLine);
             }
         }
 
         // Kẻ dọc giữa các cột.
         foreach (range(0, count($days) - 1) as $k) {
-            $this->drawLine($img, $dayX($k), $tableTop + $headH, $dayX($k), $tableTop + $tableH - 1, $line);
+            $this->drawRect($img, $dayX($k) - 1, $tableTop + $headH, $dayX($k) + 1, $tableTop + $tableH - 1, $line);
         }
 
         // Chú thích màu ca.
